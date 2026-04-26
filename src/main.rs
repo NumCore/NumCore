@@ -218,3 +218,5 @@ fn panic(_: &PanicInfo) -> ! {
     uart_puts(b"\r\n*** PANIC ***\r\n");
     loop {}
 }
+
+// test
