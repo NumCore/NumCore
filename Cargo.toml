@@ -1,0 +1,17 @@
+[package]
+name    = "calculator-fw"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name              = "calculator-fw"
+test              = false
+bench             = false
+
+[profile.release]
+opt-level = "z"   # minimise code size
+lto       = true
+panic     = "abort"
+
+[profile.dev]
+panic = "abort"
