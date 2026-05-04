@@ -32,16 +32,19 @@ pub fn evaluate_expression(
     variables:     &VariableStore,
     lex_scratch:   &mut LexResult,
     parse_scratch: &mut ParseTree,
-) -> Option<i32> {
-    let lex_result  = lexer::tokenise_expression(expression)?;
-    let parse_tree  = parser::parse_token_stream(&lex_result, parse_scratch)?;
-    evaluator::evaluate_tree(parse_tree, variables)
+) -> Option<i64> {
+    // tokenise_expression and parse_token_stream write into the scratch
+    // buffers and return a reference into them. We call evaluate_tree
+    // directly on the scratch buffers after writing is complete.
+    lexer::tokenise_expression(expression, lex_scratch)?;
+    parser::parse_token_stream(lex_scratch, parse_scratch)?;
+    evaluator::evaluate_tree(parse_scratch, variables)
 }
 
 /// Format a Q20.12 fixed-point result into a human-readable byte slice.
 ///
 /// Writes into `buffer` (must be ≥ 20 bytes) and returns the filled slice.
 /// Trailing fractional zeros are stripped. Integer results have no decimal point.
-pub fn format_result(value: i32, buffer: &mut [u8; 20]) -> &[u8] {
+pub fn format_result(value: i64, buffer: &mut [u8; 24]) -> &[u8] {
     fixed_point::format_fixed_point(value, buffer)
 }

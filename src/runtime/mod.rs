@@ -45,12 +45,14 @@ fn print_welcome_banner() {
     uart::transmit_bytes(b"===========================================\r\n");
     uart::transmit_bytes(b"  calculator-fw  v0.2\r\n");
     uart::transmit_bytes(b"  LM3S811  Cortex-M3  (Rust)\r\n");
-    uart::transmit_bytes(b"  Q20.12 fixed-point  |  PEMDAS\r\n");
+    uart::transmit_bytes(b"  Q31.32 fixed-point  |  PEMDAS\r\n");
     uart::transmit_bytes(b"===========================================\r\n");
     uart::transmit_bytes(b"  Ops : + - * / ^ %\r\n");
     uart::transmit_bytes(b"  Fns : sin cos tan asin acos atan\r\n");
+    uart::transmit_bytes(b"        sinh cosh tanh asinh acosh atanh\r\n");
     uart::transmit_bytes(b"        sqrt abs exp log ln log2\r\n");
     uart::transmit_bytes(b"        floor ceil round deg rad\r\n");
+    uart::transmit_bytes(b"        binomp poissonp chicdf sum int\r\n");
     uart::transmit_bytes(b"  Const: pi  e\r\n");
     uart::transmit_bytes(b"  Vars : Ans  A B C D E F\r\n");
     uart::transmit_bytes(b"===========================================\r\n\r\n");
@@ -117,21 +119,22 @@ fn handle_expression_submission(state: &mut CalcState) {
         return;
     }
 
-    let variables     = state.variables() as *const _;
-    let lex_scratch   = &mut state.lex_scratch   as *mut _;
-    let parse_scratch = &mut state.parse_scratch as *mut _;
-
-    // SAFETY: variables, lex_scratch, and parse_scratch are disjoint fields
-    // of CalcState. We need raw pointers here only to satisfy the borrow
-    // checker — no aliasing occurs because each pointer refers to a different
-    // field. This is the standard Rust pattern for multiple-field mutability.
-    let result = unsafe {
-        engine::evaluate_expression(
-            expr_slice,
-            &*variables,
-            &mut *lex_scratch,
-            &mut *parse_scratch,
-        )
+    // Access disjoint fields of CalcState directly via raw field borrows.
+    // The borrow checker cannot prove these are disjoint through method calls,
+    // so we borrow the fields directly. This is safe — each borrow touches a
+    // completely separate region of the CalcState struct.
+    let result = {
+        let variables     = &state.variables as *const _;
+        let lex_scratch   = &mut state.lex_scratch   as *mut _;
+        let parse_scratch = &mut state.parse_scratch as *mut _;
+        unsafe {
+            engine::evaluate_expression(
+                expr_slice,
+                &*variables,
+                &mut *lex_scratch,
+                &mut *parse_scratch,
+            )
+        }
     };
 
     match result {
@@ -140,7 +143,7 @@ fn handle_expression_submission(state: &mut CalcState) {
             state.record_answer(result);
 
             uart::transmit_bytes(b"= ");
-            let mut display_buffer = [0u8; 20];
+            let mut display_buffer = [0u8; 24];
             uart::transmit_bytes(engine::format_result(result, &mut display_buffer));
             uart::transmit_bytes(b"\r\n");
         }

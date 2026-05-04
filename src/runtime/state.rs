@@ -39,7 +39,7 @@ const INPUT_BUFFER_CAPACITY: usize = 64;
 /// ## Memory layout rationale
 /// The LM3S811 has only 8 KB of SRAM. `LexResult` (~256 bytes) and
 /// `ParseTree` (~1 KB) must NOT be stack-allocated inside the evaluation
-/// call chain — the call stack alone would exceed available RAM. Instead
+/// call chain — the call stack alone would exceed available RAM. Instead,
 /// they live here as fields, allocated once in static RAM for the lifetime
 /// of the firmware.
 pub struct CalcState {
@@ -50,7 +50,7 @@ pub struct CalcState {
     input_length: usize,
 
     /// All calculator variables (Ans + A–F). Owned here, borrowed by math engine.
-    variables: VariableStore,
+    pub(crate) variables: VariableStore,
 
     /// Currently active calculator mode.
     active_mode: CalculatorMode,
@@ -73,11 +73,11 @@ impl CalcState {
             variables: VariableStore::new(),
             active_mode: CalculatorMode::Standard,
             lex_scratch: LexResult {
-                tokens: [Token::Number(0); MAX_TOKEN_COUNT],
+                tokens: [Token::Number(0i64); MAX_TOKEN_COUNT],
                 token_count: 0,
             },
             parse_scratch: ParseTree {
-                nodes: [AstNode::Literal(0); MAX_NODE_COUNT],
+                nodes: [AstNode::Literal(0i64); MAX_NODE_COUNT],
                 node_count: 0,
                 root_index: 0,
             },
@@ -123,12 +123,12 @@ impl CalcState {
     }
 
     /// Store a new value for `Ans`. Called by the runtime after evaluation.
-    pub fn record_answer(&mut self, answer: i32) {
+    pub fn record_answer(&mut self, answer: i64) {
         self.variables.write_ans(answer);
     }
 
     /// Write a user register (A–F). Returns false if letter is out of range.
-    pub fn write_user_register(&mut self, letter: u8, value: i32) -> bool {
+    pub fn write_user_register(&mut self, letter: u8, value: i64) -> bool {
         self.variables.write_register(letter, value)
     }
 
