@@ -1,4 +1,4 @@
-//! # calculator-fw
+//! # NumCore
 //!
 //! Bare-metal Rust calculator firmware for the LM3S811 (ARM Cortex-M3).
 //!
@@ -17,7 +17,7 @@
 //!
 //! ## Run
 //!   qemu-system-arm -M lm3s811evb -nographic -serial mon:stdio \
-//!     -kernel target/thumbv7m-none-eabi/release/calculator-fw
+//!     -kernel target/thumbv7m-none-eabi/release/NumCore
 
 #![no_std]
 #![no_main]

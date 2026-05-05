@@ -1,11 +1,11 @@
-//! calculator-fw — bare-metal Rust firmware for the LM3S811 (Cortex-M3)
+//! NumCore — bare-metal Rust firmware for the LM3S811 (Cortex-M3)
 //!
 //! Uses UART0 for I/O via QEMU's stdio mapping.
 //!
 //! Run
 //! ───
 //!   qemu-system-arm -M lm3s811evb -nographic -serial mon:stdio \
-//!     -kernel target/thumbv7m-none-eabi/release/calculator-fw
+//!     -kernel target/thumbv7m-none-eabi/release/NumCore
 
 #![no_std]
 #![no_main]
@@ -156,7 +156,7 @@ fn main() -> ! {
 
     uart_puts(b"\r\n");
     uart_puts(b"================================\r\n");
-    uart_puts(b"  calculator-fw  v0.1\r\n");
+    uart_puts(b"  NumCore  v0.1\r\n");
     uart_puts(b"  LM3S811  Cortex-M3  (Rust)\r\n");
     uart_puts(b"================================\r\n");
     uart_puts(b"Operators: + - * /\r\n\r\n");

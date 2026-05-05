@@ -43,7 +43,7 @@ fn initialise_all_hardware() {
 fn print_welcome_banner() {
     uart::transmit_bytes(b"\r\n");
     uart::transmit_bytes(b"===========================================\r\n");
-    uart::transmit_bytes(b"  calculator-fw  v0.2\r\n");
+    uart::transmit_bytes(b"  NumCore v0.2\r\n");
     uart::transmit_bytes(b"  LM3S811  Cortex-M3  (Rust)\r\n");
     uart::transmit_bytes(b"  Q31.32 fixed-point  |  PEMDAS\r\n");
     uart::transmit_bytes(b"===========================================\r\n");
