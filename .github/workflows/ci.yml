@@ -26,6 +26,7 @@ jobs:
       run: |
         OUTPUT_FILE=$(mktemp)
         timeout 5s qemu-system-arm -M lm3s811evb -nographic -serial mon:stdio \
+        -semihosting-config enable=on, target-native \
         -kernel target/thumbv7m-none-eabi/release/NumCore \
         < test_inputs.txt > "$OUTPUT_FILE" 2>&1 || true
         echo "=== QEMU output ==="
