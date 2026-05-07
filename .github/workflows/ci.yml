@@ -45,7 +45,7 @@ jobs:
 
         all_found=true
         for expected in "${expected_strings[@]}"; do
-          if grep -F "$expected" "$output_file"
+          if grep -F "$expected" "$output_file" > /dev/null; then
             echo "Found: $expected"
           else
             echo "Missing: $expected"
