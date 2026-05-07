@@ -2,6 +2,7 @@
 target = "thumbv7m-none-eabi"
 
 [target.thumbv7m-none-eabi]
+linker = "rust_lld"
 rustflags = [
     "-C", "link-arg=-Tlink.x",
 ]
