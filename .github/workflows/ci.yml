@@ -24,14 +24,13 @@ jobs:
       run: cargo build --release --target ${{ env.RUST_TARGET }} --verbose
     - name: Run tests in QEMU
       run: |
-        output_file$(mktemp)
+        OUTPUT_FILE=$(mktemp)
         timeout 5s qemu-system-arm -M lm3s811evb -nographic -serial mon:stdio \
         -kernel target/thumbv7m-none-eabi/release/NumCore \
-        < test_inputs.txt > output.log 2>&1 || true
+        < test_inputs.txt > "$OUTPUT_FILE" 2>&1 || true
         echo "=== QEMU output ==="
-        cat "$output_file"
+        cat "$OUTPUT_FILE"
         echo "==================="
-        echo "OUTPUT_FILE=$output_file" >> $GITHUB_ENV
     - name: Verify results
       run: |
         output_file="$OUTPUT_FILE"
