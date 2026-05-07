@@ -21,7 +21,7 @@ jobs:
     - name: Cache cargo registry and target
       uses: Swatinem/rust-cache@v2
     - name: Build firmware
-      run: cargo build --target $ {{ env.RUST_TARGET }} --verbose
+      run: cargo build --target ${{ env.RUST_TARGET }} --verbose
     - name: Run tests in QEMU
       run: |
         output_file$(mktemp)
