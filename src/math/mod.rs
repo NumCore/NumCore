@@ -23,4 +23,3 @@ pub mod lexer;
 pub mod parser;
 pub mod vars;
 pub mod distributions;
-pub mod state;
