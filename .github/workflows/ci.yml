@@ -43,8 +43,7 @@ jobs:
           ) | timeout 10s qemu-system-arm \
                 -M lm3s811evb \
                 -nographic \
-                -monitor stdio \
-                -serial none \
+                -serial mon:stdio \
                 -kernel target/${{ env.RUST_TARGET }}/release/NumCore \
               > "$OUTPUT_FILE" 2>&1 || true
 
