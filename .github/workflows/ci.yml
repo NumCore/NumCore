@@ -43,7 +43,8 @@ jobs:
           ) | timeout 10s qemu-system-arm \
                 -M lm3s811evb \
                 -nographic \
-                -serial stdio \
+                -monitor stdio \
+                -serial none \
                 -kernel target/${{ env.RUST_TARGET }}/release/calculator-fw \
               > "$OUTPUT_FILE" 2>&1 || true
 
