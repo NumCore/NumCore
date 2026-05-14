@@ -3,8 +3,8 @@ A bare-metal scientific calculator firmware written in Rust, targeting the
 **ARM Cortex-M3 LM3S811** microcontroller, developed and tested entirely under
 QEMU emulation.
 
-No operating system. No heap allocator. No external crates. Every layer —
-from the interrupt vector table to the statistical distribution functions — is
+No operating system. No heap allocator. No external crates. Every layer -
+from the interrupt vector table to the statistical distribution functions - is
 written from scratch.
 
 ---
@@ -51,28 +51,28 @@ written from scratch.
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│  Layer 8 — Calculator Modes        src/modes/  [roadmap] │
+│  Layer 8 - Calculator Modes        src/modes/  [roadmap] │
 ├──────────────────────────────────────────────────────────┤
-│  Layer 7 — UI / Interaction        src/ui/     [roadmap] │
+│  Layer 7 - UI / Interaction        src/ui/     [roadmap] │
 ├──────────────────────────────────────────────────────────┤
-│  Layer 6 — Math Engine             src/math/             │
+│  Layer 6 - Math Engine             src/math/             │
 ├──────────────────────────────────────────────────────────┤
-│  Layer 5 — Core Runtime            src/runtime/          │
+│  Layer 5 - Core Runtime            src/runtime/          │
 ├──────────────────────────────────────────────────────────┤
-│  Layer 4 — Hardware Abstraction    src/hal/              │
+│  Layer 4 - Hardware Abstraction    src/hal/              │
 ├──────────────────────────────────────────────────────────┤
-│  Layer 3 — Boot & Startup          src/boot.rs           │
+│  Layer 3 - Boot & Startup          src/boot.rs           │
 ├──────────────────────────────────────────────────────────┤
-│  Layer 2 — CPU / Cortex-M3         (silicon / QEMU)      │
+│  Layer 2 - CPU / Cortex-M3         (silicon / QEMU)      │
 ├──────────────────────────────────────────────────────────┤
-│  Layer 1 — Physical Hardware       LM3S811EVB            │
+│  Layer 1 - Physical Hardware       LM3S811EVB            │
 └──────────────────────────────────────────────────────────┘
 ```
 
 **The one rule that never breaks:** nothing above the HAL touches a hardware
 register directly. Every peripheral access goes through a named HAL function.
 The entire math engine, runtime, and future UI code are therefore fully
-portable — only `src/hal/` changes when the target board changes.
+portable - only `src/hal/` changes when the target board changes.
 
 ---
 
@@ -81,40 +81,40 @@ portable — only `src/hal/` changes when the target board changes.
 ```
 NumCore/
 ├── src/
-│   ├── main.rs                  — crate root, module declarations, panic handler
-│   ├── boot.rs                  — vector table, Reset handler, .data/.bss init
+│   ├── main.rs                  - crate root, module declarations, panic handler
+│   ├── boot.rs                  - vector table, Reset handler, .data/.bss init
 │   │
-│   ├── hal/                     — Layer 4: the only code that touches registers
-│   │   ├── mod.rs               — re-exports the HAL public surface
-│   │   ├── mmio.rs              — read_register/write_register (all unsafe lives here)
-│   │   ├── clock.rs             — SysCtl clock gating, SYSTEM_CLOCK_HZ
-│   │   ├── gpio.rs              — pin direction, alternate function, open-drain
-│   │   ├── uart.rs              — UART0: 115200-8-N-1, blocking TX and RX
-│   │   └── i2c.rs               — I2C0 driver stub (ready for OLED display)
+│   ├── hal/                     - Layer 4: the only code that touches registers
+│   │   ├── mod.rs               - re-exports the HAL public surface
+│   │   ├── mmio.rs              - read_register/write_register (all unsafe lives here)
+│   │   ├── clock.rs             - SysCtl clock gating, SYSTEM_CLOCK_HZ
+│   │   ├── gpio.rs              - pin direction, alternate function, open-drain
+│   │   ├── uart.rs              - UART0: 115200-8-N-1, blocking TX and RX
+│   │   └── i2c.rs               - I2C0 driver stub (ready for OLED display)
 │   │
-│   ├── runtime/                 — Layer 5: event loop, state machine
-│   │   ├── mod.rs               — start(), event loop, input handlers
-│   │   ├── state.rs             — CalcState: input buffer, variables, scratch buffers
-│   │   └── event.rs             — CalcEvent enum, raw byte → event translation
+│   ├── runtime/                 - Layer 5: event loop, state machine
+│   │   ├── mod.rs               - start(), event loop, input handlers
+│   │   ├── state.rs             - CalcState: input buffer, variables, scratch buffers
+│   │   └── event.rs             - CalcEvent enum, raw byte → event translation
 │   │
-│   └── math/                    — Layer 6: fully hardware-independent
-│       ├── mod.rs               — module declarations
-│       ├── fixed_point.rs       — Q31.32 internals: CORDIC trig, ln, exp
-│       ├── distributions.rs     — lnGamma (Lanczos), binomial, Poisson, chi-squared
-│       ├── vars.rs              — VariableStore: Ans + registers A–Z
-│       ├── lexer.rs             — expression bytes → Token stream
-│       ├── parser.rs            — tokens → AST (recursive descent, full precedence)
-│       ├── evaluator.rs         — AST → CalcNum (tree walker, loop evaluation)
-│       └── engine.rs            — public API: evaluate_expression(), format_result()
+│   └── math/                    - Layer 6: fully hardware-independent
+│       ├── mod.rs               - module declarations
+│       ├── fixed_point.rs       - Q31.32 internals: CORDIC trig, ln, exp
+│       ├── distributions.rs     - lnGamma (Lanczos), binomial, Poisson, chi-squared
+│       ├── vars.rs              - VariableStore: Ans + registers A–Z
+│       ├── lexer.rs             - expression bytes → Token stream
+│       ├── parser.rs            - tokens → AST (recursive descent, full precedence)
+│       ├── evaluator.rs         - AST → CalcNum (tree walker, loop evaluation)
+│       └── engine.rs            - public API: evaluate_expression(), format_result()
 │
-├── link.x                       — linker script: Flash 64 KB, SRAM 8 KB
-├── Cargo.toml                   — zero external dependencies
-├── rust-toolchain.toml          — pins stable + thumbv7m-none-eabi
-├── .cargo/config.toml           — default target, -Tlink.x linker flag
-├── .github/workflows/ci.yml     — build + QEMU integration test
-├── README.md                    — this file
-├── CONTRIBUTING.md              — rules, style guide, PR checklist
-└── ROADMAP.md                   — OLED, UI layer, scientific mode plan
+├── link.x                       - linker script: Flash 64 KB, SRAM 8 KB
+├── Cargo.toml                   - zero external dependencies
+├── rust-toolchain.toml          - pins stable + thumbv7m-none-eabi
+├── .cargo/config.toml           - default target, -Tlink.x linker flag
+├── .github/workflows/ci.yml     - build + QEMU integration test
+├── README.md                    - this file
+├── CONTRIBUTING.md              - rules, style guide, PR checklist
+└── ROADMAP.md                   - OLED, UI layer, scientific mode plan
 ```
 
 ---
@@ -135,8 +135,8 @@ NumCore/
 
 | Function | Description |
 |----------|-------------|
-| `sin(x)` `cos(x)` `tan(x)` | Trigonometry — argument in **radians** |
-| `asin(x)` `acos(x)` `atan(x)` | Inverse trig — result in radians |
+| `sin(x)` `cos(x)` `tan(x)` | Trigonometry - argument in **radians** |
+| `asin(x)` `acos(x)` `atan(x)` | Inverse trig - result in radians |
 | `sinh(x)` `cosh(x)` `tanh(x)` | Hyperbolic funcs |
 | `asinh(x)` `acosh(x)` `atanh(x)` | Inverse Hyperbolic funcs |
 | `deg(x)` | Degrees → radians: `sin(deg(90))` = 1 |
@@ -148,7 +148,7 @@ NumCore/
 | `log(x)` | Log base 10 |
 | `log2(x)` | Log base 2 |
 | `floor(x)` `ceil(x)` `round(x)` | Rounding |
-| `lnGamma(x)` | ln(Γ(x)) — log-gamma function |
+| `lnGamma(x)` | ln(Γ(x)) - log-gamma function |
 
 ### Two-argument functions
 
@@ -223,7 +223,6 @@ Key SRAM residents:
 | `CalcState.input_buffer` | 64 B |
 | `CalcState.lex_scratch` (32 tokens × 20 B) | ~640 B |
 | `CalcState.parse_scratch` (64 nodes × 24 B) | ~1536 B |
-| `VariableStore` (27 × 12 B CalcNum) | ~324 B |
 | Stack (grows down from top of SRAM) | ~5.3 KB |
 
 The lexer and parser scratch buffers live as fields of `CalcState` in static
@@ -241,7 +240,7 @@ RAM. Without this arrangement, a single evaluation call would stack-allocate
 | `qemu-system-arm` | `apt install qemu-system-arm` / `brew install qemu` |
 | `arm-none-eabi-gdb` (optional) | `apt install gdb-arm-none-eabi` |
 
-`rust-toolchain.toml` pins the toolchain and target — `rustup` installs them
+`rust-toolchain.toml` pins the toolchain and target - `rustup` installs them
 automatically on the first `cargo build`.
 
 ---
@@ -256,8 +255,8 @@ Output: `target/thumbv7m-none-eabi/release/calculator-fw`
 
 | Profile | Command | Notes |
 |---------|---------|-------|
-| Release | `cargo build --release` | `-Oz` + LTO — fits in 64 KB Flash |
-| Debug | `cargo build` | Unoptimised — may exceed Flash |
+| Release | `cargo build --release` | `-Oz` + LTO - fits in 64 KB Flash |
+| Debug | `cargo build` | Unoptimised - may exceed Flash |
 
 Both profiles use `panic = "abort"` to eliminate unwinding machinery.
 
@@ -268,10 +267,9 @@ Both profiles use `panic = "abort"` to eliminate unwinding machinery.
 ```sh
 qemu-system-arm \
     -M lm3s811evb \
-    -display none \
-    -monitor null \
-    -serial stdio \
-    -kernel target/thumbv7m-none-eabi/release/calculator-fw
+    -nographic \
+    -serial mon:stdio \
+    -kernel target/thumbv7m-none-eabi/release/NumCore
 ```
 
 Type any expression at the `>` prompt and press Enter. Exit with `Ctrl-A X`.
@@ -281,31 +279,25 @@ Type any expression at the `>` prompt and press Enter. Exit with `Ctrl-A X`.
 | Flag | Purpose |
 |------|---------|
 | `-M lm3s811evb` | Emulate the LM3S811 evaluation board |
-| `-display none` | Suppress the GUI window without claiming stdio |
-| `-monitor null` | Discard the QEMU monitor (prevents stdio conflict) |
-| `-serial stdio` | Wire UART0 exclusively to host stdin/stdout |
+| `-nographic` | Disables default QEMU GUI |
+| `-serial mon:stdio` | Creates multiplexed stdio backend connected to serial port and QEMU monitor |
 | `-kernel <elf>` | Load and run the firmware ELF |
-
-> **Do not use `-nographic`** — it implicitly sets `-monitor stdio`, which
-> conflicts with `-serial stdio` on QEMU 8.x and produces the error
-> `cannot use stdio by multiple character devices`.
 
 ---
 
 ## Debugging with GDB
 
 ```sh
-# Terminal 1 — QEMU paused, GDB server on port 1234
+# Terminal 1 - QEMU paused, GDB server on port 1234
 qemu-system-arm \
     -M lm3s811evb \
-    -display none \
-    -monitor null \
-    -serial stdio \
-    -kernel target/thumbv7m-none-eabi/release/calculator-fw \
+    -nographic \
+    -serial mon:stdio \
+    -kernel target/thumbv7m-none-eabi/release/NumCore \
     -s -S
 
 # Terminal 2
-arm-none-eabi-gdb target/thumbv7m-none-eabi/release/calculator-fw \
+arm-none-eabi-gdb target/thumbv7m-none-eabi/release/NumCore \
     -ex "target remote :1234" \
     -ex "break Reset" \
     -ex "continue"
@@ -340,7 +332,7 @@ x/10i $pc                         # disassemble around the current instruction
  echo "(2+3)/10"; sleep 0.3
 ) | timeout 10s qemu-system-arm \
       -M lm3s811evb -display none -monitor null -serial stdio \
-      -kernel target/thumbv7m-none-eabi/release/calculator-fw
+      -kernel target/thumbv7m-none-eabi/release/NumCore
 ```
 
 The initial `sleep 1` gives UART initialisation time to complete before the
@@ -356,24 +348,24 @@ To add a test case, add an `echo` + `sleep` line to the input block and a
 
 Ten principles applied consistently throughout this codebase:
 
-1. **Intention-revealing names** — a name should communicate purpose without
+1. **Intention-revealing names** - a name should communicate purpose without
    requiring the reader to inspect the implementation
-2. **No disinformation** — names must never mislead about what a value holds
+2. **No disinformation** - names must never mislead about what a value holds
    or what a function does
-3. **Meaningful distinctions** — if two things have different names, they are
+3. **Meaningful distinctions** - if two things have different names, they are
    meaningfully different
-4. **Pronounceable names** — if you cannot say it, you cannot discuss it in
+4. **Pronounceable names** - if you cannot say it, you cannot discuss it in
    a code review
-5. **Searchable names** — single-letter identifiers appear only as loop
+5. **Searchable names** - single-letter identifiers appear only as loop
    variables in tight, obvious scopes
-6. **No type encoding** — `uart_u8_byte` adds noise; `byte` is sufficient
-7. **No mental mappings** — the code is written for the next reader, not for
+6. **No type encoding** - `uart_u8_byte` adds noise; `byte` is sufficient
+7. **No mental mappings** - the code is written for the next reader, not for
    the author who already holds the context
-8. **Comments on everything** — every function, constant, and non-obvious
+8. **Comments on everything** - every function, constant, and non-obvious
    expression has a comment explaining *why*, not just *what*
-9. **Modularity and browsability** — the module tree reflects the conceptual
+9. **Modularity and browsability** - the module tree reflects the conceptual
    layer diagram; related things are together, unrelated things are apart
-10. **Rust naming conventions** — `snake_case` for functions and variables
+10. **Rust naming conventions** - `snake_case` for functions and variables
     (compiler-enforced), `CamelCase` for types, `SCREAMING_SNAKE_CASE` for
     constants
 
@@ -395,7 +387,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide, including:
 
 Full details in [ROADMAP.md](ROADMAP.md). Upcoming phases:
 
-**Phase 1 — OLED display**
+**Phase 1 - OLED display**
 
 The LM3S811EVB carries an OSRAM Pictiva 96×16 OLED with an SSD0303
 controller on the I2C bus. `hal/i2c.rs` and the full UI layer architecture
@@ -403,19 +395,19 @@ are already designed. Remaining work: complete the I2C driver, implement the
 SSD0303 init sequence and framebuffer flush, write the 5×8 bitmap font, build
 the canvas and renderer, and wire the renderer into the event loop.
 
-**Phase 2 — Code size optimisation**
+**Phase 2 - Code size optimisation**
 
 The firmware is approaching the 64 KB Flash limit in release mode. Planned
 work: dead code elimination, merging small functions, and evaluating shared
 lookup tables across modules.
 
-**Phase 3 — Scientific mode**
+**Phase 3 - Scientific mode**
 
 Hyperbolic trig, complex exponentiation, unit conversion, and matrix
 operations behind a mode-switch key, using the `ModeHandler` trait in
 `src/modes/mod.rs`.
 
-**Phase 4 — Physical hardware**
+**Phase 4 - Physical hardware**
 
 Deploying to real LM3S811EVB silicon with OLED output and a physical keypad
 replacing the UART terminal.
