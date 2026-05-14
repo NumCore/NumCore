@@ -45,7 +45,7 @@ jobs:
                 -nographic \
                 -monitor stdio \
                 -serial none \
-                -kernel target/${{ env.RUST_TARGET }}/release/calculator-fw \
+                -kernel target/${{ env.RUST_TARGET }}/release/NumCore \
               > "$OUTPUT_FILE" 2>&1 || true
 
           echo "=== QEMU output ==="
