@@ -107,6 +107,8 @@ pub enum TwoArgMathFunction {
     PoissonProbability,
     /// P(X≤x) for X ~ χ²(k). Arguments: x, k.
     ChiSquaredCDF,
+    /// n-th root of a number. Arguments: x, n.
+    NthRoot,
 }
 
 /// The two looping aggregate operations.
@@ -416,10 +418,11 @@ fn is_single_arg_function_token(token: Token) -> bool {
         Token::FuncAsin | Token::FuncAcos | Token::FuncAtan |
         Token::FuncSinH | Token::FuncCosH | Token::FuncTanH |
         Token::FuncASinH | Token::FuncACosH | Token::FuncATanH |
-        Token::FuncSqrt | Token::FuncAbs | Token::FuncLog |
-        Token::FuncLn | Token::FuncLog2 | Token::FuncExp |
-        Token::FuncFloor | Token::FuncCeil | Token::FuncRound |
-        Token::FuncDeg | Token::FuncRad | Token::FuncLnGamma
+        Token::FuncSqrt | Token::FuncAbs |
+        Token::FuncLog | Token::FuncLn | Token::FuncLog2 |
+        Token::FuncExp | Token::FuncFloor | Token::FuncCeil |
+        Token::FuncRound | Token::FuncDeg | Token::FuncRad |
+        Token::FuncLnGamma
     )
 }
 
@@ -430,7 +433,7 @@ fn is_three_arg_function_token(token: Token) -> bool {
 
 /// Return true if the token is a two-argument numeric function.
 fn is_two_arg_function_token(token: Token) -> bool {
-    matches!(token, Token::FuncPoissonP | Token::FuncChiCDF)
+    matches!(token, Token::FuncPoissonP | Token::FuncChiCDF | Token::FuncNthRoot)
 }
 
 /// Return true if the token is a loop aggregate (sum or int).
@@ -482,6 +485,7 @@ fn token_to_two_arg_function(token: Token) -> Option<TwoArgMathFunction> {
     Some(match token {
         Token::FuncPoissonP => TwoArgMathFunction::PoissonProbability,
         Token::FuncChiCDF   => TwoArgMathFunction::ChiSquaredCDF,
+        Token::FuncNthRoot  => TwoArgMathFunction::NthRoot,
         _ => return None,
     })
 }

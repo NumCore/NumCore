@@ -86,6 +86,7 @@ pub enum Token {
     FuncBinomP,     // binomP(n, k, p)
     FuncPoissonP,   // poissonP(lambda, k)
     FuncChiCDF,     // chiCDF(x, k)
+    FuncNthRoot,    // nthRoot(x, n)
     FuncLnGamma,    // lnGamma(x)
 
     // ── Named constants ──
@@ -284,6 +285,7 @@ fn parse_identifier(slice: &[u8]) -> Option<(Token, usize)> {
         b"acos"  => Token::FuncAcos,
         b"atan"  => Token::FuncAtan,
         b"sqrt"  => Token::FuncSqrt,
+        b"nthroot" => Token::FuncNthRoot,
         b"abs"   => Token::FuncAbs,
         b"log"   => Token::FuncLog,
         b"ln"    => Token::FuncLn,

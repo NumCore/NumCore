@@ -180,6 +180,7 @@ fn apply_two_arg_function(
     match function {
         TwoArgMathFunction::PoissonProbability => distributions::poisson_probability(a0, a1),
         TwoArgMathFunction::ChiSquaredCDF      => distributions::chi_squared_cdf(a0, a1),
+        TwoArgMathFunction::NthRoot => fp::nthroot(a0, a1),
     }
 }
 

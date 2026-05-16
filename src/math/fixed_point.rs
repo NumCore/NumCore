@@ -36,6 +36,10 @@
 
 // ─── Scale and precision ──────────────────────────────────────────────────────
 
+use core::ptr::write_bytes;
+use crate::hal::uart;
+use crate::math::engine;
+
 /// Number of fractional bits. Defines the entire numeric format.
 pub const FRACTIONAL_BITS: u32 = 32;
 
@@ -140,8 +144,14 @@ pub fn to_integer_rounded(fp: i64) -> i64 { (fp + FIXED_HALF) >> FRACTIONAL_BITS
 pub fn multiply(a: i64, b: i64) -> i64 {
     let product = (a as i128) * (b as i128);
 
-    // add rounding offset before shifting
-    let rounded = product + (1i128 << 31);
+    // symmetric rounding to remove bias for negative numbers
+    let offset = 1i128 << (FRACTIONAL_BITS - 1);
+
+    let rounded = if product >= 0 {
+        product + offset
+    } else {
+        product - offset
+    };
 
     (rounded >> FRACTIONAL_BITS) as i64
 }
@@ -151,21 +161,42 @@ pub fn multiply(a: i64, b: i64) -> i64 {
 #[inline(always)]
 pub fn divide(a: i64, b: i64) -> Option<i64> {
     if b == 0 { return None; }
+    // The code below was used for testing purposes
+    // let mut display_buffer = [0u8; 24];
+    // let c = Some((((a as i128) << FRACTIONAL_BITS) / (b as i128)) as i64);
+    // uart::transmit_bytes(engine::format_result(c?, &mut display_buffer));
+    // uart::transmit_bytes(b"\r\n");
     Some((((a as i128) << FRACTIONAL_BITS) / (b as i128)) as i64)
+
 }
 
 // ─── Power ────────────────────────────────────────────────────────────────────
 
 /// Raise a Q31.32 base to a Q31.32 exponent.
 pub fn power(base: i64, exponent: i64) -> Option<i64> {
-    // Integer exponent: fast exact path.
-    if exponent & (SCALE - 1) == 0 {
+    // Integer exponent: fast exact path via repeated squaring.
+    if to_integer_truncated(exponent) * SCALE == exponent {
         return integer_power(base, to_integer_truncated(exponent));
     }
-    // Non-integer: e^(exp × ln(base)). Requires base > 0.
+    // Non-integer exponent: compute via exp(exponent × ln(base)).
+    // Requires base > 0 for ln to be defined.
     if base <= 0 { return None; }
     let ln_base = natural_log(base)?;
-    Some(natural_exp(multiply(exponent, ln_base)))
+    let result  = natural_exp(multiply(exponent, ln_base));
+
+    // Snap to nearest integer if within 1e-4 of one.
+    // The log/exp chain accumulates ~1e-7 error per operation; for inputs
+    // like 27^(1/3) this propagates to ~6e-5 in the result. Any value that
+    // lands within 1e-4 of an integer was almost certainly meant to be that
+    // integer — snap it exactly.
+    // Threshold: 1e-4 in Q31.32 = round(1e-4 × 2^32) = 429497
+    const SNAP_THRESHOLD: i64 = 429_497;
+    let nearest = round(result);
+    if (result - nearest).abs() < SNAP_THRESHOLD {
+        Some(nearest)
+    } else {
+        Some(result)
+    }
 }
 
 /// Integer exponentiation via fast squaring. exp is a plain i64, not Q31.32.
@@ -206,6 +237,11 @@ pub fn sqrt(x: i64) -> Option<i64> {
         guess = (guess / 2) + (quotient / 2);
     }
     Some(guess)
+}
+
+pub fn nthroot(x: i64, n: i64) -> Option<i64> {
+    if n == 0 { return None; }
+    power(x, divide(FIXED_ONE, n)?)
 }
 
 /// Integer square root of a non-negative i128, returning the floor.
@@ -484,26 +520,79 @@ pub fn acos(x: i64) -> Option<i64> {
 /// e^r computed via 12-term Taylor series with i128 intermediates.
 /// Result scaled by 2^k via bit shift.
 pub fn natural_exp(x: i64) -> i64 {
-    let k = to_integer_rounded(divide(x, FIXED_LN2).unwrap_or(0));
+    // e^0 = 1
+    if x == 0 {
+        return FIXED_ONE;
+    }
+
+    // Handle negative exponents explicitly.
+    //
+    // Computing the Taylor series directly for negative values is less stable
+    // in fixed-point arithmetic and can accumulate significant truncation error.
+    //
+    // Instead use:
+    //
+    //     e^-x = 1 / e^x
+    //
+    // which keeps the polynomial evaluation in the positive domain.
+    if x < 0 {
+        return divide(FIXED_ONE, natural_exp(-x)).unwrap_or(0);
+    }
+
+    // Range reduction:
+    //
+    //     e^x = e^(k ln 2 + r)
+    //          = 2^k * e^r
+    //
+    // Choose k such that:
+    //
+    //     r = x - k ln 2
+    //
+    // is small, improving Taylor-series accuracy.
+    //
+    // Using truncation instead of rounding keeps r bounded and stable.
+    let k = to_integer_truncated(divide(x, FIXED_LN2).unwrap_or(0));
+
+    // Reduced argument.
     let r = x - k * FIXED_LN2;
 
-    // 12-term Taylor: e^r = 1 + r + r²/2! + r³/3! + … + r¹²/12!
-    // All arithmetic in i128 to preserve precision.
-    let r_i  = r as i128;
-    let s    = SCALE as i128;
+    // Evaluate e^r using a 12-term Taylor series:
+    //
+    //     e^r = 1 + r + r²/2! + r³/3! + ...
+    //
+    // All calculations are done in i128 to preserve precision and avoid
+    // overflow during intermediate multiplication.
+    let r_i = r as i128;
+    let s   = SCALE as i128;
 
-    let mut term   = s;                  // r^0 / 0! = 1
-    let mut result = s;                  // accumulator starts at 1
+    // Current term in the series.
+    // Starts at 1.0 in Q31.32.
+    let mut term = s;
+
+    // Accumulator also starts at 1.0.
+    let mut result = s;
+
+    // Add terms:
+    //
+    //     term_n = term_(n-1) * r / n
+    //
+    // maintaining fixed-point scaling throughout.
     for n in 1i128..=12 {
-        term = (term * r_i) / s / n;    // term = r^n / n! in Q31.32
+        term = (term * r_i) / s / n;
         result += term;
     }
 
+    // Convert back to i64 after polynomial evaluation.
     let poly = result as i64;
 
-    // Scale by 2^k.
-    if k >= 0 { poly << (k as u32).min(30) }
-    else      { poly >> ((-k) as u32).min(63) }
+    // Multiply by 2^k:
+    //
+    //     e^x = 2^k * e^r
+    //
+    // Since x is guaranteed positive here, k should also be >= 0.
+    //
+    // Clamp shift amount to avoid undefined behaviour.
+    poly << (k as u32).min(30)
 }
 
 /// ln(x) for Q31.32 x > 0. Returns None for x ≤ 0.
