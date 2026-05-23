@@ -134,23 +134,6 @@ cargo build --release && qemu-system-arm \
 - If touching the parser: include example expressions that exercise the new grammar
 - If adding UI rendering: include a screenshot or ASCII-art of the display output
 
-## Roadmap
-
-### Short-term
-- [ ] Host-side unit tests for `math/` (cargo test with `#![cfg(test)]`)
-- [ ] Fractional-only display mode (e.g. show `1/3` instead of `0.333333`)
-
-### Medium-term
-- [ ] Graphing mode — render functions on the OLED
-- [ ] Matrix operations — add matrices as a new variable type
-- [ ] Complex number support
-
-### Long-term
-- [ ] Flash storage for saved expressions and constants
-- [ ] USB connectivity (needs different MCU or external USB-UART bridge)
-- [ ] Desktop simulator for faster UI iteration
-- [ ] Port to additional MCU architectures
-
 ## Getting help
 
-Open an issue on GitHub for bugs, questions, or feature requests. For architecture questions, reference `docs/ARCHITECTURE.md` and the module-level doc comments in the source code.
+Open an issue on GitHub for bugs, questions, or feature requests. For architecture questions, reference `docs/ARCHITECTURE.md` and the module-level doc comments in the source code. For the project roadmap and long-term vision, see `ROADMAP.md`.

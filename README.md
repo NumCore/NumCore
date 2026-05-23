@@ -2,6 +2,84 @@
 
 Bare-metal scientific calculator firmware for the **LM3S811** ARM Cortex-M3 microcontroller, written entirely in Rust with `#![no_std]` and `#![no_main]`. Features a complete fixed-point math engine, an interactive UART console, and an I2C-driven OLED display.
 
+## Features
+
+### Expression evaluation
+- Full recursive-descent parser with **PEMDAS precedence**
+- **Right-associative exponentiation** (`2^2^3` = 256, not 64)
+- Parenthesised sub-expressions, implicit precedence via grammar
+- 64-character input buffer, 32-token lexer budget, 64-node AST arena
+
+### Mathematical functions
+
+**Operators:** `+` `-` `*` `/` `^` `%`
+
+**Trigonometry** (all functions take/return radians):
+| Function | Description |
+|----------|-------------|
+| `sin(x)` `cos(x)` `tan(x)` | Standard trig |
+| `asin(x)` `acos(x)` `atan(x)` | Inverse trig |
+| `sinh(x)` `cosh(x)` `tanh(x)` | Hyperbolic |
+| `asinh(x)` `acosh(x)` `atanh(x)` | Inverse hyperbolic |
+
+**Powers and roots:**
+| Function | Description |
+|----------|-------------|
+| `sqrt(x)` | Square root (`x ≥ 0`) |
+| `nthroot(x,n)` | n-th root with domain checking |
+| `x ^ y` | Arbitrary power |
+
+**Logarithms and exponentials:**
+| Function | Description |
+|----------|-------------|
+| `exp(x)` | `e^x` |
+| `ln(x)` | Natural logarithm (`x > 0`) |
+| `log(x)` | Base-10 logarithm (`x > 0`) |
+| `log2(x)` | Base-2 logarithm (`x > 0`) |
+
+**Rounding and special:**
+| Function | Description |
+|----------|-------------|
+| `floor(x)` `ceil(x)` `round(x)` | Integer rounding |
+| `abs(x)` | Absolute value |
+| `deg(x)` | Degrees → radians |
+| `rad(x)` | Radians → degrees |
+
+**Statistical distributions** (all computed in log space to avoid overflow):
+| Function | Description |
+|----------|-------------|
+| `binomp(n,k,p)` | Binomial probability `P(X=k)` |
+| `poissonp(λ,k)` | Poisson probability `P(X=k)` |
+| `chicdf(x,k)` | Chi-squared CDF `P(X≤x)` with `k` d.f. |
+| `lngamma(x)` | Log-gamma `ln(Γ(x))` |
+
+**Loop aggregates:**
+| Function | Description |
+|----------|-------------|
+| `sum(expr, var, start, end)` | Summation Σ over integer range |
+| `int(expr, var, a, b)` | Numeric integration via Simpson's rule |
+
+### Constants and variables
+- **Built-in constants:** `pi`, `e` (with 9-digit Q31.32 precision)
+- **Ans:** automatically stores the last result
+- **Registers A–Z:** 26 user-writable storage registers
+
+### Q31.32 fixed-point engine
+- **i64** storage: 32 integer bits (signed) + 32 fractional bits
+- **±2³¹ range**, **~2.33×10⁻¹⁰ precision** (~9 decimal digits)
+- **i128 intermediates** for multiplication to prevent overflow
+- **CORDIC** for sin/cos/atan (24 iterations, full precision)
+- **Taylor series** for exp (12 terms) and ln (20 terms, with range reduction to [1/√2, √2))
+- Zero `unsafe`, zero HAL imports, zero heap — pure stack-allocated arithmetic
+- Trailing zeros stripped from output (`2.5` not `2.500000`)
+
+### Hardware interface
+- **UART console**: 115200-8-N-1 interactive terminal, type expressions and see results
+- **96×16 OLED display**: I2C-driven OSRAM Pictiva SSD0303 with 5×7 bitmap font
+- Pretty-printed formulas with π glyph, ×÷− symbols, and tall ∫/Σ notation
+- **Scratch buffers** pre-allocated in static RAM to avoid stack overflow on 8 KB SRAM
+- No heap, no allocator, no OS — fully deterministic, all memory static
+
 ## Safety contract
 
 NumCore enforces a strict **hardware access boundary**:
@@ -25,18 +103,6 @@ The current firmware targets the **Luminary Micro Stellaris LM3S811** (ARM Corte
 | `ui/`     | No          | Font, formula renderer |
 
 To port: rewrite `hal/` for the new MCU, update `boot.rs` to match the new vector table and memory layout, and optionally adjust `link.x`. Nothing else changes.
-
-## Features
-
-- **Q31.32 fixed-point arithmetic** — 9 decimal digits of precision, ±2³¹ range, no floating-point hardware required
-- **Expression evaluator** — full recursive-descent parser with PEMDAS precedence and right-associative exponentiation
-- **70+ built-in functions** — trig (sin/cos/tan + inverses + hyperbolics), log/ln/log2/exp, floor/ceil/round, deg/rad conversion
-- **Statistical distributions** — binomial probability, Poisson probability, chi-squared CDF, log-gamma function
-- **Loop aggregates** — summation (Σ) and numeric integration (∫ via Simpson's rule) over register-bound variables
-- **26 variable registers** (A–Z) plus automatic `Ans` storage
-- **Interactive UART terminal** — type expressions, get results at 115200 baud
-- **96×16 OLED display** — I2C-driven OSRAM Pictiva SSD0303, with 5×7 bitmap font and pretty-printed formulas
-- **No heap, no allocator, no OS** — all memory statically allocated, deterministic execution
 
 ## Quick start
 
@@ -103,16 +169,6 @@ cat test_inputs.txt | qemu-system-arm \
 | Document | Contents |
 |----------|----------|
 | `docs/ARCHITECTURE.md` | Full layered architecture, data flow, memory layout, design decisions |
-| `docs/CONTRIBUTING.md` | Development setup, coding standards, testing, PR process, roadmap |
+| `docs/CONTRIBUTING.md` | Development setup, coding standards, testing, PR process |
 | `docs/HACKING.md`      | Day-to-day commands, QEMU tips, debugging, adding functions/peripherals |
-
-## Project status
-
-- [x] Boot layer: vector table, `.bss`/`.data` init, Reset handler
-- [x] HAL: UART, I2C, GPIO, clock configuration, OLED driver
-- [x] Runtime: event loop, state machine, input handling
-- [x] Math engine: Q31.32 fixed-point, lexer, parser, evaluator
-- [x] UI: 5×7 bitmap font, formula renderer, Σ/∫ glyphs
-- [ ] Graphing mode
-- [ ] Unit tests on host (math engine already hardware-independent)
-- [ ] Advanced calculator modes (scientific, graphing)
+| `ROADMAP.md`           | Future development plans and milestones |
