@@ -191,7 +191,7 @@ pub fn tokenise_expression(expression: &[u8], mut result: &mut LexResult) -> Opt
 /// A minus is unary when it appears:
 ///   - At the very start of the expression (no prior tokens)
 ///   - After another operator (+, −, *, /, ^, %, unary−)
-///   - After an opening parenthesis
+///   - After an opening parenthesis or comma (argument separator)
 fn is_unary_position(result: &LexResult) -> bool {
     if result.token_count == 0 {
         return true;
@@ -206,6 +206,7 @@ fn is_unary_position(result: &LexResult) -> bool {
             | Token::Caret
             | Token::UnaryMinus
             | Token::LeftParen
+            | Token::Comma
     )
 }
 
