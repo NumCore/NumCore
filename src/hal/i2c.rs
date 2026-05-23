@@ -44,6 +44,9 @@ const I2C_MDR_OFFSET: u32 = 0x008;
 /// Master Timer Period register — sets SCL frequency.
 const I2C_MTPR_OFFSET: u32 = 0x00C;
 
+/// Master Configuration register — enables master-mode operation.
+const I2C_MCR_OFFSET: u32 = 0x020;
+
 // ─── MCS bit masks ────────────────────────────────────────────────────────────
 
 /// MCS write: initiate a burst transmit START condition.
@@ -60,6 +63,9 @@ const I2C_MCS_BUS_BUSY: u32 = 1 << 6;
 
 /// MCS read: master busy flag — a transfer is in progress.
 const I2C_MCS_MASTER_BUSY: u32 = 1 << 0;
+
+/// MCR bit 4: enable I2C master function.
+const I2C_MCR_MASTER_ENABLE: u32 = 1 << 4;
 
 // ─── GPIO pins for I2C0 ───────────────────────────────────────────────────────
 
@@ -93,8 +99,8 @@ pub fn initialise_i2c() {
     // Set SCL frequency.
     mmio::write_register(I2C0_MASTER_BASE, I2C_MTPR_OFFSET, I2C_TIMER_PERIOD_100KHZ);
 
-    // TODO: set MCS MASTER_ENABLE bit to bring the master block online.
-    // Reference: LM3S811 datasheet section 15.4 "Initialization and Configuration"
+    // Enable master-mode operation.
+    mmio::write_register(I2C0_MASTER_BASE, I2C_MCR_OFFSET, I2C_MCR_MASTER_ENABLE);
 }
 
 /// Transmit a single byte to the device at `device_address`.
@@ -108,7 +114,11 @@ pub fn initialise_i2c() {
 /// # Status: STUB — not yet implemented.
 pub fn send_byte(device_address: u8, byte: u8) {
     // Step 1: Set target address with write bit (bit 0 = 0).
-    mmio::write_register(I2C0_MASTER_BASE, I2C_MSA_OFFSET, (device_address as u32) << 1);
+    mmio::write_register(
+        I2C0_MASTER_BASE,
+        I2C_MSA_OFFSET,
+        (device_address as u32) << 1,
+    );
 
     // Step 2: Load the data byte.
     mmio::write_register(I2C0_MASTER_BASE, I2C_MDR_OFFSET, byte as u32);
@@ -130,10 +140,16 @@ pub fn send_byte(device_address: u8, byte: u8) {
 ///
 /// # Status: STUB — not yet implemented.
 pub fn send_bytes(device_address: u8, bytes: &[u8]) {
-    if bytes.is_empty() { return; }
+    if bytes.is_empty() {
+        return;
+    }
 
     // Set target address (write mode).
-    mmio::write_register(I2C0_MASTER_BASE, I2C_MSA_OFFSET, (device_address as u32) << 1);
+    mmio::write_register(
+        I2C0_MASTER_BASE,
+        I2C_MSA_OFFSET,
+        (device_address as u32) << 1,
+    );
 
     let last_index = bytes.len() - 1;
     for (index, &byte) in bytes.iter().enumerate() {

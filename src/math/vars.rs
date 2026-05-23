@@ -36,7 +36,7 @@ pub struct VariableStore {
 
 impl VariableStore {
     /// Create an empty variable store — all registers zero, Ans undefined.
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             last_answer: 0,
             has_last_answer: false,
@@ -46,7 +46,11 @@ impl VariableStore {
 
     /// Read the Ans variable. Returns None if no evaluation has occurred yet.
     pub fn read_ans(&self) -> Option<i64> {
-        if self.has_last_answer { Some(self.last_answer) } else { None }
+        if self.has_last_answer {
+            Some(self.last_answer)
+        } else {
+            None
+        }
     }
 
     /// Write the Ans variable. Called by the runtime after every evaluation.
@@ -65,8 +69,11 @@ impl VariableStore {
     /// Returns false if the letter is outside A–Z.
     pub fn write_register(&mut self, letter: u8, value: i64) -> bool {
         match register_letter_to_index(letter) {
-            Some(index) => { self.user_registers[index] = value; true }
-            None        => false,
+            Some(index) => {
+                self.user_registers[index] = value;
+                true
+            }
+            None => false,
         }
     }
 }
@@ -75,8 +82,7 @@ impl VariableStore {
 /// Returns None if the letter is outside A–Z.
 fn register_letter_to_index(letter: u8) -> Option<usize> {
     let upper = letter.to_ascii_uppercase();
-    if upper >= FIRST_REGISTER_LETTER
-        && upper < FIRST_REGISTER_LETTER + USER_REGISTER_COUNT as u8 {
+    if upper >= FIRST_REGISTER_LETTER && upper < FIRST_REGISTER_LETTER + USER_REGISTER_COUNT as u8 {
         Some((upper - FIRST_REGISTER_LETTER) as usize)
     } else {
         None

@@ -66,7 +66,7 @@ pub struct CalcState {
 
 impl CalcState {
     /// Create a fresh state as if just powered on.
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             input_buffer: [0u8; INPUT_BUFFER_CAPACITY],
             input_length: 0,
@@ -89,7 +89,9 @@ impl CalcState {
     /// Append one character to the input buffer.
     /// Returns `true` if stored, `false` if buffer was full.
     pub fn append_character_to_input(&mut self, character: u8) -> bool {
-        if self.input_length >= INPUT_BUFFER_CAPACITY - 1 { return false; }
+        if self.input_length >= INPUT_BUFFER_CAPACITY - 1 {
+            return false;
+        }
         self.input_buffer[self.input_length] = character;
         self.input_length += 1;
         true
@@ -98,7 +100,9 @@ impl CalcState {
     /// Remove the last character from the input buffer.
     /// Returns `true` if a character was removed, `false` if already empty.
     pub fn remove_last_input_character(&mut self) -> bool {
-        if self.input_length == 0 { return false; }
+        if self.input_length == 0 {
+            return false;
+        }
         self.input_length -= 1;
         self.input_buffer[self.input_length] = 0;
         true
@@ -111,7 +115,9 @@ impl CalcState {
 
     /// Clear the input buffer for a new expression.
     pub fn clear_input(&mut self) {
-        for byte in &mut self.input_buffer[..self.input_length] { *byte = 0; }
+        for byte in &mut self.input_buffer[..self.input_length] {
+            *byte = 0;
+        }
         self.input_length = 0;
     }
 
@@ -143,5 +149,11 @@ impl CalcState {
     pub fn switch_mode(&mut self, new_mode: CalculatorMode) {
         self.active_mode = new_mode;
         self.clear_input();
+    }
+}
+
+impl Default for CalcState {
+    fn default() -> Self {
+        Self::new()
     }
 }

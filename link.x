@@ -9,6 +9,10 @@ MEMORY
     RAM   : ORIGIN = 0x20000000, LENGTH = 8K
 }
 
+_stack_size = 2K;
+_stack_start = ORIGIN(RAM) + LENGTH(RAM);
+_stack_end = _stack_start - _stack_size;
+
 /* Cortex-M vector table must start at the very beginning of Flash. */
 ENTRY(Reset)
 
@@ -47,6 +51,11 @@ SECTIONS
         *(.bss .bss.*);
         *(COMMON);
         _ebss = .;
+    } > RAM
+
+    .stack _stack_end (NOLOAD) :
+    {
+        . = . + _stack_size;
     } > RAM
 
     /* LMA base used by the startup copy loop */

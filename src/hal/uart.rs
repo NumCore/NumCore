@@ -154,3 +154,14 @@ pub fn receive_byte_blocking() -> u8 {
     // Read the byte from the data register. Bits 8-11 are error flags — mask them.
     (mmio::read_register(UART0_BASE, UART_DR_OFFSET) & 0xFF) as u8
 }
+
+/// Receive a single byte from UART0 if one is already available.
+///
+/// Returns immediately with `None` when the RX FIFO is empty.
+pub fn poll_byte() -> Option<u8> {
+    if mmio::read_register(UART0_BASE, UART_FR_OFFSET) & UART_FLAG_RX_FIFO_EMPTY != 0 {
+        return None;
+    }
+
+    Some((mmio::read_register(UART0_BASE, UART_DR_OFFSET) & 0xFF) as u8)
+}
