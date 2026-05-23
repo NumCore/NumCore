@@ -144,13 +144,13 @@ fn handle_expression_submission(state: &mut CalcState) {
     // so we borrow the fields directly. This is safe — each borrow touches a
     // completely separate region of the CalcState struct.
     let result = {
-        let variables = &state.variables as *const _;
+        let variables = &mut state.variables as *mut _;
         let lex_scratch = &mut state.lex_scratch as *mut _;
         let parse_scratch = &mut state.parse_scratch as *mut _;
         unsafe {
             engine::evaluate_expression(
                 expr_slice,
-                &*variables,
+                &mut *variables,
                 &mut *lex_scratch,
                 &mut *parse_scratch,
             )

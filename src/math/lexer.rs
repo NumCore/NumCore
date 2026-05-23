@@ -7,13 +7,13 @@
 //!   Operators  — +  -  *  /  ^  %
 //!   Grouping   — (  )
 //!   Functions  — sin cos tan asin acos atan sqrt abs log ln log2 exp
-//!                floor ceil round deg rad
+//!                floor ceil round deg rad sto
 //!   Constants  — pi  e
-//!   Variables  — Ans  A B C D E F
+//!   Variables  — Ans  A B C D E F G H I J K L M N O P Q R S T U V W X Y Z
 //!
 //! ## Lexing rules
 //!   - Whitespace is discarded between tokens
-//!   - Identifiers are case-insensitive (SIN = sin = Sin)
+//!   - Identifiers are case-sensitive (sin only, not SIN or Sin)
 //!   - A minus sign following an operator, opening paren, or at the
 //!     start of the expression is classified as UnaryMinus, not Minus,
 //!     so the parser can build a unary-negation node correctly
@@ -87,6 +87,7 @@ pub enum Token {
     FuncPoissonP, // poissonP(lambda, k)
     FuncChiCDF,   // chiCDF(x, k)
     FuncNthRoot,  // nthRoot(x, n)
+    FuncSto,      // sto(value, var) — store value into a register
     FuncLnGamma,  // lnGamma(x)
 
     // ── Named constants ──
@@ -95,7 +96,7 @@ pub enum Token {
 
     // ── Variables ──
     VarAns,          // Ans
-    VarRegister(u8), // A–F (stores the letter byte)
+    VarRegister(u8), // A–Z (stores the letter byte)
 }
 
 // ─── LexResult ────────────────────────────────────────────────────────────────
@@ -112,7 +113,7 @@ pub struct LexResult {
 ///
 /// Resets `result` before use so stale tokens from prior calls are never visible.
 /// Returns `None` if any unrecognised character or malformed number is found.
-/// Whitespace is discarded. Identifiers are matched case-insensitively.
+/// Whitespace is discarded. Identifiers are case-sensitive.
 pub fn tokenise_expression(expression: &[u8], mut result: &mut LexResult) -> Option<()> {
     // Reset scratch buffer — must clear token_count so old tokens are invisible.
     result.token_count = 0;
@@ -260,7 +261,9 @@ fn parse_number_literal(slice: &[u8]) -> Option<(i64, usize)> {
 
 /// Parse an identifier (function name, constant, or variable) from `slice`.
 ///
-/// Identifiers are ASCII alphabetic sequences, matched case-insensitively.
+/// Identifiers are case-sensitive. Function names and constants (`sin`, `pi`,
+/// `e`, `ans`, `sto`) are always lowercase. Single uppercase letters A–Z
+/// are variable registers. Single lowercase letters are unrecognised.
 /// Returns (Token, bytes_consumed) or None if unrecognised.
 fn parse_identifier(slice: &[u8]) -> Option<(Token, usize)> {
     // Identifiers start with a letter and may continue with letters or digits.
@@ -276,16 +279,10 @@ fn parse_identifier(slice: &[u8]) -> Option<(Token, usize)> {
         return None;
     }
 
-    // Copy to a small stack buffer and lowercase for case-insensitive matching.
-    // Maximum identifier length we support is 5 characters (e.g. "floor", "round").
     if len > 8 {
         return None;
     } // Longest identifier: "poissonp" = 8 chars
-    let mut lower = [0u8; 8];
-    for i in 0..len {
-        lower[i] = slice[i].to_ascii_lowercase();
-    }
-    let ident = &lower[..len];
+    let ident = &slice[..len];
 
     let token = match ident {
         b"log2" => Token::FuncLog2, // Must be before "log" to avoid prefix match
@@ -303,6 +300,7 @@ fn parse_identifier(slice: &[u8]) -> Option<(Token, usize)> {
         b"atan" => Token::FuncAtan,
         b"sqrt" => Token::FuncSqrt,
         b"nthroot" => Token::FuncNthRoot,
+        b"sto" => Token::FuncSto,
         b"abs" => Token::FuncAbs,
         b"log" => Token::FuncLog,
         b"ln" => Token::FuncLn,
@@ -321,10 +319,9 @@ fn parse_identifier(slice: &[u8]) -> Option<(Token, usize)> {
         b"pi" => Token::ConstPi,
         b"ans" => Token::VarAns,
         b"e" => Token::ConstE,
-        // Single-letter variable registers A–Z.
-        // Any single letter not matching a function name or constant becomes a register.
-        _ if len == 1 && lower[0] >= b'a' && lower[0] <= b'z' => {
-            Token::VarRegister(lower[0].to_ascii_uppercase())
+        // Single uppercase letter = variable register A–Z.
+        _ if len == 1 && ident[0] >= b'A' && ident[0] <= b'Z' => {
+            Token::VarRegister(ident[0])
         }
         _ => return None, // Unrecognised identifier
     };

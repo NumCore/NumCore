@@ -136,12 +136,16 @@ The `LexResult` and `ParseTree` buffers live in `CalcState` to avoid stack alloc
 ## Adding a new math function
 
 1. Add the function token to `Token` in `src/math/lexer.rs`
-2. Add the identifier match in `parse_identifier()` (case-insensitive)
-3. Add the AST node variant in `parser.rs` (or reuse an existing pattern)
+2. Add the identifier match in `parse_identifier()` — identifiers are **case-sensitive**; function names must be lowercase
+3. Add the AST node variant in `parser.rs` (or reuse an existing pattern). If the function takes a register as an argument (like `sto`), add a dedicated node variant rather than reusing `TwoArgFunction`
 4. Add the function to `MathFunction` enum and `token_to_single_arg_function()`
 5. Implement the logic in `fixed_point.rs` or `distributions.rs`
-6. Wire it up in `evaluator.rs` `apply_function()`
+6. Wire it up in `evaluator.rs` `apply_function()` (or in `evaluate_node()` match for special nodes like `Store`)
 7. Add to the welcome banner in `runtime/mod.rs`
+
+## Adding implicit multiplication support for a new token type
+
+If you add a new token that can start a primary expression (e.g. a new literal type), update `is_primary_start()` in `src/math/parser.rs`. This function is the single gate for implicit multiplication detection in `parse_term()`.
 
 ## Adding a new HAL peripheral
 

@@ -29,7 +29,7 @@ use super::{evaluator, lexer, parser};
 /// Returns `Some(q31_32_result)` on success, `None` on any error.
 pub fn evaluate_expression(
     expression: &[u8],
-    variables: &VariableStore,
+    variables: &mut VariableStore,
     lex_scratch: &mut LexResult,
     parse_scratch: &mut ParseTree,
 ) -> Option<i64> {

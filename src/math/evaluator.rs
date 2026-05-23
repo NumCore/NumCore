@@ -6,9 +6,11 @@
 //!
 //! The evaluator is the only math stage that:
 //!   - Can fail at runtime (division by zero, domain errors like sqrt(-1))
-//!   - Reads variable values (via the VariableStore reference)
+//!   - Reads and writes variable values (via the VariableStore reference)
 //!
-//! It never writes variables — that is the runtime's responsibility.
+//! The `sto()` function writes to a register. Loop aggregates write to a
+//! local copy of the store that is discarded after the loop completes, so
+//! loop variables are scoped to their aggregate expression.
 
 use super::distributions;
 use super::fixed_point as fp;
@@ -20,21 +22,25 @@ use super::vars::VariableStore;
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
-/// Evaluate a `ParseTree` given a read-only view of the variable store.
+/// Evaluate a `ParseTree` given a mutable view of the variable store.
+///
+/// The store is mutable so that `sto()` can write to registers during
+/// evaluation. Loop aggregates operate on a local copy, so loop-variable
+/// writes never escape the aggregate expression.
 ///
 /// Returns the Q31.32 result, or `None` on:
 ///   - Division by zero or modulo by zero
 ///   - Domain error (sqrt of negative, log of non-positive, asin/acos out of range)
 ///   - Integer overflow in a checked operation
 ///   - Reference to `Ans` before any expression has been evaluated
-pub fn evaluate_tree(tree: &ParseTree, variables: &VariableStore) -> Option<i64> {
+pub fn evaluate_tree(tree: &ParseTree, variables: &mut VariableStore) -> Option<i64> {
     evaluate_node(tree, tree.root_index, variables)
 }
 
 // ─── Tree walker ──────────────────────────────────────────────────────────────
 
 /// Recursively evaluate the node at `node_index`.
-fn evaluate_node(tree: &ParseTree, node_index: usize, vars: &VariableStore) -> Option<i64> {
+fn evaluate_node(tree: &ParseTree, node_index: usize, vars: &mut VariableStore) -> Option<i64> {
     match tree.nodes[node_index] {
         // ── Base cases (leaves) ───────────────────────────────────────────────
         AstNode::Literal(value) => Some(value),
@@ -95,6 +101,16 @@ fn evaluate_node(tree: &ParseTree, node_index: usize, vars: &VariableStore) -> O
             let a0 = evaluate_node(tree, arg_indices[0], vars)?;
             let a1 = evaluate_node(tree, arg_indices[1], vars)?;
             apply_two_arg_function(function, a0, a1)
+        }
+
+        // ── Store value into register ─────────────────────────────────────────
+        AstNode::Store {
+            value_index,
+            register,
+        } => {
+            let value = evaluate_node(tree, value_index, vars)?;
+            vars.write_register(register, value);
+            Some(value)
         }
 
         // ── Loop aggregates (summation and integration) ───────────────────────
@@ -234,10 +250,11 @@ fn evaluate_loop_aggregate(
     end: i64,
     body_index: usize,
     tree: &ParseTree,
-    vars: &VariableStore,
+    vars: &mut VariableStore,
 ) -> Option<i64> {
-    // We need to write the loop variable at each step, but VariableStore is
-    // immutable here. We build a local mutable copy for the duration of the loop.
+    // The loop variable must be scoped to this aggregate. Clone the store
+    // and use the local copy so that sto() inside the body writes to the
+    // loop-local copy, not the caller's store.
     let mut local_vars = *vars;
 
     match operation {
@@ -266,7 +283,7 @@ fn evaluate_loop_aggregate(
             let mut k = start_int;
             while k <= end_int {
                 local_vars.write_register(variable, fp::from_integer(k));
-                let term = evaluate_node(tree, body_index, &local_vars)?;
+                let term = evaluate_node(tree, body_index, &mut local_vars)?;
                 accumulator = accumulator.checked_add(term)?;
                 k += 1;
             }
@@ -282,10 +299,10 @@ fn evaluate_loop_aggregate(
 
             // endpoints
             local_vars.write_register(variable, start);
-            let f_start = evaluate_node(tree, body_index, &local_vars)?;
+            let f_start = evaluate_node(tree, body_index, &mut local_vars)?;
 
             local_vars.write_register(variable, end);
-            let f_end = evaluate_node(tree, body_index, &local_vars)?;
+            let f_end = evaluate_node(tree, body_index, &mut local_vars)?;
 
             // IMPORTANT: keep accumulator in i64 (NOT i128)
             let mut sum = f_start + f_end;
@@ -296,7 +313,7 @@ fn evaluate_loop_aggregate(
                 let x = start.checked_add(fp::multiply(i_fp, h))?;
 
                 local_vars.write_register(variable, x);
-                let f_x = evaluate_node(tree, body_index, &local_vars)?;
+                let f_x = evaluate_node(tree, body_index, &mut local_vars)?;
 
                 let coeff = if i % 2 == 1 { 4 } else { 2 };
 

@@ -162,9 +162,9 @@ expression bytes
 | `fixed_point.rs` | Q31.32 arithmetic: multiply, divide, sqrt, trig (CORDIC), exp (Taylor), log (Taylor), rounding, formatting |
 | `lexer.rs`       | Expression string → typed `Token` stream (32-token budget)  |
 | `parser.rs`      | Token stream → `AstNode` arena (64-node budget), recursive-descent with precedence climbing |
-| `evaluator.rs`   | AST → Q31.32 result, operator/function dispatch, loop aggregate evaluation |
+| `evaluator.rs`   | AST → Q31.32 result, operator/function dispatch, `sto()` register write, loop aggregate evaluation |
 | `engine.rs`      | Public API: `evaluate_expression()`, `format_result()`       |
-| `vars.rs`        | `VariableStore`: Ans + 26 registers (A–Z), `Copy` for loop-variable shadowing |
+| `vars.rs`        | `VariableStore`: Ans + 26 registers (uppercase A–Z), `Copy` for loop-variable shadowing |
 | `distributions.rs`| `ln_gamma`, `ln_factorial`, `binomial_probability`, `poisson_probability`, `chi_squared_cdf` |
 
 **Fixed-point format (Q31.32):**
@@ -180,21 +180,45 @@ expression bytes
 - Exact-table lookup for multiples of 30° and 45°
 - `atan` uses CORDIC vectoring mode
 
+**Lexer rules:**
+- Identifiers are **case-sensitive**. Function names and constants (`sin`, `pi`, `e`, `ans`, `sto`) are all lowercase. Single uppercase letters A–Z are variable registers. Single lowercase letters are unrecognised.
+- `e` → Euler's constant; `E` → variable register E. Previously identifiers were lowercased, making `e` and `E` indistinguishable.
+
 **Parser grammar:**
 ```
 expression  =  term   ( ( '+' | '−' ) term )*
-term        =  power  ( ( '*' | '/' | '%' ) power )*
+term        =  power  ( ( '*' | '/' | '%' | implicit_mult ) power )*
 power       =  unary  ( '^' power )*          ← right-associative
 unary       =  '−' unary  |  primary
 primary     =  NUMBER | CONSTANT | VARIABLE
             |  FUNCTION '(' expression ')'
+            |  sto '(' expression ',' VARIABLE ')'
             |  '(' expression ')'
 ```
+
+Implicit multiplication fires when a primary expression is immediately followed by the start of another primary with no explicit operator. The `is_primary_start()` helper in `parser.rs` classifies tokens (Number, VarRegister, ConstPi, ConstE, LeftParen, all function tokens) to detect adjacency. This makes `3(5)`, `(a)b`, `(x)(y)`, `2sin(x)` all parse as multiplication without requiring `*`.
+
+**Evaluator mutability:**
+The evaluator takes `&mut VariableStore` rather than `&VariableStore` because `sto()` writes into a register during evaluation. Loop aggregates (`sum`, `int`) still clone the store to scope loop-variable writes.
+
+**AST node types:**
+
+| Node | Purpose |
+|------|---------|
+| `Literal(i64)` | Numeric constant |
+| `Constant(MathConstant)` | `pi` or `e` |
+| `Variable(VariableRef)` | `Ans` or register A–Z |
+| `UnaryNegation` | Prefix `−` |
+| `BinaryOperation` | `+` `−` `*` `/` `%` `^` |
+| `FunctionCall` | Single-argument functions |
+| `TwoArgFunction` | Two-argument functions (`nthroot`, `poissonp`, `chicdf`) |
+| `ThreeArgFunction` | Three-argument functions (`binomp`) |
+| `Store` | `sto(value, register)` — stores value, returns it |
+| `LoopAggregate` | `sum()` and `int()` with bound loop variable |
 
 **Rules:**
 - Zero `unsafe` code anywhere in this module
 - Zero imports from `hal/`, `runtime/`, `ui/`, or `modes/`
-- All functions are pure (no side effects, no global mutable state)
 - All memory is stack-allocated — no heap required
 
 ### Layer 7 — UI (`ui/`)
@@ -234,8 +258,9 @@ runtime::handle_event()
 │         ↓ LexResult
 │     parser::parse_token_stream()
 │         ↓ ParseTree
-│     evaluator::evaluate_tree()
+│     evaluator::evaluate_tree()   ← reads & writes VariableStore
 │         ↓ Q31.32
+│     runtime records Ans (+ sto register writes persist)
 │     engine::format_result()
 │         ↓ byte slice
 │     hal::uart::transmit_bytes()   ← safe HAL call

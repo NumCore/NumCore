@@ -130,8 +130,8 @@ cargo build --release && qemu-system-arm \
 ### What to include in your PR
 
 - If adding a HAL feature: include the relevant register constants and bit masks
-- If adding a math function: include test vectors in the PR description
-- If touching the parser: include example expressions that exercise the new grammar
+- If adding a math function: include test vectors in the PR description (for `sto`, verify the register holds the stored value in a subsequent expression)
+- If touching the parser: include example expressions that exercise the new grammar (including implicit multiplication: `3(5)`, `(a)b`, `2sin(x)`, `sto()`, case-sensitive identifier edge cases)
 - If adding UI rendering: include a screenshot or ASCII-art of the display output
 
 ## Getting help

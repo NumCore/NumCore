@@ -1,6 +1,6 @@
 # Roadmap
 
-## Recent milestones (v0.2 → v0.3)
+## Recent milestones (v0.2 → v0.4)
 
 - [x] Math engine: Q31.32 fixed-point, lexer, parser, evaluator, distributions
 - [x] Boot layer: vector table, `.bss`/`.data` init, Reset handler
@@ -11,6 +11,9 @@
 - [x] `natural_log` range reduction fix for sub-ppm accuracy on all inputs
 - [x] Trailing-zero stripping in formatted output
 - [x] Full documentation: README, ARCHITECTURE, CONTRIBUTING, HACKING, ROADMAP
+- [x] Case-sensitive identifiers — `e` is Euler's constant, `E` is register E
+- [x] `sto(value, var)` — store a value into a register A–Z, returns the value
+- [x] Implicit multiplication — `3(5)`, `(a)b`, `(x)(y)`, `2sin(x)` all work without `*`
 
 ## Short-term
 
