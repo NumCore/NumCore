@@ -321,9 +321,7 @@ fn parse_identifier(slice: &[u8]) -> Option<(Token, usize)> {
         b"ans" => Token::VarAns,
         b"e" => Token::ConstE,
         // Single uppercase letter = variable register A–Z.
-        _ if len == 1 && ident[0] >= b'A' && ident[0] <= b'Z' => {
-            Token::VarRegister(ident[0])
-        }
+        _ if len == 1 && ident[0] >= b'A' && ident[0] <= b'Z' => Token::VarRegister(ident[0]),
         _ => return None, // Unrecognised identifier
     };
 
