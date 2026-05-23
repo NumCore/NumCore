@@ -61,7 +61,7 @@ fn print_welcome_banner() {
     uart::transmit_bytes(b"        sinh cosh tanh asinh acosh atanh\r\n");
     uart::transmit_bytes(b"        sqrt abs exp log ln log2\r\n");
     uart::transmit_bytes(b"        floor ceil round deg rad\r\n");
-    uart::transmit_bytes(b"        binomp poissonp chicdf sum int\r\n");
+    uart::transmit_bytes(b"        nthroot binomp poissonp chicdf sum int\r\n");
     uart::transmit_bytes(b"  Const: pi  e\r\n");
     uart::transmit_bytes(b"  Vars : Ans  A B C D E F\r\n");
     uart::transmit_bytes(b"===========================================\r\n\r\n");

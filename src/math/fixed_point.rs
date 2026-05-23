@@ -260,7 +260,40 @@ pub fn nthroot(x: i64, n: i64) -> Option<i64> {
     if n == 0 {
         return None;
     }
-    power(x, divide(FIXED_ONE, n)?)
+
+    let n_is_integer = (n & (SCALE - 1)) == 0;
+    let x_neg = x < 0;
+    let x_zero = x == 0;
+
+    if x_zero {
+        return if n > 0 { Some(0) } else { None };
+    }
+
+    if n_is_integer {
+        let n_int = to_integer_truncated(n);
+        let n_odd = (n_int & 1) != 0;
+
+        if n_odd {
+            // Odd integer root: x can be any real number.
+            // For x < 0 compute -(|x|)^(1/n).
+            if x_neg {
+                return power(-x, divide(FIXED_ONE, n)?).map(|v| -v);
+            }
+            return power(x, divide(FIXED_ONE, n)?);
+        } else {
+            // Even integer root: x must be >= 0.
+            if x_neg {
+                return None;
+            }
+            return power(x, divide(FIXED_ONE, n)?);
+        }
+    } else {
+        // Non-integer root: x must be > 0.
+        if x_neg || x_zero {
+            return None;
+        }
+        power(x, divide(FIXED_ONE, n)?)
+    }
 }
 
 /// Integer square root of a non-negative i128, returning the floor.
@@ -673,8 +706,10 @@ pub fn natural_exp(x: i64) -> i64 {
 
 /// ln(x) for Q31.32 x > 0. Returns None for x ≤ 0.
 ///
-/// Range reduction: x = 2^k × m, m ∈ [1, 2).
-/// ln(m) via 16-term Taylor series for ln(1+t), t = m−1 ∈ [0,1).
+/// Range reduction: x = 2^k × m, m ∈ [1/√2, √2) so that
+/// t = m−1 is bounded to |t| ≤ √2−1 ≈ 0.414, guaranteeing fast
+/// Taylor-series convergence.
+/// ln(m) via 20-term alternating Taylor series for ln(1+t).
 /// All arithmetic in i128.
 pub fn natural_log(x: i64) -> Option<i64> {
     if x <= 0 {
@@ -693,14 +728,21 @@ pub fn natural_log(x: i64) -> Option<i64> {
         k -= 1;
     }
 
-    // t = m − 1 as Q31.32, range [0, SCALE).
-    let t = (m - SCALE) as i128;
-    // TODO: worry about whatever this is -> let s = SCALE as i128;
+    // Further reduce to [SCALE/√2, SCALE×√2) so that |t| is bounded
+    // by √2−1 ≈ 0.414 instead of 1.0.
+    if m > FIXED_SQRT2 {
+        m >>= 1;
+        k += 1;
+    }
 
-    // 16-term Taylor: ln(1+t) = Σ (−1)^(n+1) × t^n / n
+    // t = m − 1 as Q31.32, range [−0.293×SCALE, 0.414×SCALE).
+    let t = (m - SCALE) as i128;
+
+    // 20-term Taylor: ln(1+t) = Σ (−1)^(n+1) × t^n / n
+    // With |t| ≤ 0.414 the 20th term is < 1 Q31.32 LSB.
     let mut t_power = t;
     let mut result: i128 = 0;
-    for n in 1i128..=16 {
+    for n in 1i128..=20 {
         let term = t_power / n;
         if n % 2 == 1 {
             result += term;
@@ -829,7 +871,7 @@ pub fn format_fixed_point(value: i64, buffer: &mut [u8; 24]) -> &[u8] {
         buffer[int_start..pos].reverse();
     }
 
-    // Write fractional part (6 digits, trailing zeros stripped).
+    // Write fractional part — up to 6 digits, trailing zeros stripped.
     if frac_decimal > 0 {
         buffer[pos] = b'.';
         pos += 1;
