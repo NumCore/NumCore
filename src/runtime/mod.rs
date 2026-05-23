@@ -52,7 +52,7 @@ fn initialise_all_hardware() {
 fn print_welcome_banner() {
     uart::transmit_bytes(b"\r\n");
     uart::transmit_bytes(b"===========================================\r\n");
-    uart::transmit_bytes(b"  NumCore v0.2\r\n");
+    uart::transmit_bytes(b"  NumCore v0.4\r\n");
     uart::transmit_bytes(b"  LM3S811  Cortex-M3  (Rust)\r\n");
     uart::transmit_bytes(b"  Q31.32 fixed-point  |  PEMDAS\r\n");
     uart::transmit_bytes(b"===========================================\r\n");
@@ -63,7 +63,9 @@ fn print_welcome_banner() {
     uart::transmit_bytes(b"        floor ceil round deg rad\r\n");
     uart::transmit_bytes(b"        nthroot binomp poissonp chicdf sum int\r\n");
     uart::transmit_bytes(b"  Const: pi  e\r\n");
-    uart::transmit_bytes(b"  Vars : Ans  A B C D E F\r\n");
+    uart::transmit_bytes(b"  Vars : Ans  A B C D E F G H I J K L M\r\n");
+    uart::transmit_bytes(b"         N O P Q R S T U V W X Y Z\r\n");
+    uart::transmit_bytes(b"  Cmd  : sto(value, var)\r\n");
     uart::transmit_bytes(b"===========================================\r\n\r\n");
 }
 
