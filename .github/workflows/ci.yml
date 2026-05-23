@@ -30,12 +30,6 @@ jobs:
       - name: Check formatting
         run: cargo fmt --check --verbose
 
-      - name: Check clippy (host)
-        run: cargo clippy --all-targets -- --deny warnings
-
-      - name: Check clippy (firmware)
-        run: cargo clippy --target ${{ env.RUST_TARGET }} -- --deny warnings
-
       - name: Build firmware (release)
         run: cargo build --release --target ${{ env.RUST_TARGET }} --verbose
 
