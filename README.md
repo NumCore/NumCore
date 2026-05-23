@@ -71,10 +71,9 @@ Bare-metal scientific calculator firmware for the **LM3S811** ARM Cortex-M3 micr
 - **CORDIC** for sin/cos/atan (24 iterations, full precision)
 - **Taylor series** for exp (12 terms) and ln (20 terms, with range reduction to [1/√2, √2))
 - Zero `unsafe`, zero HAL imports, zero heap — pure stack-allocated arithmetic
-- Trailing zeros stripped from output (`2.5` not `2.500000`)
 
 ### Hardware interface
-- **UART console**: 115200-8-N-1 interactive terminal, type expressions and see results
+- **UART console**: Through terminal emulator on serial0, type expressions and see results
 - **96×16 OLED display**: I2C-driven OSRAM Pictiva SSD0303 with 5×7 bitmap font
 - Pretty-printed formulas with π glyph, ×÷− symbols, and tall ∫/Σ notation
 - **Scratch buffers** pre-allocated in static RAM to avoid stack overflow on 8 KB SRAM
