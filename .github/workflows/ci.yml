@@ -1,5 +1,7 @@
 name: CI
 on: [push, pull_request]
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -9,69 +11,57 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+    - uses: actions/checkout@v4
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: ${{ env.RUST_TARGET }}
+        override: true
+    - name: Install QEMU and other tools
+      run: sudo apt-get update && sudo apt-get install -y qemu-system-arm
+    - name: Cache cargo registry and target
+      uses: Swatinem/rust-cache@v2
+    - name: Build firmware
+      run: cargo build --release --target ${{ env.RUST_TARGET }} --verbose
+    - name: Run tests in QEMU & verify output
+      run: |
+        OUTPUT_FILE=$(mktemp)
+        timeout 5s qemu-system-arm -M lm3s811evb -nographic -serial mon:stdio \
+        -semihosting-config enable=on,target=native \
+        -kernel target/thumbv7m-none-eabi/release/NumCore \
+        < test_inputs.txt > "$OUTPUT_FILE" 2>&1 || true
+        echo "=== QEMU output ==="
+        cat "$OUTPUT_FILE"
+        echo "==================="
+        expected_strings=(
+          "> 2+2"
+          "= 4"
+          "> sin(pi)"
+          "= 0"
+          "> (2+3)/10"
+          "= 0.5"
+        )
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: thumbv7m-none-eabi
-
-      - name: Cache cargo registry and target
-        uses: Swatinem/rust-cache@v2
-
-      - name: Install QEMU
-        run: sudo apt-get update && sudo apt-get install -y qemu-system-arm
-
-      - name: Build firmware (release)
-        run: cargo build --release --target ${{ env.RUST_TARGET }}
-
-      - name: Run firmware tests in QEMU
-        run: |
-          OUTPUT_FILE=$(mktemp)
-
-          # Feed inputs with delays so the firmware has time to process each one.
-          # sleep 1 lets the banner finish printing before the first input arrives.
-          # sleep 0.3 between expressions gives the firmware time to evaluate and
-          # print the result before the next line is sent.
-          #
-          # Uses -serial stdio (not mon:stdio) so stdin goes straight to the UART
-          # without the QEMU monitor intercepting any of it.
-          (sleep 1
-           echo "2+2";      sleep 0.3
-           echo "sin(pi)";  sleep 0.3
-           echo "(2+3)/10"; sleep 0.3
-          ) | timeout 10s qemu-system-arm \
-                -M lm3s811evb \
-                -nographic \
-                -serial mon:stdio \
-                -kernel target/${{ env.RUST_TARGET }}/release/NumCore \
-              > "$OUTPUT_FILE" 2>&1 || true
-
-          echo "=== QEMU output ==="
-          cat "$OUTPUT_FILE"
-          echo "==================="
-
-          all_passed=true
-
-          check() {
-            local expected="$1"
-            if grep -F "$expected" "$OUTPUT_FILE" > /dev/null; then
-              echo "PASS: '$expected'"
-            else
-              echo "FAIL: '$expected' not found"
-              all_passed=false
-            fi
-          }
-
-          check "= 4"
-          check "= 0"
-          check "= 0.5"
-
-          if [ "$all_passed" = true ]; then
-            echo "All tests passed."
+        all_found=true
+        for expected in "${expected_strings[@]}"; do
+          if grep -F "$expected" "$OUTPUT_FILE" > /dev/null; then
+            echo "Found: $expected"
           else
-            echo "One or more tests failed."
-            exit 1
+            echo "Missing: $expected"
+            all_found=false
           fi
+        done
 
+        if [ "$all_found" = true ]; then
+          echo "All tests passed"
+        else
+          echo "Some tests failed"
+          exit 1
+        fi
+    - name: Clean up
+      if: always()
+      run: |
+        if [ -n "$OUTPUT_FILE" ] && [ -f "$OUTPUT_FILE" ]; then
           rm -f "$OUTPUT_FILE"
+        fi

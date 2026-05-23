@@ -8,15 +8,18 @@
 //!   - Own the main event loop
 //!   - Own and update CalcState (including the variable store)
 //!   - Route input events to handlers
-//!   - (Future) trigger UI re-renders after state changes
+//!   - Trigger UI re-renders after state changes
 
 pub mod event;
 pub mod state;
 
-use crate::hal::uart;
+use crate::hal::{i2c, oled, uart};
 use crate::math::engine;
+use crate::ui::formula;
 use event::{translate_input_byte_to_event, CalcEvent};
 use state::CalcState;
+
+static mut CALCULATOR_STATE: CalcState = CalcState::new();
 
 // ─── Firmware entry point ─────────────────────────────────────────────────────
 
@@ -25,19 +28,25 @@ pub fn start() -> ! {
     initialise_all_hardware();
     print_welcome_banner();
 
-    let mut calculator_state = CalcState::new();
+    // Safety: single-threaded firmware. The runtime takes one exclusive
+    // reference to the global calculator state and never returns.
+    let calculator_state = unsafe { &mut *(&raw mut CALCULATOR_STATE) };
 
     // Print the initial prompt once.
     uart::transmit_bytes(b"> ");
+    render_oled(calculator_state.current_input(), Some(b"ready"));
 
-    run_event_loop(&mut calculator_state)
+    run_event_loop(calculator_state)
 }
 
 /// Initialise every peripheral the firmware uses.
 /// Add new HAL init calls here as peripherals are enabled.
 fn initialise_all_hardware() {
     uart::initialise_uart();
-    // i2c::initialise_i2c();  ← uncomment when OLED driver is ready
+    // ps2::initialise_ps2();
+    i2c::initialise_i2c();
+    oled::initialise_oled();
+    oled::clear_display();
 }
 
 fn print_welcome_banner() {
@@ -63,9 +72,14 @@ fn print_welcome_banner() {
 /// Block on input, translate to events, dispatch handlers. Runs forever.
 fn run_event_loop(calculator_state: &mut CalcState) -> ! {
     loop {
-        let raw_byte = uart::receive_byte_blocking();
-        let event    = translate_input_byte_to_event(raw_byte);
-        handle_event(event, calculator_state);
+        if let Some(raw_byte) = uart::poll_byte() {
+            let event = translate_input_byte_to_event(raw_byte);
+            handle_event(event, calculator_state);
+        }
+
+        // if let Some(scan_code) = ps2::poll_key() {
+        //     handle_event(CalcEvent::KeyboardScancode(scan_code), calculator_state);
+        // }
     }
 }
 
@@ -73,9 +87,12 @@ fn run_event_loop(calculator_state: &mut CalcState) -> ! {
 fn handle_event(event: CalcEvent, state: &mut CalcState) {
     match event {
         CalcEvent::DigitOrOperator(byte) => handle_input_character(byte, state),
-        CalcEvent::Submit                => handle_expression_submission(state),
-        CalcEvent::Backspace             => handle_backspace(state),
-        CalcEvent::Ignored               => {}
+        CalcEvent::KeyboardScancode(byte) => {
+            handle_event(translate_input_byte_to_event(byte), state);
+        }
+        CalcEvent::Submit => handle_expression_submission(state),
+        CalcEvent::Backspace => handle_backspace(state),
+        CalcEvent::Ignored => {}
     }
 }
 
@@ -85,6 +102,7 @@ fn handle_event(event: CalcEvent, state: &mut CalcState) {
 fn handle_input_character(byte: u8, state: &mut CalcState) {
     if state.append_character_to_input(byte) {
         uart::transmit_byte(byte);
+        render_oled(state.current_input(), None);
     }
     // If the buffer is full: silently discard — do NOT echo a character that
     // wasn't stored, as that would make the terminal display lie.
@@ -95,6 +113,7 @@ fn handle_backspace(state: &mut CalcState) {
     if state.remove_last_input_character() {
         // VT100 backspace: move back one, write space, move back again.
         uart::transmit_bytes(b"\x08 \x08");
+        render_oled(state.current_input(), None);
     }
 }
 
@@ -116,6 +135,7 @@ fn handle_expression_submission(state: &mut CalcState) {
     if !expr_slice.iter().any(|&b| b != b' ') {
         state.clear_input();
         uart::transmit_bytes(b"> ");
+        render_oled(state.current_input(), None);
         return;
     }
 
@@ -124,8 +144,8 @@ fn handle_expression_submission(state: &mut CalcState) {
     // so we borrow the fields directly. This is safe — each borrow touches a
     // completely separate region of the CalcState struct.
     let result = {
-        let variables     = &state.variables as *const _;
-        let lex_scratch   = &mut state.lex_scratch   as *mut _;
+        let variables = &state.variables as *const _;
+        let lex_scratch = &mut state.lex_scratch as *mut _;
         let parse_scratch = &mut state.parse_scratch as *mut _;
         unsafe {
             engine::evaluate_expression(
@@ -137,21 +157,36 @@ fn handle_expression_submission(state: &mut CalcState) {
         }
     };
 
-    match result {
+    let mut result_line = [0u8; 24];
+    let result_text = match result {
         Some(result) => {
             // Write result to Ans.
             state.record_answer(result);
 
             uart::transmit_bytes(b"= ");
-            let mut display_buffer = [0u8; 24];
-            uart::transmit_bytes(engine::format_result(result, &mut display_buffer));
+            let formatted = engine::format_result(result, &mut result_line);
+            uart::transmit_bytes(formatted);
             uart::transmit_bytes(b"\r\n");
+            formatted
         }
         None => {
-            uart::transmit_bytes(b"! error: invalid expression, domain error, or division by zero\r\n");
+            uart::transmit_bytes(
+                b"! error: invalid expression, domain error, or division by zero\r\n",
+            );
+            b"error"
         }
-    }
+    };
 
+    render_oled(expr_slice, Some(result_text));
     state.clear_input();
     uart::transmit_bytes(b"> ");
+}
+
+// ─── OLED rendering ──────────────────────────────────────────────────────────
+
+/// Render the current input and optional result to the 96×16 OLED.
+fn render_oled(expression: &[u8], result_text: Option<&[u8]>) {
+    let mut framebuffer: oled::Framebuffer = [0u8; oled::FRAMEBUFFER_SIZE];
+    formula::render_screen(&mut framebuffer, expression, result_text);
+    oled::render_screen(&framebuffer);
 }

@@ -50,9 +50,7 @@ pub enum AstNode {
     },
 
     /// Unary negation of a sub-expression.
-    UnaryNegation {
-        operand_index: usize,
-    },
+    UnaryNegation { operand_index: usize },
 
     /// A mathematical function applied to one argument.
     FunctionCall {
@@ -107,6 +105,8 @@ pub enum TwoArgMathFunction {
     PoissonProbability,
     /// P(X≤x) for X ~ χ²(k). Arguments: x, k.
     ChiSquaredCDF,
+    /// n-th root of a number. Arguments: x, n.
+    NthRoot,
 }
 
 /// The two looping aggregate operations.
@@ -148,19 +148,29 @@ pub enum BinaryOperator {
 /// Single-argument mathematical functions.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum MathFunction {
-    Sin, Cos, Tan,
-    Asin, Acos, Atan,
-    SinH, CosH, TanH,
-    ASinH, ACosH, ATanH,
+    Sin,
+    Cos,
+    Tan,
+    Asin,
+    Acos,
+    Atan,
+    SinH,
+    CosH,
+    TanH,
+    ASinH,
+    ACosH,
+    ATanH,
     Sqrt,
     Abs,
-    Log,   // log10
-    Ln,    // natural log
+    Log, // log10
+    Ln,  // natural log
     Log2,
-    Exp,   // e^x
-    Floor, Ceil, Round,
-    Deg,   // radians → degrees
-    Rad,   // degrees → radians
+    Exp, // e^x
+    Floor,
+    Ceil,
+    Round,
+    Deg,     // radians → degrees
+    Rad,     // degrees → radians
     LnGamma, // ln(Γ(x))
 }
 
@@ -176,7 +186,9 @@ pub struct ParseTree {
 impl ParseTree {
     /// Allocate a new node in the arena and return its index.
     pub fn allocate_node(&mut self, node: AstNode) -> Option<usize> {
-        if self.node_count >= MAX_NODE_COUNT { return None; }
+        if self.node_count >= MAX_NODE_COUNT {
+            return None;
+        }
         let index = self.node_count;
         self.nodes[index] = node;
         self.node_count += 1;
@@ -193,7 +205,10 @@ struct ParserCursor<'a> {
 
 impl<'a> ParserCursor<'a> {
     fn new(lex: &'a LexResult) -> Self {
-        Self { tokens: &lex.tokens[..lex.token_count], position: 0 }
+        Self {
+            tokens: &lex.tokens[..lex.token_count],
+            position: 0,
+        }
     }
 
     fn peek(&self) -> Option<Token> {
@@ -202,7 +217,9 @@ impl<'a> ParserCursor<'a> {
 
     fn advance(&mut self) -> Option<Token> {
         let t = self.tokens.get(self.position).copied();
-        if t.is_some() { self.position += 1; }
+        if t.is_some() {
+            self.position += 1;
+        }
         t
     }
 
@@ -230,7 +247,9 @@ pub fn parse_token_stream<'a>(lex: &LexResult, tree: &'a mut ParseTree) -> Optio
     tree.root_index = root;
 
     // Any unconsumed tokens mean the input was malformed.
-    if !cursor.is_finished() { return None; }
+    if !cursor.is_finished() {
+        return None;
+    }
     Some(tree)
 }
 
@@ -242,9 +261,9 @@ fn parse_expression(cursor: &mut ParserCursor, tree: &mut ParseTree) -> Option<u
 
     while let Some(token) = cursor.peek() {
         let op = match token {
-            Token::Plus  => BinaryOperator::Add,
+            Token::Plus => BinaryOperator::Add,
             Token::Minus => BinaryOperator::Subtract,
-            _            => break,
+            _ => break,
         };
         cursor.advance();
         let right = parse_term(cursor, tree)?;
@@ -263,10 +282,10 @@ fn parse_term(cursor: &mut ParserCursor, tree: &mut ParseTree) -> Option<usize> 
 
     while let Some(token) = cursor.peek() {
         let op = match token {
-            Token::Star    => BinaryOperator::Multiply,
-            Token::Slash   => BinaryOperator::Divide,
+            Token::Star => BinaryOperator::Multiply,
+            Token::Slash => BinaryOperator::Divide,
             Token::Percent => BinaryOperator::Modulo,
-            _              => break,
+            _ => break,
         };
         cursor.advance();
         let right = parse_power(cursor, tree)?;
@@ -303,7 +322,9 @@ fn parse_unary(cursor: &mut ParserCursor, tree: &mut ParseTree) -> Option<usize>
     if cursor.peek() == Some(Token::UnaryMinus) {
         cursor.advance();
         let operand = parse_unary(cursor, tree)?;
-        tree.allocate_node(AstNode::UnaryNegation { operand_index: operand })
+        tree.allocate_node(AstNode::UnaryNegation {
+            operand_index: operand,
+        })
     } else {
         parse_primary(cursor, tree)
     }
@@ -321,30 +342,45 @@ fn parse_primary(cursor: &mut ParserCursor, tree: &mut ParseTree) -> Option<usiz
 
         // Named constants.
         Token::ConstPi => tree.allocate_node(AstNode::Constant(MathConstant::Pi)),
-        Token::ConstE  => tree.allocate_node(AstNode::Constant(MathConstant::E)),
+        Token::ConstE => tree.allocate_node(AstNode::Constant(MathConstant::E)),
 
         // Variables.
-        Token::VarAns          => tree.allocate_node(AstNode::Variable(VariableRef::Ans)),
+        Token::VarAns => tree.allocate_node(AstNode::Variable(VariableRef::Ans)),
         Token::VarRegister(ch) => tree.allocate_node(AstNode::Variable(VariableRef::Register(ch))),
 
         // Single-argument function calls: FUNC '(' expression ')'
         func_token if is_single_arg_function_token(func_token) => {
-            if cursor.advance() != Some(Token::LeftParen) { return None; }
+            if cursor.advance() != Some(Token::LeftParen) {
+                return None;
+            }
             let argument_index = parse_expression(cursor, tree)?;
-            if cursor.advance() != Some(Token::RightParen) { return None; }
+            if cursor.advance() != Some(Token::RightParen) {
+                return None;
+            }
             let function = token_to_single_arg_function(func_token)?;
-            tree.allocate_node(AstNode::FunctionCall { function, argument_index })
+            tree.allocate_node(AstNode::FunctionCall {
+                function,
+                argument_index,
+            })
         }
 
         // Three-argument functions: FUNC '(' expr ',' expr ',' expr ')'
         func_token if is_three_arg_function_token(func_token) => {
-            if cursor.advance() != Some(Token::LeftParen) { return None; }
+            if cursor.advance() != Some(Token::LeftParen) {
+                return None;
+            }
             let arg0 = parse_expression(cursor, tree)?;
-            if cursor.advance() != Some(Token::Comma) { return None; }
+            if cursor.advance() != Some(Token::Comma) {
+                return None;
+            }
             let arg1 = parse_expression(cursor, tree)?;
-            if cursor.advance() != Some(Token::Comma) { return None; }
+            if cursor.advance() != Some(Token::Comma) {
+                return None;
+            }
             let arg2 = parse_expression(cursor, tree)?;
-            if cursor.advance() != Some(Token::RightParen) { return None; }
+            if cursor.advance() != Some(Token::RightParen) {
+                return None;
+            }
             let function = token_to_three_arg_function(func_token)?;
             tree.allocate_node(AstNode::ThreeArgFunction {
                 function,
@@ -354,11 +390,17 @@ fn parse_primary(cursor: &mut ParserCursor, tree: &mut ParseTree) -> Option<usiz
 
         // Two-argument functions: FUNC '(' expr ',' expr ')'
         func_token if is_two_arg_function_token(func_token) => {
-            if cursor.advance() != Some(Token::LeftParen) { return None; }
+            if cursor.advance() != Some(Token::LeftParen) {
+                return None;
+            }
             let arg0 = parse_expression(cursor, tree)?;
-            if cursor.advance() != Some(Token::Comma) { return None; }
+            if cursor.advance() != Some(Token::Comma) {
+                return None;
+            }
             let arg1 = parse_expression(cursor, tree)?;
-            if cursor.advance() != Some(Token::RightParen) { return None; }
+            if cursor.advance() != Some(Token::RightParen) {
+                return None;
+            }
             let function = token_to_two_arg_function(func_token)?;
             tree.allocate_node(AstNode::TwoArgFunction {
                 function,
@@ -368,19 +410,29 @@ fn parse_primary(cursor: &mut ParserCursor, tree: &mut ParseTree) -> Option<usiz
 
         // Loop aggregates: sum/int '(' body ',' var ',' start ',' end ')'
         func_token if is_loop_aggregate_token(func_token) => {
-            if cursor.advance() != Some(Token::LeftParen) { return None; }
-            let body_index  = parse_expression(cursor, tree)?;
-            if cursor.advance() != Some(Token::Comma) { return None; }
+            if cursor.advance() != Some(Token::LeftParen) {
+                return None;
+            }
+            let body_index = parse_expression(cursor, tree)?;
+            if cursor.advance() != Some(Token::Comma) {
+                return None;
+            }
             // Variable must be a single register letter (A–F)
             let variable = match cursor.advance()? {
                 Token::VarRegister(ch) => ch,
                 _ => return None,
             };
-            if cursor.advance() != Some(Token::Comma) { return None; }
+            if cursor.advance() != Some(Token::Comma) {
+                return None;
+            }
             let start_index = parse_expression(cursor, tree)?;
-            if cursor.advance() != Some(Token::Comma) { return None; }
-            let end_index   = parse_expression(cursor, tree)?;
-            if cursor.advance() != Some(Token::RightParen) { return None; }
+            if cursor.advance() != Some(Token::Comma) {
+                return None;
+            }
+            let end_index = parse_expression(cursor, tree)?;
+            if cursor.advance() != Some(Token::RightParen) {
+                return None;
+            }
             let operation = if func_token == Token::FuncSum {
                 LoopOperation::Summation
             } else {
@@ -398,7 +450,9 @@ fn parse_primary(cursor: &mut ParserCursor, tree: &mut ParseTree) -> Option<usiz
         // Parenthesised sub-expression.
         Token::LeftParen => {
             let inner = parse_expression(cursor, tree)?;
-            if cursor.advance() != Some(Token::RightParen) { return None; }
+            if cursor.advance() != Some(Token::RightParen) {
+                return None;
+            }
             Some(inner)
         }
 
@@ -411,15 +465,32 @@ fn parse_primary(cursor: &mut ParserCursor, tree: &mut ParseTree) -> Option<usiz
 
 /// Return true if the token represents a single-argument mathematical function.
 fn is_single_arg_function_token(token: Token) -> bool {
-    matches!(token,
-        Token::FuncSin | Token::FuncCos | Token::FuncTan |
-        Token::FuncAsin | Token::FuncAcos | Token::FuncAtan |
-        Token::FuncSinH | Token::FuncCosH | Token::FuncTanH |
-        Token::FuncASinH | Token::FuncACosH | Token::FuncATanH |
-        Token::FuncSqrt | Token::FuncAbs | Token::FuncLog |
-        Token::FuncLn | Token::FuncLog2 | Token::FuncExp |
-        Token::FuncFloor | Token::FuncCeil | Token::FuncRound |
-        Token::FuncDeg | Token::FuncRad | Token::FuncLnGamma
+    matches!(
+        token,
+        Token::FuncSin
+            | Token::FuncCos
+            | Token::FuncTan
+            | Token::FuncAsin
+            | Token::FuncAcos
+            | Token::FuncAtan
+            | Token::FuncSinH
+            | Token::FuncCosH
+            | Token::FuncTanH
+            | Token::FuncASinH
+            | Token::FuncACosH
+            | Token::FuncATanH
+            | Token::FuncSqrt
+            | Token::FuncAbs
+            | Token::FuncLog
+            | Token::FuncLn
+            | Token::FuncLog2
+            | Token::FuncExp
+            | Token::FuncFloor
+            | Token::FuncCeil
+            | Token::FuncRound
+            | Token::FuncDeg
+            | Token::FuncRad
+            | Token::FuncLnGamma
     )
 }
 
@@ -430,7 +501,10 @@ fn is_three_arg_function_token(token: Token) -> bool {
 
 /// Return true if the token is a two-argument numeric function.
 fn is_two_arg_function_token(token: Token) -> bool {
-    matches!(token, Token::FuncPoissonP | Token::FuncChiCDF)
+    matches!(
+        token,
+        Token::FuncPoissonP | Token::FuncChiCDF | Token::FuncNthRoot
+    )
 }
 
 /// Return true if the token is a loop aggregate (sum or int).
@@ -441,29 +515,29 @@ fn is_loop_aggregate_token(token: Token) -> bool {
 /// Map a single-argument function token to its MathFunction variant.
 fn token_to_single_arg_function(token: Token) -> Option<MathFunction> {
     Some(match token {
-        Token::FuncSin     => MathFunction::Sin,
-        Token::FuncCos     => MathFunction::Cos,
-        Token::FuncTan     => MathFunction::Tan,
-        Token::FuncAsin    => MathFunction::Asin,
-        Token::FuncAcos    => MathFunction::Acos,
-        Token::FuncAtan    => MathFunction::Atan,
-        Token::FuncSinH    => MathFunction::SinH,
-        Token::FuncCosH    => MathFunction::CosH,
-        Token::FuncTanH    => MathFunction::TanH,
-        Token::FuncASinH   => MathFunction::ASinH,
-        Token::FuncACosH   => MathFunction::ACosH,
-        Token::FuncATanH   => MathFunction::ATanH,
-        Token::FuncSqrt    => MathFunction::Sqrt,
-        Token::FuncAbs     => MathFunction::Abs,
-        Token::FuncLog     => MathFunction::Log,
-        Token::FuncLn      => MathFunction::Ln,
-        Token::FuncLog2    => MathFunction::Log2,
-        Token::FuncExp     => MathFunction::Exp,
-        Token::FuncFloor   => MathFunction::Floor,
-        Token::FuncCeil    => MathFunction::Ceil,
-        Token::FuncRound   => MathFunction::Round,
-        Token::FuncDeg     => MathFunction::Deg,
-        Token::FuncRad     => MathFunction::Rad,
+        Token::FuncSin => MathFunction::Sin,
+        Token::FuncCos => MathFunction::Cos,
+        Token::FuncTan => MathFunction::Tan,
+        Token::FuncAsin => MathFunction::Asin,
+        Token::FuncAcos => MathFunction::Acos,
+        Token::FuncAtan => MathFunction::Atan,
+        Token::FuncSinH => MathFunction::SinH,
+        Token::FuncCosH => MathFunction::CosH,
+        Token::FuncTanH => MathFunction::TanH,
+        Token::FuncASinH => MathFunction::ASinH,
+        Token::FuncACosH => MathFunction::ACosH,
+        Token::FuncATanH => MathFunction::ATanH,
+        Token::FuncSqrt => MathFunction::Sqrt,
+        Token::FuncAbs => MathFunction::Abs,
+        Token::FuncLog => MathFunction::Log,
+        Token::FuncLn => MathFunction::Ln,
+        Token::FuncLog2 => MathFunction::Log2,
+        Token::FuncExp => MathFunction::Exp,
+        Token::FuncFloor => MathFunction::Floor,
+        Token::FuncCeil => MathFunction::Ceil,
+        Token::FuncRound => MathFunction::Round,
+        Token::FuncDeg => MathFunction::Deg,
+        Token::FuncRad => MathFunction::Rad,
         Token::FuncLnGamma => MathFunction::LnGamma,
         _ => return None,
     })
@@ -481,7 +555,8 @@ fn token_to_three_arg_function(token: Token) -> Option<ThreeArgMathFunction> {
 fn token_to_two_arg_function(token: Token) -> Option<TwoArgMathFunction> {
     Some(match token {
         Token::FuncPoissonP => TwoArgMathFunction::PoissonProbability,
-        Token::FuncChiCDF   => TwoArgMathFunction::ChiSquaredCDF,
+        Token::FuncChiCDF => TwoArgMathFunction::ChiSquaredCDF,
+        Token::FuncNthRoot => TwoArgMathFunction::NthRoot,
         _ => return None,
     })
 }

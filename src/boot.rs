@@ -23,10 +23,10 @@ use core::ptr;
 // Taking a reference gives the address itself, not a value stored there.
 
 extern "C" {
-    static _sbss:   u8; // First byte of .bss in RAM
-    static _ebss:   u8; // One-past-last byte of .bss in RAM
-    static _sdata:  u8; // First byte of .data destination in RAM
-    static _edata:  u8; // One-past-last byte of .data destination in RAM
+    static _sbss: u8; // First byte of .bss in RAM
+    static _ebss: u8; // One-past-last byte of .bss in RAM
+    static _sdata: u8; // First byte of .data destination in RAM
+    static _edata: u8; // One-past-last byte of .data destination in RAM
     static _sidata: u8; // First byte of .data source in Flash
 }
 
@@ -54,7 +54,7 @@ pub unsafe extern "C" fn Reset() -> ! {
 /// standard and Rust guarantee they are zero at program start. On bare metal,
 /// with no OS loader, we must fulfil that guarantee ourselves.
 unsafe fn zero_bss_section() {
-    let bss_start  = &_sbss as *const u8 as *mut u8;
+    let bss_start = &_sbss as *const u8 as *mut u8;
     // SAFETY: _sbss/_ebss are valid linker symbols that bracket .bss in RAM.
     let bss_length = (&_ebss as *const u8).offset_from(&_sbss) as usize;
     ptr::write_bytes(bss_start, 0, bss_length);
@@ -67,9 +67,9 @@ unsafe fn zero_bss_section() {
 /// in Flash at link time but must live in RAM at runtime so they can be
 /// mutated. This copy bridges that gap.
 unsafe fn copy_data_section_from_flash() {
-    let destination = &_sdata  as *const u8 as *mut u8;
-    let length      = (&_edata as *const u8).offset_from(&_sdata) as usize;
-    let source      = &_sidata as *const u8;
+    let destination = &_sdata as *const u8 as *mut u8;
+    let length = (&_edata as *const u8).offset_from(&_sdata) as usize;
+    let source = &_sidata as *const u8;
     // SAFETY: Flash source and RAM destination never overlap by definition.
     ptr::copy_nonoverlapping(source, destination, length);
 }

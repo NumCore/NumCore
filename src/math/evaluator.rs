@@ -1,6 +1,6 @@
 //! # Evaluator (Math Engine — Layer 6)
 //!
-//! Recursively walks the AST produced by the parser and computes a Q20.12
+//! Recursively walks the AST produced by the parser and computes a Q31.32
 //! fixed-point result. This is intentionally the simplest stage — all
 //! structural complexity was resolved during parsing.
 //!
@@ -13,8 +13,8 @@
 use super::distributions;
 use super::fixed_point as fp;
 use super::parser::{
-    AstNode, BinaryOperator, LoopOperation, MathConstant, MathFunction,
-    ParseTree, ThreeArgMathFunction, TwoArgMathFunction, VariableRef,
+    AstNode, BinaryOperator, LoopOperation, MathConstant, MathFunction, ParseTree,
+    ThreeArgMathFunction, TwoArgMathFunction, VariableRef,
 };
 use super::vars::VariableStore;
 
@@ -22,7 +22,7 @@ use super::vars::VariableStore;
 
 /// Evaluate a `ParseTree` given a read-only view of the variable store.
 ///
-/// Returns the Q20.12 result, or `None` on:
+/// Returns the Q31.32 result, or `None` on:
 ///   - Division by zero or modulo by zero
 ///   - Domain error (sqrt of negative, log of non-positive, asin/acos out of range)
 ///   - Integer overflow in a checked operation
@@ -36,47 +36,51 @@ pub fn evaluate_tree(tree: &ParseTree, variables: &VariableStore) -> Option<i64>
 /// Recursively evaluate the node at `node_index`.
 fn evaluate_node(tree: &ParseTree, node_index: usize, vars: &VariableStore) -> Option<i64> {
     match tree.nodes[node_index] {
-
         // ── Base cases (leaves) ───────────────────────────────────────────────
-
         AstNode::Literal(value) => Some(value),
 
         AstNode::Constant(constant) => Some(match constant {
             MathConstant::Pi => fp::FIXED_PI,
-            MathConstant::E  => fp::FIXED_E,
+            MathConstant::E => fp::FIXED_E,
         }),
 
         AstNode::Variable(var_ref) => match var_ref {
             // Ans is None until the first successful evaluation.
-            VariableRef::Ans           => vars.read_ans(),
-            VariableRef::Register(ch)  => vars.read_register(ch),
+            VariableRef::Ans => vars.read_ans(),
+            VariableRef::Register(ch) => vars.read_register(ch),
         },
 
         // ── Unary negation ────────────────────────────────────────────────────
-
         AstNode::UnaryNegation { operand_index } => {
             let value = evaluate_node(tree, operand_index, vars)?;
             Some(-value)
         }
 
         // ── Binary operations ─────────────────────────────────────────────────
-
-        AstNode::BinaryOperation { operator, left_child_index, right_child_index } => {
-            let left  = evaluate_node(tree, left_child_index,  vars)?;
+        AstNode::BinaryOperation {
+            operator,
+            left_child_index,
+            right_child_index,
+        } => {
+            let left = evaluate_node(tree, left_child_index, vars)?;
             let right = evaluate_node(tree, right_child_index, vars)?;
             apply_binary_operator(operator, left, right)
         }
 
         // ── Single-argument function calls ────────────────────────────────────
-
-        AstNode::FunctionCall { function, argument_index } => {
+        AstNode::FunctionCall {
+            function,
+            argument_index,
+        } => {
             let arg = evaluate_node(tree, argument_index, vars)?;
             apply_function(function, arg)
         }
 
         // ── Three-argument numeric functions ──────────────────────────────────
-
-        AstNode::ThreeArgFunction { function, arg_indices } => {
+        AstNode::ThreeArgFunction {
+            function,
+            arg_indices,
+        } => {
             let a0 = evaluate_node(tree, arg_indices[0], vars)?;
             let a1 = evaluate_node(tree, arg_indices[1], vars)?;
             let a2 = evaluate_node(tree, arg_indices[2], vars)?;
@@ -84,18 +88,25 @@ fn evaluate_node(tree: &ParseTree, node_index: usize, vars: &VariableStore) -> O
         }
 
         // ── Two-argument numeric functions ────────────────────────────────────
-
-        AstNode::TwoArgFunction { function, arg_indices } => {
+        AstNode::TwoArgFunction {
+            function,
+            arg_indices,
+        } => {
             let a0 = evaluate_node(tree, arg_indices[0], vars)?;
             let a1 = evaluate_node(tree, arg_indices[1], vars)?;
             apply_two_arg_function(function, a0, a1)
         }
 
         // ── Loop aggregates (summation and integration) ───────────────────────
-
-        AstNode::LoopAggregate { operation, variable, start_index, end_index, body_index } => {
+        AstNode::LoopAggregate {
+            operation,
+            variable,
+            start_index,
+            end_index,
+            body_index,
+        } => {
             let start = evaluate_node(tree, start_index, vars)?;
-            let end   = evaluate_node(tree, end_index,   vars)?;
+            let end = evaluate_node(tree, end_index, vars)?;
             evaluate_loop_aggregate(operation, variable, start, end, body_index, tree, vars)
         }
     }
@@ -103,66 +114,68 @@ fn evaluate_node(tree: &ParseTree, node_index: usize, vars: &VariableStore) -> O
 
 // ─── Binary operator dispatch ─────────────────────────────────────────────────
 
-/// Apply a binary operator to two Q20.12 operands.
+/// Apply a binary operator to two Q31.32 operands.
 fn apply_binary_operator(operator: BinaryOperator, left: i64, right: i64) -> Option<i64> {
     match operator {
-        BinaryOperator::Add      => left.checked_add(right),
+        BinaryOperator::Add => left.checked_add(right),
         BinaryOperator::Subtract => left.checked_sub(right),
         BinaryOperator::Multiply => Some(fp::multiply(left, right)),
-        BinaryOperator::Divide   => fp::divide(left, right),
-        BinaryOperator::Modulo   => {
-            // Modulo in fixed-point: (a % b) where a, b are Q20.12.
-            // We perform integer modulo on the raw values which gives Q20.12 result.
-            if right == 0 { return None; }
+        BinaryOperator::Divide => fp::divide(left, right),
+        BinaryOperator::Modulo => {
+            // Modulo in fixed-point: (a % b) where a, b are Q31.32.
+            // We perform integer modulo on the raw values which gives Q31.32 result.
+            if right == 0 {
+                return None;
+            }
             Some(left % right)
         }
-        BinaryOperator::Power    => fp::power(left, right),
+        BinaryOperator::Power => fp::power(left, right),
     }
 }
 
 // ─── Function dispatch ────────────────────────────────────────────────────────
 
-/// Apply a single-argument mathematical function to a Q20.12 argument.
+/// Apply a single-argument mathematical function to a Q31.32 argument.
 fn apply_function(function: MathFunction, arg: i64) -> Option<i64> {
     match function {
         // Trigonometry — argument in radians.
-        MathFunction::Sin   => Some(fp::sin(arg)),
-        MathFunction::Cos   => Some(fp::cos(arg)),
-        MathFunction::Tan   => fp::tan(arg),
+        MathFunction::Sin => Some(fp::sin(arg)),
+        MathFunction::Cos => Some(fp::cos(arg)),
+        MathFunction::Tan => fp::tan(arg),
 
         // Inverse trig — result in radians.
-        MathFunction::Asin  => fp::asin(arg),
-        MathFunction::Acos  => fp::acos(arg),
-        MathFunction::Atan  => Some(fp::atan(arg)),
+        MathFunction::Asin => fp::asin(arg),
+        MathFunction::Acos => fp::acos(arg),
+        MathFunction::Atan => Some(fp::atan(arg)),
 
         // Hyperbolic trig functions.
-        MathFunction::SinH    => Some(fp::sinh(arg)),
-        MathFunction::CosH    => Some(fp::cosh(arg)),
-        MathFunction::TanH    => fp::tanh(arg),
+        MathFunction::SinH => Some(fp::sinh(arg)),
+        MathFunction::CosH => Some(fp::cosh(arg)),
+        MathFunction::TanH => fp::tanh(arg),
 
         // Inverse hyperbolic trig functions.
-        MathFunction::ASinH  => fp::asinh(arg),
-        MathFunction::ACosH  => fp::acosh(arg),
-        MathFunction::ATanH  => fp::atanh(arg),
+        MathFunction::ASinH => fp::asinh(arg),
+        MathFunction::ACosH => fp::acosh(arg),
+        MathFunction::ATanH => fp::atanh(arg),
 
         // Roots and absolute value.
-        MathFunction::Sqrt  => fp::sqrt(arg),
-        MathFunction::Abs   => Some(fp::abs(arg)),
+        MathFunction::Sqrt => fp::sqrt(arg),
+        MathFunction::Abs => Some(fp::abs(arg)),
 
         // Logarithms and exponentials.
-        MathFunction::Log   => fp::log10(arg),
-        MathFunction::Ln    => fp::natural_log(arg),
-        MathFunction::Log2  => fp::log2(arg),
-        MathFunction::Exp   => Some(fp::natural_exp(arg)),
+        MathFunction::Log => fp::log10(arg),
+        MathFunction::Ln => fp::natural_log(arg),
+        MathFunction::Log2 => fp::log2(arg),
+        MathFunction::Exp => Some(fp::natural_exp(arg)),
 
         // Rounding.
         MathFunction::Floor => Some(fp::floor(arg)),
-        MathFunction::Ceil  => Some(fp::ceil(arg)),
+        MathFunction::Ceil => Some(fp::ceil(arg)),
         MathFunction::Round => Some(fp::round(arg)),
 
         // Angle unit conversion.
-        MathFunction::Deg     => Some(fp::degrees_to_radians(arg)),
-        MathFunction::Rad     => Some(fp::radians_to_degrees(arg)),
+        MathFunction::Deg => Some(fp::degrees_to_radians(arg)),
+        MathFunction::Rad => Some(fp::radians_to_degrees(arg)),
 
         // Special functions.
         MathFunction::LnGamma => distributions::ln_gamma(arg),
@@ -172,14 +185,11 @@ fn apply_function(function: MathFunction, arg: i64) -> Option<i64> {
 // ─── Two-argument function dispatch ──────────────────────────────────────────
 
 /// Dispatch a two-argument mathematical function.
-fn apply_two_arg_function(
-    function: TwoArgMathFunction,
-    a0: i64,
-    a1: i64,
-) -> Option<i64> {
+fn apply_two_arg_function(function: TwoArgMathFunction, a0: i64, a1: i64) -> Option<i64> {
     match function {
         TwoArgMathFunction::PoissonProbability => distributions::poisson_probability(a0, a1),
-        TwoArgMathFunction::ChiSquaredCDF      => distributions::chi_squared_cdf(a0, a1),
+        TwoArgMathFunction::ChiSquaredCDF => distributions::chi_squared_cdf(a0, a1),
+        TwoArgMathFunction::NthRoot => fp::nthroot(a0, a1),
     }
 }
 
@@ -218,13 +228,13 @@ const INTEGRATION_SNAP_THRESHOLD: i64 = 4295;
 /// afterward. This is the standard calculator convention — the loop
 /// variable is scoped to the aggregate expression.
 fn evaluate_loop_aggregate(
-    operation:  LoopOperation,
-    variable:   u8,
-    start:      i64,
-    end:        i64,
+    operation: LoopOperation,
+    variable: u8,
+    start: i64,
+    end: i64,
     body_index: usize,
-    tree:       &ParseTree,
-    vars:       &VariableStore,
+    tree: &ParseTree,
+    vars: &VariableStore,
 ) -> Option<i64> {
     // We need to write the loop variable at each step, but VariableStore is
     // immutable here. We build a local mutable copy for the duration of the loop.
@@ -234,15 +244,23 @@ fn evaluate_loop_aggregate(
         // ── Summation: Σ body for variable = start, start+1, ..., end ──────────
         LoopOperation::Summation => {
             // start and end must be integers.
-            if start & (fp::SCALE - 1) != 0 { return None; }
-            if end   & (fp::SCALE - 1) != 0 { return None; }
+            if start & (fp::SCALE - 1) != 0 {
+                return None;
+            }
+            if end & (fp::SCALE - 1) != 0 {
+                return None;
+            }
 
             let start_int = fp::to_integer_truncated(start);
-            let end_int   = fp::to_integer_truncated(end);
+            let end_int = fp::to_integer_truncated(end);
 
-            if end_int < start_int { return Some(0); }
+            if end_int < start_int {
+                return Some(0);
+            }
             // Guard against runaway sums.
-            if end_int - start_int > 10_000 { return None; }
+            if end_int - start_int > 10_000 {
+                return None;
+            }
 
             let mut accumulator: i64 = 0;
             let mut k = start_int;

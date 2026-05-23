@@ -23,4 +23,5 @@ pub mod clock;
 pub mod gpio;
 pub mod i2c;
 pub mod mmio;
+pub mod oled;
 pub mod uart;

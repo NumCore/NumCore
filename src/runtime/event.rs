@@ -20,6 +20,13 @@ pub enum CalcEvent {
     /// The contained byte is the raw ASCII value — safe to echo and store.
     DigitOrOperator(u8),
 
+    /// A byte produced by the PS/2 keyboard path.
+    ///
+    /// The HAL currently translates PS/2 make-code sequences into the same
+    /// ASCII/control-byte convention used by UART before handing them to the
+    /// runtime.
+    KeyboardScancode(u8),
+
     /// The user pressed Enter (CR or LF) — submit the current expression.
     Submit,
 

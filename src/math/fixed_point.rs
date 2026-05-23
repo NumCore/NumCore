@@ -36,6 +36,10 @@
 
 // ─── Scale and precision ──────────────────────────────────────────────────────
 
+use crate::hal::uart;
+use crate::math::engine;
+use core::ptr::write_bytes;
+
 /// Number of fractional bits. Defines the entire numeric format.
 pub const FRACTIONAL_BITS: u32 = 32;
 
@@ -97,42 +101,48 @@ const CORDIC_ATAN_TABLE: [i64; 24] = [
     3_373_259_426, // atan(2^0)  = 0.78539816 rad
     1_991_351_318, // atan(2^-1) = 0.46364761 rad
     1_052_175_346, // atan(2^-2) = 0.24497866 rad
-    534_100_635, // atan(2^-3) = 0.12435499 rad
-    268_086_748, // atan(2^-4) = 0.06241881 rad
-    134_174_063, // atan(2^-5) = 0.03123983 rad
-    67_103_403, // atan(2^-6) = 0.01562373 rad
-    33_553_749, // atan(2^-7) = 0.00781234 rad
-    16_777_131, // atan(2^-8)
-    8_388_597, // atan(2^-9)
-    4_194_303, // atan(2^-10)
-    2_097_152, // atan(2^-11)
-    1_048_576, // atan(2^-12)
-    524_288, // atan(2^-13)
-    262_144, // atan(2^-14)
-    131_072, // atan(2^-15)
-    65_536, // atan(2^-16)
-    32_768, // atan(2^-17)
-    16_384, // atan(2^-18)
-    8_192, // atan(2^-19)
-    4_096, // atan(2^-20)
-    2_048, // atan(2^-21)
-    1_024, // atan(2^-22)
-    512, // atan(2^-23)
+    534_100_635,   // atan(2^-3) = 0.12435499 rad
+    268_086_748,   // atan(2^-4) = 0.06241881 rad
+    134_174_063,   // atan(2^-5) = 0.03123983 rad
+    67_103_403,    // atan(2^-6) = 0.01562373 rad
+    33_553_749,    // atan(2^-7) = 0.00781234 rad
+    16_777_131,    // atan(2^-8)
+    8_388_597,     // atan(2^-9)
+    4_194_303,     // atan(2^-10)
+    2_097_152,     // atan(2^-11)
+    1_048_576,     // atan(2^-12)
+    524_288,       // atan(2^-13)
+    262_144,       // atan(2^-14)
+    131_072,       // atan(2^-15)
+    65_536,        // atan(2^-16)
+    32_768,        // atan(2^-17)
+    16_384,        // atan(2^-18)
+    8_192,         // atan(2^-19)
+    4_096,         // atan(2^-20)
+    2_048,         // atan(2^-21)
+    1_024,         // atan(2^-22)
+    512,           // atan(2^-23)
 ];
 
 // ─── Core arithmetic ──────────────────────────────────────────────────────────
 
 /// Convert an integer to Q31.32.
 #[inline(always)]
-pub fn from_integer(n: i64) -> i64 { n * SCALE }
+pub fn from_integer(n: i64) -> i64 {
+    n * SCALE
+}
 
 /// Truncate a Q31.32 value to its integer part (round toward zero).
 #[inline(always)]
-pub fn to_integer_truncated(fp: i64) -> i64 { fp >> FRACTIONAL_BITS }
+pub fn to_integer_truncated(fp: i64) -> i64 {
+    fp >> FRACTIONAL_BITS
+}
 
 /// Round a Q31.32 value to the nearest integer.
 #[inline(always)]
-pub fn to_integer_rounded(fp: i64) -> i64 { (fp + FIXED_HALF) >> FRACTIONAL_BITS }
+pub fn to_integer_rounded(fp: i64) -> i64 {
+    (fp + FIXED_HALF) >> FRACTIONAL_BITS
+}
 
 /// Multiply two Q31.32 values.
 /// Uses i128 intermediate to prevent overflow: result = (a × b) >> 32.
@@ -140,8 +150,14 @@ pub fn to_integer_rounded(fp: i64) -> i64 { (fp + FIXED_HALF) >> FRACTIONAL_BITS
 pub fn multiply(a: i64, b: i64) -> i64 {
     let product = (a as i128) * (b as i128);
 
-    // add rounding offset before shifting
-    let rounded = product + (1i128 << 31);
+    // symmetric rounding to remove bias for negative numbers
+    let offset = 1i128 << (FRACTIONAL_BITS - 1);
+
+    let rounded = if product >= 0 {
+        product + offset
+    } else {
+        product - offset
+    };
 
     (rounded >> FRACTIONAL_BITS) as i64
 }
@@ -150,7 +166,14 @@ pub fn multiply(a: i64, b: i64) -> i64 {
 /// Result = (a << 32) / b, computed in i128 to prevent overflow.
 #[inline(always)]
 pub fn divide(a: i64, b: i64) -> Option<i64> {
-    if b == 0 { return None; }
+    if b == 0 {
+        return None;
+    }
+    // The code below was used for testing purposes
+    // let mut display_buffer = [0u8; 24];
+    // let c = Some((((a as i128) << FRACTIONAL_BITS) / (b as i128)) as i64);
+    // uart::transmit_bytes(engine::format_result(c?, &mut display_buffer));
+    // uart::transmit_bytes(b"\r\n");
     Some((((a as i128) << FRACTIONAL_BITS) / (b as i128)) as i64)
 }
 
@@ -158,14 +181,31 @@ pub fn divide(a: i64, b: i64) -> Option<i64> {
 
 /// Raise a Q31.32 base to a Q31.32 exponent.
 pub fn power(base: i64, exponent: i64) -> Option<i64> {
-    // Integer exponent: fast exact path.
-    if exponent & (SCALE - 1) == 0 {
+    // Integer exponent: fast exact path via repeated squaring.
+    if to_integer_truncated(exponent) * SCALE == exponent {
         return integer_power(base, to_integer_truncated(exponent));
     }
-    // Non-integer: e^(exp × ln(base)). Requires base > 0.
-    if base <= 0 { return None; }
+    // Non-integer exponent: compute via exp(exponent × ln(base)).
+    // Requires base > 0 for ln to be defined.
+    if base <= 0 {
+        return None;
+    }
     let ln_base = natural_log(base)?;
-    Some(natural_exp(multiply(exponent, ln_base)))
+    let result = natural_exp(multiply(exponent, ln_base));
+
+    // Snap to nearest integer if within 1e-4 of one.
+    // The log/exp chain accumulates ~1e-7 error per operation; for inputs
+    // like 27^(1/3) this propagates to ~6e-5 in the result. Any value that
+    // lands within 1e-4 of an integer was almost certainly meant to be that
+    // integer — snap it exactly.
+    // Threshold: 1e-4 in Q31.32 = round(1e-4 × 2^32) = 429497
+    const SNAP_THRESHOLD: i64 = 429_497;
+    let nearest = round(result);
+    if (result - nearest).abs() < SNAP_THRESHOLD {
+        Some(nearest)
+    } else {
+        Some(result)
+    }
 }
 
 /// Integer exponentiation via fast squaring. exp is a plain i64, not Q31.32.
@@ -178,7 +218,9 @@ pub fn integer_power(base: i64, exp: i64) -> Option<i64> {
     let mut b = base;
     let mut e = exp;
     while e > 0 {
-        if e & 1 == 1 { result = multiply(result, b); }
+        if e & 1 == 1 {
+            result = multiply(result, b);
+        }
         b = multiply(b, b);
         e >>= 1;
     }
@@ -192,8 +234,12 @@ pub fn integer_power(base: i64, exp: i64) -> Option<i64> {
 /// Promotes to i128, takes integer sqrt as initial guess, then refines
 /// with Newton-Raphson iterations until convergence.
 pub fn sqrt(x: i64) -> Option<i64> {
-    if x < 0  { return None; }
-    if x == 0 { return Some(0); }
+    if x < 0 {
+        return None;
+    }
+    if x == 0 {
+        return Some(0);
+    }
 
     // Promote to Q31.64 for the integer sqrt initial guess.
     let scaled: i128 = (x as i128) << FRACTIONAL_BITS;
@@ -201,19 +247,33 @@ pub fn sqrt(x: i64) -> Option<i64> {
 
     // Newton-Raphson: converges in ~10 iterations for Q31.32.
     for _ in 0..10 {
-        if guess == 0 { break; }
+        if guess == 0 {
+            break;
+        }
         let quotient = (((x as i128) << FRACTIONAL_BITS) / (guess as i128)) as i64;
         guess = (guess / 2) + (quotient / 2);
     }
     Some(guess)
 }
 
+pub fn nthroot(x: i64, n: i64) -> Option<i64> {
+    if n == 0 {
+        return None;
+    }
+    power(x, divide(FIXED_ONE, n)?)
+}
+
 /// Integer square root of a non-negative i128, returning the floor.
 fn integer_sqrt_i128(n: i128) -> i128 {
-    if n <= 0 { return 0; }
+    if n <= 0 {
+        return 0;
+    }
     let mut x = n;
     let mut y = (x + 1) / 2;
-    while y < x { x = y; y = (x + n / x) / 2; }
+    while y < x {
+        x = y;
+        y = (x + n / x) / 2;
+    }
     x
 }
 
@@ -227,21 +287,29 @@ fn integer_sqrt_i128(n: i128) -> i128 {
 ///   3. Run CORDIC with i128 intermediates for all other angles.
 pub fn sin_cos(angle: i64) -> (i64, i64) {
     let a = reduce_angle_to_principal(angle);
-    if let Some(exact) = exact_sin_cos_lookup(a) { return exact; }
+    if let Some(exact) = exact_sin_cos_lookup(a) {
+        return exact;
+    }
     cordic_sin_cos(a)
 }
 
 /// sin of a Q31.32 radian angle.
-pub fn sin(angle: i64) -> i64 { sin_cos(angle).0 }
+pub fn sin(angle: i64) -> i64 {
+    sin_cos(angle).0
+}
 
 /// cos of a Q31.32 radian angle.
-pub fn cos(angle: i64) -> i64 { sin_cos(angle).1 }
+pub fn cos(angle: i64) -> i64 {
+    sin_cos(angle).1
+}
 
 /// tan of a Q31.32 radian angle. Returns None near ±π/2.
 pub fn tan(angle: i64) -> Option<i64> {
     let (s, c) = sin_cos(angle);
     // |cos| < 0.0001 in Q31.32 ≈ 429497 units.
-    if c.abs() < 429_497 { return None; }
+    if c.abs() < 429_497 {
+        return None;
+    }
     divide(s, c)
 }
 
@@ -326,8 +394,12 @@ pub fn atanh(x: i64) -> Option<i64> {
 /// Reduce angle to [−π, π] in Q31.32.
 pub fn reduce_angle_to_principal(angle: i64) -> i64 {
     let mut a = angle;
-    while a >  FIXED_PI  { a -= FIXED_TWO_PI; }
-    while a < -FIXED_PI  { a += FIXED_TWO_PI; }
+    while a > FIXED_PI {
+        a -= FIXED_TWO_PI;
+    }
+    while a < -FIXED_PI {
+        a += FIXED_TWO_PI;
+    }
     a
 }
 
@@ -398,13 +470,13 @@ fn cordic_sin_cos(angle: i64) -> (i64, i64) {
 fn exact_sin_cos_lookup(a: i64) -> Option<(i64, i64)> {
     let close = |x: i64, y: i64| (x - y).abs() < 512;
 
-    let p2  = FIXED_PI_OVER_2;
-    let p3  = 4_497_012_568_i64;  // π/3  = 60°
-    let p4  = 3_373_259_426_i64;  // π/4  = 45°
-    let p6  = 2_248_506_284_i64;  // π/6  = 30°
+    let p2 = FIXED_PI_OVER_2;
+    let p3 = 4_497_012_568_i64; // π/3  = 60°
+    let p4 = 3_373_259_426_i64; // π/4  = 45°
+    let p6 = 2_248_506_284_i64; // π/6  = 30°
 
-    let s0  = 0_i64;
-    let c0  = FIXED_ONE;
+    let s0 = 0_i64;
+    let c0 = FIXED_ONE;
     let s30 = FIXED_HALF;
     let c30 = FIXED_SQRT3_OVER_2;
     let s45 = FIXED_INV_SQRT2;
@@ -414,22 +486,54 @@ fn exact_sin_cos_lookup(a: i64) -> Option<(i64, i64)> {
     let s90 = FIXED_ONE;
     let c90 = 0_i64;
 
-    if close(a,  0)          { return Some((s0,   c0));  }
-    if close(a,  p6)         { return Some((s30,  c30)); }
-    if close(a,  p4)         { return Some((s45,  c45)); }
-    if close(a,  p3)         { return Some((s60,  c60)); }
-    if close(a,  p2)         { return Some((s90,  c90)); }
-    if close(a,  p2 + p6)    { return Some(( s60, -c60)); } // 120°
-    if close(a,  p2 + p4)    { return Some(( s45, -c45)); } // 135°
-    if close(a,  p2 + p3)    { return Some(( s30, -c30)); } // 150°
-    if close(a,  FIXED_PI)   { return Some((  s0,  -c0)); } // 180°
-    if close(a, -(FIXED_PI - p6)) { return Some((-s30, -c30)); } // 210°
-    if close(a, -(FIXED_PI - p4)) { return Some((-s45, -c45)); } // 225°
-    if close(a, -(FIXED_PI - p3)) { return Some((-s60, -c60)); } // 240°
-    if close(a, -p2)         { return Some((-s90,  c90)); } // 270°
-    if close(a, -(p2 - p6))  { return Some((-s60,  c60)); } // 300°
-    if close(a, -(p2 - p4))  { return Some((-s45,  c45)); } // 315°
-    if close(a, -(p2 - p3))  { return Some((-s30,  c30)); } // 330°
+    if close(a, 0) {
+        return Some((s0, c0));
+    }
+    if close(a, p6) {
+        return Some((s30, c30));
+    }
+    if close(a, p4) {
+        return Some((s45, c45));
+    }
+    if close(a, p3) {
+        return Some((s60, c60));
+    }
+    if close(a, p2) {
+        return Some((s90, c90));
+    }
+    if close(a, p2 + p6) {
+        return Some((s60, -c60));
+    } // 120°
+    if close(a, p2 + p4) {
+        return Some((s45, -c45));
+    } // 135°
+    if close(a, p2 + p3) {
+        return Some((s30, -c30));
+    } // 150°
+    if close(a, FIXED_PI) {
+        return Some((s0, -c0));
+    } // 180°
+    if close(a, -(FIXED_PI - p6)) {
+        return Some((-s30, -c30));
+    } // 210°
+    if close(a, -(FIXED_PI - p4)) {
+        return Some((-s45, -c45));
+    } // 225°
+    if close(a, -(FIXED_PI - p3)) {
+        return Some((-s60, -c60));
+    } // 240°
+    if close(a, -p2) {
+        return Some((-s90, c90));
+    } // 270°
+    if close(a, -(p2 - p6)) {
+        return Some((-s60, c60));
+    } // 300°
+    if close(a, -(p2 - p4)) {
+        return Some((-s45, c45));
+    } // 315°
+    if close(a, -(p2 - p3)) {
+        return Some((-s30, c30));
+    } // 330°
     None
 }
 
@@ -439,20 +543,20 @@ fn exact_sin_cos_lookup(a: i64) -> Option<(i64, i64)> {
 pub fn atan(x: i64) -> i64 {
     let mut vx: i128 = FIXED_ONE as i128;
     let mut vy: i128 = x as i128;
-    let mut z:  i128 = 0;
+    let mut z: i128 = 0;
 
     for i in 0..24 {
         let vxp = vx;
         let vyp = vy;
         let table = CORDIC_ATAN_TABLE[i] as i128;
         if vy >= 0 {
-            vx =  vxp + (vyp >> i);
-            vy =  vyp - (vxp >> i);
-            z  += table;
+            vx = vxp + (vyp >> i);
+            vy = vyp - (vxp >> i);
+            z += table;
         } else {
-            vx =  vxp - (vyp >> i);
-            vy =  vyp + (vxp >> i);
-            z  -= table;
+            vx = vxp - (vyp >> i);
+            vy = vyp + (vxp >> i);
+            z -= table;
         }
     }
     z as i64
@@ -461,10 +565,18 @@ pub fn atan(x: i64) -> i64 {
 /// asin(x) in Q31.32 radians. Returns None if |x| > 1.
 /// asin(x) = atan(x / √(1 − x²))
 pub fn asin(x: i64) -> Option<i64> {
-    if x.abs() > FIXED_ONE  { return None; }
-    if x ==  FIXED_ONE      { return Some( FIXED_PI_OVER_2); }
-    if x == -FIXED_ONE      { return Some(-FIXED_PI_OVER_2); }
-    if x == 0               { return Some(0); }
+    if x.abs() > FIXED_ONE {
+        return None;
+    }
+    if x == FIXED_ONE {
+        return Some(FIXED_PI_OVER_2);
+    }
+    if x == -FIXED_ONE {
+        return Some(-FIXED_PI_OVER_2);
+    }
+    if x == 0 {
+        return Some(0);
+    }
     let x_sq = multiply(x, x);
     let root = sqrt(FIXED_ONE - x_sq)?;
     Some(atan(divide(x, root)?))
@@ -484,26 +596,79 @@ pub fn acos(x: i64) -> Option<i64> {
 /// e^r computed via 12-term Taylor series with i128 intermediates.
 /// Result scaled by 2^k via bit shift.
 pub fn natural_exp(x: i64) -> i64 {
-    let k = to_integer_rounded(divide(x, FIXED_LN2).unwrap_or(0));
+    // e^0 = 1
+    if x == 0 {
+        return FIXED_ONE;
+    }
+
+    // Handle negative exponents explicitly.
+    //
+    // Computing the Taylor series directly for negative values is less stable
+    // in fixed-point arithmetic and can accumulate significant truncation error.
+    //
+    // Instead use:
+    //
+    //     e^-x = 1 / e^x
+    //
+    // which keeps the polynomial evaluation in the positive domain.
+    if x < 0 {
+        return divide(FIXED_ONE, natural_exp(-x)).unwrap_or(0);
+    }
+
+    // Range reduction:
+    //
+    //     e^x = e^(k ln 2 + r)
+    //          = 2^k * e^r
+    //
+    // Choose k such that:
+    //
+    //     r = x - k ln 2
+    //
+    // is small, improving Taylor-series accuracy.
+    //
+    // Using truncation instead of rounding keeps r bounded and stable.
+    let k = to_integer_truncated(divide(x, FIXED_LN2).unwrap_or(0));
+
+    // Reduced argument.
     let r = x - k * FIXED_LN2;
 
-    // 12-term Taylor: e^r = 1 + r + r²/2! + r³/3! + … + r¹²/12!
-    // All arithmetic in i128 to preserve precision.
-    let r_i  = r as i128;
-    let s    = SCALE as i128;
+    // Evaluate e^r using a 12-term Taylor series:
+    //
+    //     e^r = 1 + r + r²/2! + r³/3! + ...
+    //
+    // All calculations are done in i128 to preserve precision and avoid
+    // overflow during intermediate multiplication.
+    let r_i = r as i128;
+    let s = SCALE as i128;
 
-    let mut term   = s;                  // r^0 / 0! = 1
-    let mut result = s;                  // accumulator starts at 1
+    // Current term in the series.
+    // Starts at 1.0 in Q31.32.
+    let mut term = s;
+
+    // Accumulator also starts at 1.0.
+    let mut result = s;
+
+    // Add terms:
+    //
+    //     term_n = term_(n-1) * r / n
+    //
+    // maintaining fixed-point scaling throughout.
     for n in 1i128..=12 {
-        term = (term * r_i) / s / n;    // term = r^n / n! in Q31.32
+        term = (term * r_i) / s / n;
         result += term;
     }
 
+    // Convert back to i64 after polynomial evaluation.
     let poly = result as i64;
 
-    // Scale by 2^k.
-    if k >= 0 { poly << (k as u32).min(30) }
-    else      { poly >> ((-k) as u32).min(63) }
+    // Multiply by 2^k:
+    //
+    //     e^x = 2^k * e^r
+    //
+    // Since x is guaranteed positive here, k should also be >= 0.
+    //
+    // Clamp shift amount to avoid undefined behaviour.
+    poly << (k as u32).min(30)
 }
 
 /// ln(x) for Q31.32 x > 0. Returns None for x ≤ 0.
@@ -512,13 +677,21 @@ pub fn natural_exp(x: i64) -> i64 {
 /// ln(m) via 16-term Taylor series for ln(1+t), t = m−1 ∈ [0,1).
 /// All arithmetic in i128.
 pub fn natural_log(x: i64) -> Option<i64> {
-    if x <= 0 { return None; }
+    if x <= 0 {
+        return None;
+    }
 
     // Reduce to m ∈ [SCALE, 2×SCALE).
     let mut m = x;
     let mut k: i64 = 0;
-    while m >= 2 * SCALE { m >>= 1; k += 1; }
-    while m <      SCALE { m <<= 1; k -= 1; }
+    while m >= 2 * SCALE {
+        m >>= 1;
+        k += 1;
+    }
+    while m < SCALE {
+        m <<= 1;
+        k -= 1;
+    }
 
     // t = m − 1 as Q31.32, range [0, SCALE).
     let t = (m - SCALE) as i128;
@@ -529,7 +702,11 @@ pub fn natural_log(x: i64) -> Option<i64> {
     let mut result: i128 = 0;
     for n in 1i128..=16 {
         let term = t_power / n;
-        if n % 2 == 1 { result += term; } else { result -= term; }
+        if n % 2 == 1 {
+            result += term;
+        } else {
+            result -= term;
+        }
         t_power = (t_power * t) >> 32;
     }
 
@@ -550,7 +727,9 @@ pub fn log2(x: i64) -> Option<i64> {
 
 /// Absolute value.
 #[inline(always)]
-pub fn abs(x: i64) -> i64 { x.abs() }
+pub fn abs(x: i64) -> i64 {
+    x.abs()
+}
 
 /// Floor: round toward −∞.
 ///
@@ -565,15 +744,21 @@ pub fn floor(x: i64) -> i64 {
 /// Ceiling: round toward +∞.
 #[inline(always)]
 pub fn ceil(x: i64) -> i64 {
-    if x & (SCALE - 1) == 0 { x }
-    else { floor(x) + SCALE }
+    if x & (SCALE - 1) == 0 {
+        x
+    } else {
+        floor(x) + SCALE
+    }
 }
 
 /// Round to nearest integer (half rounds away from zero).
 #[inline(always)]
 pub fn round(x: i64) -> i64 {
-    if x >= 0 { floor(x + FIXED_HALF) }
-    else      { -floor(-x + FIXED_HALF) }
+    if x >= 0 {
+        floor(x + FIXED_HALF)
+    } else {
+        -floor(-x + FIXED_HALF)
+    }
 }
 
 // ─── Angle unit conversion ────────────────────────────────────────────────────
@@ -601,14 +786,18 @@ pub fn radians_to_degrees(radians: i64) -> i64 {
 pub fn format_fixed_point(value: i64, buffer: &mut [u8; 24]) -> &[u8] {
     let is_negative = value < 0;
     // Use i128 to safely handle i64::MIN.
-    let abs_val: i128 = if is_negative { -(value as i128) } else { value as i128 };
+    let abs_val: i128 = if is_negative {
+        -(value as i128)
+    } else {
+        value as i128
+    };
 
     let integer_part = (abs_val >> FRACTIONAL_BITS) as u64;
 
     // Extract fractional part as 6 decimal digits.
     // frac_raw ∈ [0, SCALE−1]; scale to 6 decimal places.
     // Use i128 to avoid overflow: frac_raw × 1_000_000 can exceed u64.
-    let frac_raw     = (abs_val & (SCALE as i128 - 1)) as u128;
+    let frac_raw = (abs_val & (SCALE as i128 - 1)) as u128;
     let frac_decimal = ((frac_raw * 1_000_000 + (SCALE as u128) / 2) / SCALE as u128) as u32;
 
     // Carry from rounding.
@@ -620,12 +809,16 @@ pub fn format_fixed_point(value: i64, buffer: &mut [u8; 24]) -> &[u8] {
 
     let mut pos = 0usize;
 
-    if is_negative { buffer[pos] = b'-'; pos += 1; }
+    if is_negative {
+        buffer[pos] = b'-';
+        pos += 1;
+    }
 
     // Write integer part.
     let int_start = pos;
     if integer_part == 0 {
-        buffer[pos] = b'0'; pos += 1;
+        buffer[pos] = b'0';
+        pos += 1;
     } else {
         let mut n = integer_part;
         while n > 0 {
@@ -638,7 +831,8 @@ pub fn format_fixed_point(value: i64, buffer: &mut [u8; 24]) -> &[u8] {
 
     // Write fractional part (6 digits, trailing zeros stripped).
     if frac_decimal > 0 {
-        buffer[pos] = b'.'; pos += 1;
+        buffer[pos] = b'.';
+        pos += 1;
         let mut digits = [0u8; 6];
         let mut fd = frac_decimal;
         for i in (0..6).rev() {
@@ -646,7 +840,10 @@ pub fn format_fixed_point(value: i64, buffer: &mut [u8; 24]) -> &[u8] {
             fd /= 10;
         }
         let last = (0..6).rev().find(|&i| digits[i] != b'0').unwrap_or(0);
-        for i in 0..=last { buffer[pos] = digits[i]; pos += 1; }
+        for i in 0..=last {
+            buffer[pos] = digits[i];
+            pos += 1;
+        }
     }
 
     &buffer[..pos]

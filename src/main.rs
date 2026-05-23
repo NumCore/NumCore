@@ -39,8 +39,15 @@ mod runtime;
 /// Layer 6 — Math Engine: lexer, parser, evaluator.
 mod math;
 
-// Layer 7 (UI) and Layer 8 (Modes) declared here when implemented:
-// mod ui;
+/// Layer 7 — UI rendering helpers.
+mod ui {
+    pub(crate) use crate::hal::oled;
+
+    pub mod font;
+    pub mod formula;
+}
+
+// Layer 8 (Modes) declared here when implemented:
 // mod modes;
 
 // ─── Panic handler ────────────────────────────────────────────────────────────

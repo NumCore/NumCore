@@ -21,9 +21,7 @@
 #[inline(always)]
 pub fn read_register(base_address: u32, register_offset: u32) -> u32 {
     // SAFETY: see above — all call sites use validated HAL constants.
-    unsafe {
-        core::ptr::read_volatile((base_address + register_offset) as *const u32)
-    }
+    unsafe { core::ptr::read_volatile((base_address + register_offset) as *const u32) }
 }
 
 /// Write a 32-bit value to a memory-mapped peripheral register.
@@ -35,9 +33,7 @@ pub fn read_register(base_address: u32, register_offset: u32) -> u32 {
 #[inline(always)]
 pub fn write_register(base_address: u32, register_offset: u32, value: u32) {
     // SAFETY: see read_register above.
-    unsafe {
-        core::ptr::write_volatile((base_address + register_offset) as *mut u32, value)
-    }
+    unsafe { core::ptr::write_volatile((base_address + register_offset) as *mut u32, value) }
 }
 
 /// Read-modify-write: set specific bits in a register without disturbing others.
