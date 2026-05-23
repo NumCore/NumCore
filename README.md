@@ -8,6 +8,7 @@ Bare-metal scientific calculator firmware for the **LM3S811** ARM Cortex-M3 micr
 - Full recursive-descent parser with **PEMDAS precedence**
 - **Right-associative exponentiation** (`2^2^3` = 256, not 64)
 - Parenthesised sub-expressions, implicit precedence via grammar
+- **Implicit multiplication** — `3(5)`, `(a)b`, `(x)(y)`, `2sin(x)` all multiply without `*`
 - 64-character input buffer, 32-token lexer budget, 64-node AST arena
 
 ### Mathematical functions
@@ -53,16 +54,23 @@ Bare-metal scientific calculator firmware for the **LM3S811** ARM Cortex-M3 micr
 | `chicdf(x,k)` | Chi-squared CDF `P(X≤x)` with `k` d.f. |
 | `lngamma(x)` | Log-gamma `ln(Γ(x))` |
 
+**Store:**
+| Function | Description |
+|----------|-------------|
+| `sto(value, var)` | Store value into register `var` (uppercase letter A–Z). Returns the value. |
+
 **Loop aggregates:**
 | Function | Description |
 |----------|-------------|
 | `sum(expr, var, start, end)` | Summation Σ over integer range |
 | `int(expr, var, a, b)` | Numeric integration via Simpson's rule |
 
-### Constants and variables
-- **Built-in constants:** `pi`, `e` (with 9-digit Q31.32 precision)
+### Constants, variables, and identifiers
+- **Case-sensitive** — identifiers are case-sensitive. Function names and constants (`sin`, `pi`, `e`, `ans`, `sto`) are all lowercase. Variable registers are uppercase A–Z.
+- **Built-in constants:** `pi`, `e` (Euler's constant, lowercase)
 - **Ans:** automatically stores the last result
-- **Registers A–Z:** 26 user-writable storage registers
+- **Registers A–Z:** 26 user-writable storage registers. `sto(value, A)` stores into register A. Read by typing the register name: `A+3`. Registers initialise to 0.
+- **`e` vs `E`** — `e` is Euler's constant (~2.71828); `E` is a user variable register. This distinction is unambiguous thanks to case-sensitive identifiers.
 
 ### Q31.32 fixed-point engine
 - **i64** storage: 32 integer bits (signed) + 32 fractional bits
@@ -78,6 +86,7 @@ Bare-metal scientific calculator firmware for the **LM3S811** ARM Cortex-M3 micr
 - Pretty-printed formulas with π glyph, ×÷− symbols, and tall ∫/Σ notation
 - **Scratch buffers** pre-allocated in static RAM to avoid stack overflow on 8 KB SRAM
 - No heap, no allocator, no OS — fully deterministic, all memory static
+- **No explicit `*` required** before `(`, variables, constants, or function calls — `3(5)`, `A(B)`, `2sin(x)` all work
 
 ## Safety contract
 

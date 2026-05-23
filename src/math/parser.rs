@@ -72,6 +72,15 @@ pub enum AstNode {
         arg_indices: [usize; 2],
     },
 
+    /// Store a value into a user register.
+    /// Used by sto(value, var). Returns the stored value.
+    Store {
+        /// Index of the value expression node.
+        value_index: usize,
+        /// The register letter to store into (e.g. b'A' for register A).
+        register: u8,
+    },
+
     /// A looping aggregate over an expression body with a bound variable.
     /// Used by sum(expr, var, start, end) and int(expr, var, a, b).
     ///
@@ -276,24 +285,59 @@ fn parse_expression(cursor: &mut ParserCursor, tree: &mut ParseTree) -> Option<u
     Some(left)
 }
 
-/// term = power ( ( '*' | '/' | '%' ) power )*
+/// term = power ( ( '*' | '/' | '%' | implicit_mult ) power )*
+///
+/// Implicit multiplication fires when a primary expression is immediately
+/// followed by the start of another primary with no explicit operator, e.g.
+/// `3(5)`, `(a)b`, `(x)(y)`, `a b`, `a 3`. This makes the multiplication
+/// operator optional before parentheses, variables, constants, and numbers.
 fn parse_term(cursor: &mut ParserCursor, tree: &mut ParseTree) -> Option<usize> {
     let mut left = parse_power(cursor, tree)?;
 
-    while let Some(token) = cursor.peek() {
-        let op = match token {
-            Token::Star => BinaryOperator::Multiply,
-            Token::Slash => BinaryOperator::Divide,
-            Token::Percent => BinaryOperator::Modulo,
-            _ => break,
+    loop {
+        // ── Explicit multiplication / division / modulo ───────────────
+        let op = match cursor.peek() {
+            Some(Token::Star) => {
+                cursor.advance();
+                Some(BinaryOperator::Multiply)
+            }
+            Some(Token::Slash) => {
+                cursor.advance();
+                Some(BinaryOperator::Divide)
+            }
+            Some(Token::Percent) => {
+                cursor.advance();
+                Some(BinaryOperator::Modulo)
+            }
+            _ => None,
         };
-        cursor.advance();
-        let right = parse_power(cursor, tree)?;
-        left = tree.allocate_node(AstNode::BinaryOperation {
-            operator: op,
-            left_child_index: left,
-            right_child_index: right,
-        })?;
+        if let Some(op) = op {
+            let right = parse_power(cursor, tree)?;
+            left = tree.allocate_node(AstNode::BinaryOperation {
+                operator: op,
+                left_child_index: left,
+                right_child_index: right,
+            })?;
+            continue;
+        }
+
+        // ── Implicit multiplication ───────────────────────────────────
+        // If the next token starts a primary expression (number, variable,
+        // constant, function call, or parenthesised group), treat it as an
+        // implicit multiply: a(b) → a * b, (a)b → a * b, 3(5) → 3 * 5.
+        if let Some(token) = cursor.peek() {
+            if is_primary_start(token) {
+                let right = parse_power(cursor, tree)?;
+                left = tree.allocate_node(AstNode::BinaryOperation {
+                    operator: BinaryOperator::Multiply,
+                    left_child_index: left,
+                    right_child_index: right,
+                })?;
+                continue;
+            }
+        }
+
+        break;
     }
     Some(left)
 }
@@ -408,6 +452,28 @@ fn parse_primary(cursor: &mut ParserCursor, tree: &mut ParseTree) -> Option<usiz
             })
         }
 
+        // sto(value, var): store expression value into a register.
+        Token::FuncSto => {
+            if cursor.advance() != Some(Token::LeftParen) {
+                return None;
+            }
+            let value_index = parse_expression(cursor, tree)?;
+            if cursor.advance() != Some(Token::Comma) {
+                return None;
+            }
+            let register = match cursor.advance()? {
+                Token::VarRegister(ch) => ch,
+                _ => return None,
+            };
+            if cursor.advance() != Some(Token::RightParen) {
+                return None;
+            }
+            tree.allocate_node(AstNode::Store {
+                value_index,
+                register,
+            })
+        }
+
         // Loop aggregates: sum/int '(' body ',' var ',' start ',' end ')'
         func_token if is_loop_aggregate_token(func_token) => {
             if cursor.advance() != Some(Token::LeftParen) {
@@ -510,6 +576,27 @@ fn is_two_arg_function_token(token: Token) -> bool {
 /// Return true if the token is a loop aggregate (sum or int).
 fn is_loop_aggregate_token(token: Token) -> bool {
     matches!(token, Token::FuncSum | Token::FuncInt)
+}
+
+/// Return true if the token can start a primary expression.
+///
+/// Used by `parse_term` for implicit multiplication detection. A primary
+/// starts with a literal, variable, constant, parenthesised group, or any
+/// named function (all of which demand `(` next in `parse_primary`).
+fn is_primary_start(token: Token) -> bool {
+    matches!(
+        token,
+        Token::Number(_)
+            | Token::VarAns
+            | Token::VarRegister(_)
+            | Token::ConstPi
+            | Token::ConstE
+            | Token::LeftParen
+    ) || is_single_arg_function_token(token)
+        || is_three_arg_function_token(token)
+        || is_two_arg_function_token(token)
+        || is_loop_aggregate_token(token)
+        || token == Token::FuncSto
 }
 
 /// Map a single-argument function token to its MathFunction variant.

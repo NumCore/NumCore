@@ -59,13 +59,13 @@ impl VariableStore {
         self.has_last_answer = true;
     }
 
-    /// Read a user register by letter (A–Z, case-insensitive).
+    /// Read a user register by letter (uppercase A–Z only).
     /// Returns Some(0) for unwritten registers. Returns None for invalid letters.
     pub fn read_register(&self, letter: u8) -> Option<i64> {
         Some(self.user_registers[register_letter_to_index(letter)?])
     }
 
-    /// Write a user register by letter (A–Z, case-insensitive).
+    /// Write a user register by letter (uppercase A–Z only).
     /// Returns false if the letter is outside A–Z.
     pub fn write_register(&mut self, letter: u8, value: i64) -> bool {
         match register_letter_to_index(letter) {
@@ -81,9 +81,9 @@ impl VariableStore {
 /// Map a register letter (A–Z, case-insensitive) to a 0-based array index.
 /// Returns None if the letter is outside A–Z.
 fn register_letter_to_index(letter: u8) -> Option<usize> {
-    let upper = letter.to_ascii_uppercase();
-    if upper >= FIRST_REGISTER_LETTER && upper < FIRST_REGISTER_LETTER + USER_REGISTER_COUNT as u8 {
-        Some((upper - FIRST_REGISTER_LETTER) as usize)
+    if letter >= FIRST_REGISTER_LETTER && letter < FIRST_REGISTER_LETTER + USER_REGISTER_COUNT as u8
+    {
+        Some((letter - FIRST_REGISTER_LETTER) as usize)
     } else {
         None
     }
