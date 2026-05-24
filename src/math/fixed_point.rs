@@ -773,16 +773,35 @@ pub fn natural_log(x: i64) -> Option<i64> {
 
     // 20-term Taylor: ln(1+t) = Σ (−1)^(n+1) × t^n / n
     // With |t| ≤ 0.414 the 20th term is < 1 Q31.32 LSB.
+    //
+    // NOTE on division: Rust integer division truncates toward zero.
+    // For negative t_power this biases every term toward zero, losing
+    // up to (n−1)/n ULP per term (~17 ULP worst-case accumulated).
+    // We use symmetric rounding (half away from zero) instead, halving
+    // the per-term error to at most 0.5 ULP.
+    //
+    // NOTE on multiplication: the (t_power * t) >> 32 step discards the
+    // low 32 bits.  Adding ±SCALE/2 before shifting rounds to nearest
+    // instead of truncating.
     let mut t_power = t;
     let mut result: i128 = 0;
     for n in 1i128..=20 {
-        let term = t_power / n;
+        let term = if t_power >= 0 {
+            (t_power + n / 2) / n
+        } else {
+            (t_power - n / 2) / n
+        };
         if n % 2 == 1 {
             result += term;
         } else {
             result -= term;
         }
-        t_power = (t_power * t) >> 32;
+        let product = t_power * t;
+        t_power = if product >= 0 {
+            (product + (SCALE as i128) / 2) >> 32
+        } else {
+            (product - (SCALE as i128) / 2) >> 32
+        };
     }
 
     Some(k * FIXED_LN2 + result as i64)
