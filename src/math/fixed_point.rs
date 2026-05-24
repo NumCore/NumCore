@@ -649,6 +649,14 @@ pub fn acos(x: i64) -> Option<i64> {
 /// the shift amount and producing a silently wrong result.
 const MAX_EXP_SHIFT: i64 = 30;
 
+/// Largest positive x such that exp(x) does not overflow Q31.32.
+///
+/// k = trunc(x / ln2).  For k ≤ 30 we need x < 31 × ln2 ≈ 21.49.
+/// Any argument larger than this will be caught by the k ≤ MAX_EXP_SHIFT
+/// check, but failing early here avoids unnecessary recursion (and an
+/// expensive divide) in the negative-x path.
+const MAX_POS_EXP_ARG: i64 = (MAX_EXP_SHIFT + 1) * FIXED_LN2 - 1;
+
 /// e^x for Q31.32 x.
 ///
 /// Range reduction: x = k × ln2 + r, |r| ≤ ln2/2.
@@ -662,17 +670,16 @@ pub fn natural_exp(x: i64) -> Option<i64> {
         return Some(FIXED_ONE);
     }
 
-    // Handle negative exponents explicitly.
+    // Handle negative exponents via e^x = 1/e^(-x).
     //
-    // Computing the Taylor series directly for negative values is less stable
-    // in fixed-point arithmetic and can accumulate significant truncation error.
-    //
-    // Instead use:
-    //
-    //     e^-x = 1 / e^x
-    //
-    // which keeps the polynomial evaluation in the positive domain.
+    // Fail fast: if -x exceeds the maximum representable positive
+    // argument, the recursive call will overflow — reject immediately
+    // instead of recursing into a full range-reduction / divide that
+    // will just return None anyway.
     if x < 0 {
+        if x < -MAX_POS_EXP_ARG {
+            return None;
+        }
         let pos = natural_exp(-x)?;
         return divide(FIXED_ONE, pos);
     }
