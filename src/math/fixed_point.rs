@@ -334,11 +334,23 @@ pub fn cos(angle: i64) -> i64 {
     sin_cos(angle).1
 }
 
+/// |cos| below which tan(x) = sin/cos is rejected as too close to a pole.
+///
+/// 0.0001 in Q31.32 = round(0.0001 × 2^32) = 429_497.
+///
+/// At |cos| = 0.0001 the true tan magnitude is ~10 000.  The nearest
+/// representable Q31.32 integer part is 2^31 − 1 ≈ 2.147 × 10^9, so
+/// there is headroom — but the CORDIC sin/cos error (~1−2 ULP at 24
+/// iterations) means the computed cos could be slightly smaller or
+/// even zero for inputs extremely close to ±π/2.  Picking 0.0001
+/// gives a comfortable safety margin while still covering angles up
+/// to ~89.994°.
+const TAN_COS_MIN: i64 = 429_497;
+
 /// tan of a Q31.32 radian angle. Returns None near ±π/2.
 pub fn tan(angle: i64) -> Option<i64> {
     let (s, c) = sin_cos(angle);
-    // |cos| < 0.0001 in Q31.32 ≈ 429497 units.
-    if c.abs() < 429_497 {
+    if c.abs() < TAN_COS_MIN {
         return None;
     }
     divide(s, c)
