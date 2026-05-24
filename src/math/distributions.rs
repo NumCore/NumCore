@@ -100,7 +100,7 @@ pub fn ln_factorial(k: i64) -> Option<i64> {
     let ln_k = fp::natural_log(k_q)?;
 
     // k·ln(k) − k
-    let term1 = fp::multiply(k_q, ln_k) - k_q;
+    let term1 = fp::multiply(k_q, ln_k)? - k_q;
 
     // ½·ln(2πk) = ½·(ln(2π) + ln(k))
     // ln(2π) in Q31.32 = round(ln(2π) × 2^32) = 7_733_370_361
@@ -110,17 +110,17 @@ pub fn ln_factorial(k: i64) -> Option<i64> {
 
     // 1/(12k) in Q31.32: divide(SCALE, 12×k)
     // 12×k as Q31.32: multiply(from_integer(12), k) = 12 × k (still integer)
-    let twelve_k = fp::multiply(fp::from_integer(12), k_q);
+    let twelve_k = fp::multiply(fp::from_integer(12), k_q)?;
     let term3 = fp::divide(fp::FIXED_ONE, twelve_k)?;
 
     // 1/(360k³) — for k ≥ 21 this is < 3×10⁻⁸, negligible but included for accuracy
-    let k_sq = fp::multiply(k_q, k_q);
-    let k_cu = fp::multiply(k_sq, k_q);
-    let term4 = fp::divide(fp::FIXED_ONE, fp::multiply(fp::from_integer(360), k_cu))?;
+    let k_sq = fp::multiply(k_q, k_q)?;
+    let k_cu = fp::multiply(k_sq, k_q)?;
+    let term4 = fp::divide(fp::FIXED_ONE, fp::multiply(fp::from_integer(360), k_cu)?)?;
 
     // 1/(1260k⁵)
-    let k_5th = fp::multiply(k_cu, k_sq);
-    let term5 = fp::divide(fp::FIXED_ONE, fp::multiply(fp::from_integer(1260), k_5th))?;
+    let k_5th = fp::multiply(k_cu, k_sq)?;
+    let term5 = fp::divide(fp::FIXED_ONE, fp::multiply(fp::from_integer(1260), k_5th)?)?;
 
     Some(term1 + term2 + term3 - term4 + term5)
 }
@@ -202,7 +202,7 @@ pub fn ln_gamma(z: i64) -> Option<i64> {
     // ── Reflection formula for z < 0.5 ───────────────────────────────────────
     if z < fp::FIXED_HALF {
         let one_minus_z = fp::FIXED_ONE - z;
-        let pi_z = fp::multiply(fp::FIXED_PI, z);
+        let pi_z = fp::multiply(fp::FIXED_PI, z)?;
         let sin_pi_z = fp::sin(pi_z);
         if sin_pi_z <= 0 {
             return None;
@@ -249,7 +249,7 @@ pub fn ln_gamma(z: i64) -> Option<i64> {
 
     // ln(Γ(z)) = LN_SQRT_TWO_PI + (x+0.5)·ln(t) − t + ln(series)
     let x_plus_half = x + fp::FIXED_HALF;
-    Some(LN_SQRT_TWO_PI + fp::multiply(x_plus_half, ln_t) - t + ln_series)
+    Some(LN_SQRT_TWO_PI + fp::multiply(x_plus_half, ln_t)? - t + ln_series)
 }
 
 // ─── Binomial probability ─────────────────────────────────────────────────────
@@ -290,8 +290,8 @@ pub fn binomial_probability(n: i64, k: i64, p: i64) -> Option<i64> {
     let ln_1mp = fp::natural_log(fp::FIXED_ONE - p)?;
 
     let ln_prob = ln_binom
-        .checked_add(fp::multiply(k, ln_p))?
-        .checked_add(fp::multiply(n_minus_k, ln_1mp))?;
+        .checked_add(fp::multiply(k, ln_p)?)?
+        .checked_add(fp::multiply(n_minus_k, ln_1mp)?)?;
 
     fp::natural_exp(ln_prob)
 }
@@ -318,7 +318,7 @@ pub fn poisson_probability(lambda: i64, k: i64) -> Option<i64> {
     let ln_k_fact = ln_factorial(k)?;
 
     let ln_prob = (-lambda)
-        .checked_add(fp::multiply(k, ln_lambda))?
+        .checked_add(fp::multiply(k, ln_lambda)?)?
         .checked_sub(ln_k_fact)?;
 
     fp::natural_exp(ln_prob)
@@ -342,7 +342,7 @@ fn incomplete_gamma_series(a: i64, x: i64) -> Option<i64> {
 
     // Prefactor = e^(−x) × x^a / Γ(a), computed in log space.
     let ln_prefactor = (-x)
-        .checked_add(fp::multiply(a, fp::natural_log(x)?))?
+        .checked_add(fp::multiply(a, fp::natural_log(x)?)?)?
         .checked_sub(ln_gamma(a)?)?;
     let prefactor = fp::natural_exp(ln_prefactor)?;
 
@@ -352,14 +352,14 @@ fn incomplete_gamma_series(a: i64, x: i64) -> Option<i64> {
 
     for n in 1..MAX_GAMMA_ITER {
         let a_n = a + fp::from_integer(n as i64);
-        term = fp::multiply(term, fp::divide(x, a_n)?);
+        term = fp::multiply(term, fp::divide(x, a_n)?)?;
         series = series.checked_add(term)?;
         if term.abs() < series.abs() / 1_000_000_000 {
             break;
         }
     }
 
-    Some(fp::multiply(prefactor, series))
+    fp::multiply(prefactor, series)
 }
 
 /// P(X ≤ x) for X ~ χ²(k degrees of freedom).
