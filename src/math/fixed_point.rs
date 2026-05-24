@@ -438,13 +438,20 @@ pub fn atanh(x: i64) -> Option<i64> {
     Some(ln >> 1)
 }
 
-/// Reduce angle to [−π, π] in Q31.32.
+/// Reduce angle to [−π, π] in Q31.32 using modular arithmetic.
+///
+/// The while-loop approach (iteratively subtracting/adding TWO_PI)
+/// requires O(|angle| / TWO_PI) iterations — for a 1e9 radian input
+/// that is ~1.6e8 iterations, hanging a 12 MHz Cortex-M3 for seconds.
+///
+/// Instead we use the `%` operator which gives the remainder in
+/// (−TWO_PI, TWO_PI) in a single division.  At most one conditional
+/// add/subtract is then needed to bring the result into [−π, π].
 pub fn reduce_angle_to_principal(angle: i64) -> i64 {
-    let mut a = angle;
-    while a > FIXED_PI {
+    let mut a = angle % FIXED_TWO_PI;
+    if a > FIXED_PI {
         a -= FIXED_TWO_PI;
-    }
-    while a < -FIXED_PI {
+    } else if a < -FIXED_PI {
         a += FIXED_TWO_PI;
     }
     a
