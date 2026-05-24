@@ -730,7 +730,8 @@ const MAX_POS_EXP_ARG: i64 = (MAX_EXP_SHIFT + 1) * FIXED_LN2 - 1;
 /// e^r computed via 12-term Taylor series with i128 intermediates.
 /// Result scaled by 2^k via bit shift.
 ///
-/// Returns `None` if the result overflows Q31.32 (|x| > ~21.5).
+/// Returns `None` if the result overflows Q31.32 (x > ~21.5).
+/// Returns `Some(0)` for underflow (x < -21.5).
 pub fn natural_exp(x: i64) -> Option<i64> {
     // e^0 = 1
     if x == 0 {
@@ -739,13 +740,13 @@ pub fn natural_exp(x: i64) -> Option<i64> {
 
     // Handle negative exponents via e^x = 1/e^(-x).
     //
-    // Fail fast: if -x exceeds the maximum representable positive
-    // argument, the recursive call will overflow — reject immediately
-    // instead of recursing into a full range-reduction / divide that
-    // will just return None anyway.
+    // Underflow fast-path: if -x exceeds the maximum representable
+    // positive argument, e^x rounds to 0 in Q31.32 precision —
+    // return early instead of recursing into a full range-reduction
+    // / divide that will just overflow anyway.
     if x < 0 {
         if x < -MAX_POS_EXP_ARG {
-            return None;
+            return Some(0);
         }
         let pos = natural_exp(-x)?;
         return divide(FIXED_ONE, pos);
