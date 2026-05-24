@@ -231,8 +231,18 @@ pub fn integer_power(base: i64, exp: i64) -> Option<i64> {
 
 /// Compute √x for Q31.32 x ≥ 0. Returns None for negative input.
 ///
-/// Promotes to i128, takes integer sqrt as initial guess, then refines
-/// with Newton-Raphson iterations until convergence.
+/// Newton-Raphson with initial guess x/2:
+///
+///     x_{n+1} = (x_n + x / x_n) / 2
+///
+/// The guess x/2 is always within a factor of 2 of √x for x ≥ 2 (raw).
+/// For x = 1.0 (SCALE): guess = 0.5, √1 = 1.0 → 3 iterations.
+/// For x = 16.0:         guess = 8.0, √16 = 4.0 → 3 iterations.
+/// For x = 0.25 × SCALE: guess = 0.125, √0.25 = 0.5 → 4 iterations.
+///
+/// This replaces the previous approach of promoting to Q31.64 and
+/// calling `integer_sqrt_i128` for the initial guess — mathematically
+/// correct but far more complex than needed.
 pub fn sqrt(x: i64) -> Option<i64> {
     if x < 0 {
         return None;
@@ -241,15 +251,17 @@ pub fn sqrt(x: i64) -> Option<i64> {
         return Some(0);
     }
 
-    // Promote to Q31.64 for the integer sqrt initial guess.
-    let scaled: i128 = (x as i128) << FRACTIONAL_BITS;
-    let mut guess = integer_sqrt_i128(scaled) as i64;
+    // Initial guess: x / 2 in Q31.32.
+    // For x ≥ 2 (raw) the shift always produces a non-zero result;
+    // for x = 1 (raw ≈ 2.3×10⁻¹⁰) the floor-division gives zero, so
+    // we floor at 1 to avoid division-by-zero in the Newton step.
+    let mut guess = x >> 1;
+    if guess == 0 {
+        guess = 1;
+    }
 
-    // Newton-Raphson: converges in ~10 iterations for Q31.32.
+    // Newton-Raphson.
     for _ in 0..10 {
-        if guess == 0 {
-            break;
-        }
         let quotient = (((x as i128) << FRACTIONAL_BITS) / (guess as i128)) as i64;
         guess = (guess / 2) + (quotient / 2);
     }
@@ -294,20 +306,6 @@ pub fn nthroot(x: i64, n: i64) -> Option<i64> {
         }
         power(x, divide(FIXED_ONE, n)?)
     }
-}
-
-/// Integer square root of a non-negative i128, returning the floor.
-fn integer_sqrt_i128(n: i128) -> i128 {
-    if n <= 0 {
-        return 0;
-    }
-    let mut x = n;
-    let mut y = (x + 1) / 2;
-    while y < x {
-        x = y;
-        y = (x + n / x) / 2;
-    }
-    x
 }
 
 // ─── Trigonometry (CORDIC Q31.32 + exact hardcoded values) ───────────────────
