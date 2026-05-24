@@ -33,6 +33,9 @@ jobs:
       - name: Build firmware (release)
         run: cargo build --release --target ${{ env.RUST_TARGET }} --verbose
 
+      - name: Run host-side unit tests (math engine)
+        run: cargo test -p numcore_math --tests --verbose
+
       - name: Print binary size
         run: arm-none-eabi-size target/${{ env.RUST_TARGET }}/release/NumCore || true
 

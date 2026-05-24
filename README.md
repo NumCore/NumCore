@@ -2,6 +2,13 @@
 
 Bare-metal scientific calculator firmware for the **LM3S811** ARM Cortex-M3 microcontroller, written entirely in Rust with `#![no_std]` and `#![no_main]`. Features a complete fixed-point math engine, an interactive UART console, and an I2C-driven OLED display.
 
+The project is a **Cargo workspace** with two members:
+
+| Member | Path | Target | Purpose |
+|--------|------|--------|---------|
+| `NumCore` (root) | `./` | `thumbv7m-none-eabi` | Firmware binary for LM3S811 |
+| `numcore_math` | `test-suite/` | Host (e.g. `x86_64`) | Host-side unit tests for the math engine |
+
 ## Features
 
 ### Expression evaluation
@@ -120,13 +127,25 @@ To port: rewrite `hal/` for the new MCU, update `boot.rs` to match the new vecto
 rustup target add thumbv7m-none-eabi
 ```
 
-### Build
+### Build firmware
 
 ```bash
-cargo build --release
+make build
+# or
+cargo build --release --target thumbv7m-none-eabi
 ```
 
 The resulting ELF binary lives at `target/thumbv7m-none-eabi/release/NumCore`.
+
+### Run host-side unit tests
+
+```bash
+make test
+# or
+cargo test -p numcore_math --tests
+```
+
+143 tests cover the entire math engine (fixed-point arithmetic, lexer, parser, evaluator, variables, distributions, and full pipeline integration). 11 tests are skipped on host due to known overflow differences with the embedded target.
 
 ### Run in QEMU
 

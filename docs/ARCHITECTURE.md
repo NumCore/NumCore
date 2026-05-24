@@ -16,11 +16,22 @@ NumCore's safety model is explicit and auditable:
 
 Porting to a new MCU means auditing and rewriting only `hal/` and `boot.rs`. Everything above the HAL is architecture-agnostic.
 
+## Cargo workspace structure
+
+The project is a Cargo workspace with two members:
+
+| Member | Path | Target | Purpose |
+|--------|------|--------|---------|
+| `NumCore` (root) | `./` | `thumbv7m-none-eabi` | Firmware binary for LM3S811 |
+| `numcore_math` | `test-suite/` | Host (e.g. `x86_64`) | Host-side unit tests for the math engine |
+
+The workspace root `.cargo/config.toml` does **not** set a default build target. All firmware commands require `--target thumbv7m-none-eabi`. The test-suite compiles for the host by default. Use `make build` / `make test` for convenience.
+
 ## Portability
 
 The firmware is currently developed and tested on the **Luminary Micro Stellaris LM3S811** (ARM Cortex-M3, 64 KB Flash, 8 KB SRAM). The layered design is explicitly engineered to support future ports to other architectures and microprocessors:
 
-- **`math/`** — zero HAL imports, zero `unsafe`, zero platform dependencies. Compiles on any target Rust supports.
+- **`math/`** — zero HAL imports, zero `unsafe`, zero platform dependencies. Compiles on any target Rust supports. The `test-suite/` workspace member includes `src/math/` sources via `#[path]` and runs 143 automated tests on the host.
 - **`runtime/`** — touches hardware only through the safe HAL API. No register names or memory addresses leak in.
 - **`ui/`** — renders to an abstract framebuffer byte array. Only `hal::oled::render_screen()` is platform-specific.
 - **`hal/`** — the only layer that needs rewriting per target. Peripheral register maps, clock trees, and pin muxing are encapsulated here.
@@ -145,6 +156,8 @@ The control centre of the firmware. Sits between HAL and the application layers.
 ### Layer 6 — Math Engine (`math/`)
 
 Completely hardware-independent. Can be compiled and tested on any platform. Zero `unsafe` code, zero HAL imports, zero heap allocation.
+
+The math engine is tested via the `test-suite/` workspace member, which includes every `src/math/` source file via `#[path]` attributes and compiles them for the host. 143 automated tests cover fixed-point arithmetic, lexer, parser, evaluator, variables, distributions, and the full expression pipeline. Run with `cargo test -p numcore_math --tests` or `make test`.
 
 **Pipeline:**
 
