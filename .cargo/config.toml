@@ -1,6 +1,4 @@
-[build]
-target = "thumbv7m-none-eabi"
-
+# Target-specific linker settings for the firmware binary.
 [target.thumbv7m-none-eabi]
 linker = "rust-lld"
 rustflags = [

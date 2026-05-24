@@ -18,8 +18,8 @@
 ## Short-term
 
 ### Testing infrastructure
-- [ ] Host-side unit test suite for `math/` — compile and test the pure-math layer natively with `cargo test`
-- [ ] CI pipeline: run tests + build on every PR
+- [x] Host-side unit test suite for `math/` — compile and test the pure-math layer natively with `cargo test`
+- [x] CI pipeline: run host-side tests on every PR (`cargo test -p numcore_math --tests`)
 - [ ] Test-vector generator script to verify Q31.32 results against Python's `Decimal`
 
 ### Math engine hardening

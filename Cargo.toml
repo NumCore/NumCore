@@ -1,3 +1,7 @@
+[workspace]
+resolver = "2"
+members = [".", "test-suite"]
+
 [package]
 name = "NumCore"
 version = "0.1.0"
