@@ -191,7 +191,7 @@ pub fn power(base: i64, exponent: i64) -> Option<i64> {
         return None;
     }
     let ln_base = natural_log(base)?;
-    let result = natural_exp(multiply(exponent, ln_base));
+    let result = natural_exp(multiply(exponent, ln_base))?;
 
     // Snap to nearest integer if within 1e-4 of one.
     // The log/exp chain accumulates ~1e-7 error per operation; for inputs
@@ -346,27 +346,41 @@ pub fn tan(angle: i64) -> Option<i64> {
     divide(s, c)
 }
 
-/// sinh of a Q31.32 value.
-pub fn sinh(angle: i64) -> i64 {
-    // sinh(x) = (e^x - e^-x) / 2
-    let exp_pos = natural_exp(angle);
-    let exp_neg = natural_exp(0 - angle);
-    (exp_pos - exp_neg) >> 1
+/// sinh of a Q31.32 value.  Returns `None` on overflow.
+pub fn sinh(angle: i64) -> Option<i64> {
+    let exp_pos = natural_exp(angle)?;
+    let exp_neg = natural_exp(0 - angle)?;
+    Some((exp_pos - exp_neg) >> 1)
 }
 
-/// cosh of a Q31.32 value.
-pub fn cosh(angle: i64) -> i64 {
-    // cosh(x) = (e^x + e^-x) / 2
-    let exp_pos = natural_exp(angle);
-    let exp_neg = natural_exp(0 - angle);
-    (exp_pos + exp_neg) >> 1
+/// cosh of a Q31.32 value.  Returns `None` on overflow.
+pub fn cosh(angle: i64) -> Option<i64> {
+    let exp_pos = natural_exp(angle)?;
+    let exp_neg = natural_exp(0 - angle)?;
+    Some((exp_pos + exp_neg) >> 1)
 }
+
+/// |x| beyond which tanh(x) rounds to ±1 in Q31.32 precision.
+///
+/// tanh(x) = 1 - 2/(e^(2x) + 1).  For |x| ≥ 12 the correction
+/// term is < 2^-33 — below one Q31.32 ULP — so the result is
+/// indistinguishable from ±1.0.  Bypassing the exponential avoids
+/// spurious overflow for large arguments.
+const TANH_SATURATION: i64 = 12 * SCALE;
 
 /// tanh of a Q31.32 value. Returns None if overflow/undefined.
 pub fn tanh(angle: i64) -> Option<i64> {
+    // Saturation fast-path: tanh(≥12) = 1, tanh(≤-12) = -1 within Q31.32 ULP.
+    if angle >= TANH_SATURATION {
+        return Some(FIXED_ONE);
+    }
+    if angle <= -TANH_SATURATION {
+        return Some(-FIXED_ONE);
+    }
+
     // tanh(x) = sinh(x) / cosh(x)
-    let exp_pos = natural_exp(angle);
-    let exp_neg = natural_exp(0 - angle);
+    let exp_pos = natural_exp(angle)?;
+    let exp_neg = natural_exp(0 - angle)?;
 
     let numerator = exp_pos - exp_neg;
     let denominator = exp_pos + exp_neg;
@@ -623,15 +637,24 @@ pub fn acos(x: i64) -> Option<i64> {
 
 // ─── Exponential and logarithm ────────────────────────────────────────────────
 
+/// Maximum safe k = floor(log2(i64::MAX / SCALE)) = 30.
+///
+/// For k > 30 the result 2^k × e^r exceeds the maximum representable
+/// Q31.32 value (~2.147 × 10⁹).  Return `None` instead of truncating
+/// the shift amount and producing a silently wrong result.
+const MAX_EXP_SHIFT: i64 = 30;
+
 /// e^x for Q31.32 x.
 ///
 /// Range reduction: x = k × ln2 + r, |r| ≤ ln2/2.
 /// e^r computed via 12-term Taylor series with i128 intermediates.
 /// Result scaled by 2^k via bit shift.
-pub fn natural_exp(x: i64) -> i64 {
+///
+/// Returns `None` if the result overflows Q31.32 (|x| > ~21.5).
+pub fn natural_exp(x: i64) -> Option<i64> {
     // e^0 = 1
     if x == 0 {
-        return FIXED_ONE;
+        return Some(FIXED_ONE);
     }
 
     // Handle negative exponents explicitly.
@@ -645,7 +668,8 @@ pub fn natural_exp(x: i64) -> i64 {
     //
     // which keeps the polynomial evaluation in the positive domain.
     if x < 0 {
-        return divide(FIXED_ONE, natural_exp(-x)).unwrap_or(0);
+        let pos = natural_exp(-x)?;
+        return divide(FIXED_ONE, pos);
     }
 
     // Range reduction:
@@ -661,6 +685,16 @@ pub fn natural_exp(x: i64) -> i64 {
     //
     // Using truncation instead of rounding keeps r bounded and stable.
     let k = to_integer_truncated(divide(x, FIXED_LN2).unwrap_or(0));
+
+    // Guard against overflow and UB.
+    //
+    //   k < 0   → would wrap to a huge positive when cast to u32
+    //              for the shift, causing undefined behaviour.
+    //   k > 30  → 2^k × e^r exceeds i64::MAX in Q31.32.
+    //
+    if k < 0 || k > MAX_EXP_SHIFT {
+        return None;
+    }
 
     // Reduced argument.
     let r = x - k * FIXED_LN2;
@@ -698,10 +732,9 @@ pub fn natural_exp(x: i64) -> i64 {
     //
     //     e^x = 2^k * e^r
     //
-    // Since x is guaranteed positive here, k should also be >= 0.
-    //
-    // Clamp shift amount to avoid undefined behaviour.
-    poly << (k as u32).min(30)
+    // k is already validated to be in [0, MAX_EXP_SHIFT], so the
+    // shift amount is always safe — no clamping needed.
+    Some(poly << k)
 }
 
 /// ln(x) for Q31.32 x > 0. Returns None for x ≤ 0.
