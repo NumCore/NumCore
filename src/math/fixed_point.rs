@@ -144,22 +144,38 @@ pub fn to_integer_rounded(fp: i64) -> i64 {
     (fp + FIXED_HALF) >> FRACTIONAL_BITS
 }
 
-/// Multiply two Q31.32 values.
-/// Uses i128 intermediate to prevent overflow: result = (a × b) >> 32.
+/// Multiply two Q31.32 values.  Returns `None` on overflow.
+///
+/// Result = (a × b) >> 32, computed in i128 to capture the full
+/// Q31.64 product.  Symmetric rounding is applied before truncation.
+/// If the Q31.32 result does not fit in i64, `None` is returned.
 #[inline(always)]
-pub fn multiply(a: i64, b: i64) -> i64 {
+pub fn multiply(a: i64, b: i64) -> Option<i64> {
     let product = (a as i128) * (b as i128);
-
-    // symmetric rounding to remove bias for negative numbers
     let offset = 1i128 << (FRACTIONAL_BITS - 1);
 
-    let rounded = if product >= 0 {
-        product + offset
+    // Symmetric rounding (half away from zero) via absolute-value
+    // arithmetic.  For positive products, (product + offset) >> 32 gives
+    // truncation-toward-zero of the rounded result.  For negative we
+    // negate to the positive domain, apply the same rounding, then
+    // negate back — this avoids Rust's arithmetic right shift (>>)
+    // which truncates toward -∞ and would give the wrong direction
+    // when combined with a subtracted offset.
+    let result = if product >= 0 {
+        (product + offset) >> FRACTIONAL_BITS
     } else {
-        product - offset
+        let abs = product.wrapping_neg();
+        (abs + offset) >> FRACTIONAL_BITS
     };
 
-    (rounded >> FRACTIONAL_BITS) as i64
+    if result > i64::MAX as i128 {
+        return None;
+    }
+    if product >= 0 {
+        Some(result as i64)
+    } else {
+        Some(-(result as i64))
+    }
 }
 
 /// Divide two Q31.32 values. Returns None if divisor is zero.
@@ -191,7 +207,7 @@ pub fn power(base: i64, exponent: i64) -> Option<i64> {
         return None;
     }
     let ln_base = natural_log(base)?;
-    let result = natural_exp(multiply(exponent, ln_base))?;
+    let result = natural_exp(multiply(exponent, ln_base)?)?;
 
     // Snap to nearest integer if within 1e-4 of one.
     // The log/exp chain accumulates ~1e-7 error per operation; for inputs
@@ -219,9 +235,9 @@ pub fn integer_power(base: i64, exp: i64) -> Option<i64> {
     let mut e = exp;
     while e > 0 {
         if e & 1 == 1 {
-            result = multiply(result, b);
+            result = multiply(result, b)?;
         }
-        b = multiply(b, b);
+        b = multiply(b, b)?;
         e >>= 1;
     }
     Some(result)
@@ -231,18 +247,14 @@ pub fn integer_power(base: i64, exp: i64) -> Option<i64> {
 
 /// Compute √x for Q31.32 x ≥ 0. Returns None for negative input.
 ///
-/// Newton-Raphson with initial guess x/2:
+/// Newton-Raphson with initial guess from `u64::isqrt(x) << 16`.
+/// Because `x = A·2^32` (Q31.32), we have:
 ///
-///     x_{n+1} = (x_n + x / x_n) / 2
+///     √(A·2^32) · 2^32  =  isqrt(A·2^32) · 2^16
 ///
-/// The guess x/2 is always within a factor of 2 of √x for x ≥ 2 (raw).
-/// For x = 1.0 (SCALE): guess = 0.5, √1 = 1.0 → 3 iterations.
-/// For x = 16.0:         guess = 8.0, √16 = 4.0 → 3 iterations.
-/// For x = 0.25 × SCALE: guess = 0.125, √0.25 = 0.5 → 4 iterations.
-///
-/// This replaces the previous approach of promoting to Q31.64 and
-/// calling `integer_sqrt_i128` for the initial guess — mathematically
-/// correct but far more complex than needed.
+/// which gives an initial guess within a factor of √2 of the true
+/// result for all x ≥ 1, and an exact match for perfect-square
+/// inputs. 4–5 Newton iterations suffice for full Q31.32 precision.
 pub fn sqrt(x: i64) -> Option<i64> {
     if x < 0 {
         return None;
@@ -251,11 +263,9 @@ pub fn sqrt(x: i64) -> Option<i64> {
         return Some(0);
     }
 
-    // Initial guess: x / 2 in Q31.32.
-    // For x ≥ 2 (raw) the shift always produces a non-zero result;
-    // for x = 1 (raw ≈ 2.3×10⁻¹⁰) the floor-division gives zero, so
-    // we floor at 1 to avoid division-by-zero in the Newton step.
-    let mut guess = x >> 1;
+    // √x = isqrt(x) · 2^16 for Q31.32 x.
+    // This is exact when x is a perfect square.
+    let mut guess = ((x as u64).isqrt() << 16) as i64;
     if guess == 0 {
         guess = 1;
     }
@@ -268,9 +278,44 @@ pub fn sqrt(x: i64) -> Option<i64> {
     Some(guess)
 }
 
+/// Compute the integer nth root of x via Newton's method.
+///
+/// Uses the iteration:
+///
+///     x_{k+1} = ((n−1)·x_k + x / x_k^(n−1)) / n
+///
+/// which converges quadratically to x^(1/n).  n must be ≥ 2 and a
+/// plain integer (not Q31.32).  x must be ≥ 0.
+fn newton_nthroot(x: i64, n: i64) -> Option<i64> {
+    // Initial guess: x / 2 in Q31.32, same as sqrt.
+    let mut guess = x >> 1;
+    if guess == 0 {
+        guess = FIXED_ONE;
+    }
+    let n_fp = from_integer(n);
+    let n_minus_1 = from_integer(n - 1);
+
+    for _ in 0..12 {
+        // x_k^(n−1) via integer fast squaring.
+        let pow = integer_power(guess, n - 1)?;
+        let quotient = divide(x, pow)?;
+        // ((n−1)·x_k + x / x_k^(n−1)) / n
+        let sum = multiply(n_minus_1, guess)?.checked_add(quotient)?;
+        guess = divide(sum, n_fp)?;
+    }
+    Some(guess)
+}
+
 pub fn nthroot(x: i64, n: i64) -> Option<i64> {
     if n == 0 {
         return None;
+    }
+
+    // Handle negative n: x^(1/n) = 1 / x^(1/|n|).
+    let n_neg = n < 0;
+    if n_neg {
+        let pos = nthroot(x, -n)?;
+        return divide(FIXED_ONE, pos);
     }
 
     let n_is_integer = (n & (SCALE - 1)) == 0;
@@ -278,29 +323,39 @@ pub fn nthroot(x: i64, n: i64) -> Option<i64> {
     let x_zero = x == 0;
 
     if x_zero {
-        return if n > 0 { Some(0) } else { None };
+        return Some(0);
     }
 
     if n_is_integer {
         let n_int = to_integer_truncated(n);
-        let n_odd = (n_int & 1) != 0;
 
-        if n_odd {
-            // Odd integer root: x can be any real number.
-            // For x < 0 compute -(|x|)^(1/n).
-            if x_neg {
-                return power(-x, divide(FIXED_ONE, n)?).map(|v| -v);
-            }
-            return power(x, divide(FIXED_ONE, n)?);
-        } else {
-            // Even integer root: x must be >= 0.
+        if n_int == 2 {
+            // Square root: use the dedicated Newton implementation.
             if x_neg {
                 return None;
             }
-            return power(x, divide(FIXED_ONE, n)?);
+            return sqrt(x);
         }
+
+        if n_int >= 3 {
+            // Higher integer root: use general Newton iteration.
+            // Newton converges faster and more accurately than the
+            // exp(ln(x)/n) path used by power().
+            let n_odd = (n_int & 1) != 0;
+
+            if !n_odd && x_neg {
+                return None; // even root of negative → domain error
+            }
+            if n_odd && x_neg {
+                return newton_nthroot(-x, n_int).map(|v| -v);
+            }
+            return newton_nthroot(x, n_int);
+        }
+
+        // n_int == 1:  x^(1/1) = x
+        Some(x)
     } else {
-        // Non-integer root: x must be > 0.
+        // Non-integer root: must use exp(ln(x)/n).
         if x_neg || x_zero {
             return None;
         }
@@ -405,7 +460,7 @@ pub fn tanh(angle: i64) -> Option<i64> {
 /// asinh of a Q31.32 value.
 pub fn asinh(x: i64) -> Option<i64> {
     // sqrt(x^2 + 1)
-    let x_sq = multiply(x, x); // use your fixed-point multiply
+    let x_sq = multiply(x, x)?;
     let inside = x_sq + (1 << 32);
     let root = sqrt(inside)?;
 
@@ -421,7 +476,7 @@ pub fn acosh(x: i64) -> Option<i64> {
     }
 
     // sqrt(x^2 - 1)
-    let x_sq = multiply(x, x);
+    let x_sq = multiply(x, x)?;
     let inside = x_sq - (1 << 32);
     let root = sqrt(inside)?;
 
@@ -641,7 +696,7 @@ pub fn asin(x: i64) -> Option<i64> {
     if x == 0 {
         return Some(0);
     }
-    let x_sq = multiply(x, x);
+    let x_sq = multiply(x, x)?;
     let root = sqrt(FIXED_ONE - x_sq)?;
     Some(atan(divide(x, root)?))
 }
@@ -884,14 +939,14 @@ pub fn round(x: i64) -> i64 {
 /// deg(x): x is in degrees → result is x in radians.
 /// sin(deg(90)) evaluates sin(π/2) = 1.
 #[inline(always)]
-pub fn degrees_to_radians(degrees: i64) -> i64 {
+pub fn degrees_to_radians(degrees: i64) -> Option<i64> {
     multiply(degrees, FIXED_PI_OVER_180)
 }
 
 /// rad(x): x is in radians → result is x in degrees.
 /// rad(pi) = 180.
 #[inline(always)]
-pub fn radians_to_degrees(radians: i64) -> i64 {
+pub fn radians_to_degrees(radians: i64) -> Option<i64> {
     multiply(radians, FIXED_180_OVER_PI)
 }
 

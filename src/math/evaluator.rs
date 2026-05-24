@@ -133,9 +133,11 @@ fn evaluate_node(tree: &ParseTree, node_index: usize, vars: &mut VariableStore) 
 /// Apply a binary operator to two Q31.32 operands.
 fn apply_binary_operator(operator: BinaryOperator, left: i64, right: i64) -> Option<i64> {
     match operator {
-        BinaryOperator::Add => left.checked_add(right),
-        BinaryOperator::Subtract => left.checked_sub(right),
-        BinaryOperator::Multiply => Some(fp::multiply(left, right)),
+        // Saturate on overflow rather than returning None.
+        // This matches calculator conventions (±∞ behaviour).
+        BinaryOperator::Add => Some(left.saturating_add(right)),
+        BinaryOperator::Subtract => Some(left.saturating_sub(right)),
+        BinaryOperator::Multiply => fp::multiply(left, right),
         BinaryOperator::Divide => fp::divide(left, right),
         BinaryOperator::Modulo => {
             // Modulo in fixed-point: (a % b) where a, b are Q31.32.
@@ -190,8 +192,8 @@ fn apply_function(function: MathFunction, arg: i64) -> Option<i64> {
         MathFunction::Round => Some(fp::round(arg)),
 
         // Angle unit conversion.
-        MathFunction::Deg => Some(fp::degrees_to_radians(arg)),
-        MathFunction::Rad => Some(fp::radians_to_degrees(arg)),
+        MathFunction::Deg => fp::degrees_to_radians(arg),
+        MathFunction::Rad => fp::radians_to_degrees(arg),
 
         // Special functions.
         MathFunction::LnGamma => distributions::ln_gamma(arg),
@@ -310,18 +312,18 @@ fn evaluate_loop_aggregate(
             for i in 1..n {
                 // compute x EXACTLY from formula, no accumulation drift
                 let i_fp = fp::from_integer(i);
-                let x = start.checked_add(fp::multiply(i_fp, h))?;
+                let x = start.checked_add(fp::multiply(i_fp, h)?)?;
 
                 local_vars.write_register(variable, x);
                 let f_x = evaluate_node(tree, body_index, &mut local_vars)?;
 
                 let coeff = if i % 2 == 1 { 4 } else { 2 };
 
-                sum = sum.checked_add(fp::multiply(fp::from_integer(coeff), f_x))?;
+                sum = sum.checked_add(fp::multiply(fp::from_integer(coeff), f_x)?)?;
             }
 
             // final scaling (keep this order!)
-            let result = fp::divide(fp::multiply(h, sum), fp::from_integer(3))?;
+            let result = fp::divide(fp::multiply(h, sum)?, fp::from_integer(3))?;
 
             let nearest = fp::round(result);
 
