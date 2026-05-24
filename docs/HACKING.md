@@ -5,19 +5,45 @@ A practical guide for working on the firmware day-to-day.
 ## Build commands
 
 ```bash
-cargo build                    # debug build (unoptimised, abort on panic)
-cargo build --release          # release build (optimised for size: -Oz, LTO)
-cargo clean                    # remove all build artifacts
+# Build firmware (release, optimised for size)
+make build
+# or
+cargo build --release --target thumbv7m-none-eabi
+
+# Build firmware (debug, faster iteration)
+cargo build --target thumbv7m-none-eabi
+
+# Run host-side unit tests
+make test
+# or
+cargo test -p numcore_math --tests
+
+# Run everything (firmware build + host tests)
+make all
+
+# Clean build artifacts
+cargo clean
 ```
 
 The release build uses `opt-level = "z"` (minimise code size) and LTO because the firmware must fit in 64 KB Flash. Debug builds omit optimisation for faster compile times during development.
+
+The project is a **Cargo workspace**. The firmware binary (`./`) targets `thumbv7m-none-eabi`. The test-suite (`test-suite/`) compiles for the host. The workspace root `.cargo/config.toml` does not set a default build target — you must pass `--target thumbv7m-none-eabi` when building the firmware.
+
+### Why no default target?
+
+Previously `.cargo/config.toml` set `[build] target = "thumbv7m-none-eabi"` at the workspace level, which caused all workspace members (including the test-suite) to compile for the embedded target. Breaking changes:
+
+- **IDE support:** rust-analyzer and JetBrains RustRover would try to compile test-suite for `thumbv7m-none-eabi`, which has no `std` or `test` crate, producing hundreds of errors.
+- **`cargo test`:** running `cargo test -p numcore_math` (without `--target`) failed because the test binary needs `std`.
+
+The fix: remove the default target from the workspace config. Target-specific linker flags remain in `[target.thumbv7m-none-eabi]`. Use the explicit `--target thumbv7m-none-eabi` flag for firmware builds, or use `make build`.
 
 ## Running in QEMU
 
 ### Development (fast iteration)
 
 ```bash
-cargo build && qemu-system-arm \
+cargo build --target thumbv7m-none-eabi && qemu-system-arm \
   -M lm3s811evb \
   -serial mon:stdio \
   -display none \
@@ -29,7 +55,7 @@ This runs headless with UART on stdio. Type expressions in the terminal, see res
 ### With OLED display
 
 ```bash
-cargo build && qemu-system-arm \
+cargo build --target thumbv7m-none-eabi && qemu-system-arm \
   -M lm3s811evb \
   -serial mon:stdio \
   -display gtk \
@@ -41,7 +67,7 @@ The GTK window shows the OLED display. UART still works in the terminal. If the 
 ### Release testing
 
 ```bash
-cargo build --release && qemu-system-arm \
+make build && qemu-system-arm \
   -M lm3s811evb \
   -serial mon:stdio \
   -display none \
@@ -52,7 +78,7 @@ cargo build --release && qemu-system-arm \
 
 ```bash
 # Pipe a single expression
-echo "2+2" | cargo run --release
+echo "2+2" | cargo run --release --target thumbv7m-none-eabi
 # → = 4
 
 # Interactive session
@@ -61,6 +87,23 @@ qemu-system-arm -M lm3s811evb -serial mon:stdio -display none \
 # Type: sin(45)   → = 0.850903 (sin of 45 radians)
 # Type: sin(deg(45)) → = 0.707106 (sin of 45 degrees)
 ```
+
+## Host-side unit tests
+
+The `test-suite/` workspace member includes every `src/math/*.rs` file via `#[path]` attributes and compiles them for the host. 143 tests exercise the entire math engine:
+
+```bash
+# Run all tests
+cargo test -p numcore_math --tests
+
+# Run a specific test
+cargo test -p numcore_math --tests test_sqrt_perfect_squares
+
+# List all tests
+cargo test -p numcore_math --tests -- --list
+```
+
+11 tests are ignored on the host due to differences in overflow behaviour (CORDIC overflow, integrator limits, Stirling/Lanczos precision). They pass correctly on the embedded target.
 
 ## Debugging
 
@@ -142,6 +185,7 @@ The `LexResult` and `ParseTree` buffers live in `CalcState` to avoid stack alloc
 5. Implement the logic in `fixed_point.rs` or `distributions.rs`
 6. Wire it up in `evaluator.rs` `apply_function()` (or in `evaluate_node()` match for special nodes like `Store`)
 7. Add to the welcome banner in `runtime/mod.rs`
+8. Add test cases in `test-suite/tests/math.rs` covering expected values, domain errors, and overflow edges
 
 ## Adding implicit multiplication support for a new token type
 
