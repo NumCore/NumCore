@@ -165,8 +165,8 @@ fn apply_function(function: MathFunction, arg: i64) -> Option<i64> {
         MathFunction::Atan => Some(fp::atan(arg)),
 
         // Hyperbolic trig functions.
-        MathFunction::SinH => Some(fp::sinh(arg)),
-        MathFunction::CosH => Some(fp::cosh(arg)),
+        MathFunction::SinH => fp::sinh(arg),
+        MathFunction::CosH => fp::cosh(arg),
         MathFunction::TanH => fp::tanh(arg),
 
         // Inverse hyperbolic trig functions.
@@ -182,7 +182,7 @@ fn apply_function(function: MathFunction, arg: i64) -> Option<i64> {
         MathFunction::Log => fp::log10(arg),
         MathFunction::Ln => fp::natural_log(arg),
         MathFunction::Log2 => fp::log2(arg),
-        MathFunction::Exp => Some(fp::natural_exp(arg)),
+        MathFunction::Exp => fp::natural_exp(arg),
 
         // Rounding.
         MathFunction::Floor => Some(fp::floor(arg)),

@@ -293,7 +293,7 @@ pub fn binomial_probability(n: i64, k: i64, p: i64) -> Option<i64> {
         .checked_add(fp::multiply(k, ln_p))?
         .checked_add(fp::multiply(n_minus_k, ln_1mp))?;
 
-    Some(fp::natural_exp(ln_prob))
+    fp::natural_exp(ln_prob)
 }
 
 // ─── Poisson probability ──────────────────────────────────────────────────────
@@ -321,7 +321,7 @@ pub fn poisson_probability(lambda: i64, k: i64) -> Option<i64> {
         .checked_add(fp::multiply(k, ln_lambda))?
         .checked_sub(ln_k_fact)?;
 
-    Some(fp::natural_exp(ln_prob))
+    fp::natural_exp(ln_prob)
 }
 
 // ─── Chi-squared CDF ──────────────────────────────────────────────────────────
@@ -344,7 +344,7 @@ fn incomplete_gamma_series(a: i64, x: i64) -> Option<i64> {
     let ln_prefactor = (-x)
         .checked_add(fp::multiply(a, fp::natural_log(x)?))?
         .checked_sub(ln_gamma(a)?)?;
-    let prefactor = fp::natural_exp(ln_prefactor);
+    let prefactor = fp::natural_exp(ln_prefactor)?;
 
     // Series: term₀ = 1/a, termₙ = termₙ₋₁ × x/(a+n)
     let mut term = fp::divide(fp::FIXED_ONE, a)?;
