@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! # I2C0 Driver (Layer 4 — HAL)
 //!
 //! Driver stub for the LM3S811's I2C0 peripheral. This module is the future
