@@ -5,13 +5,13 @@ TARGET = thumbv7m-none-eabi
 all: build test
 
 build:
-	cargo build --release --target $(TARGET)
+	cargo build -p numcore --release --target $(TARGET)
 
 test:
 	cargo test -p numcore_math --tests
 
 check:
-	cargo check --release --target $(TARGET)
+	cargo check -p numcore --release --target $(TARGET)
 
 clean:
 	cargo clean

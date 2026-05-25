@@ -25,7 +25,7 @@
 //!   Then build the SSD0303 driver on top in ui/oled.rs (a HAL consumer —
 //!   it calls these functions, never touches I2C registers directly).
 
-use super::{clock, gpio, mmio};
+use crate::{clock, gpio, mmio};
 
 // ─── I2C0 register map ────────────────────────────────────────────────────────
 

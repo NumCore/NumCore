@@ -1,21 +1,11 @@
 [workspace]
 resolver = "2"
-members = [".", "test-suite"]
-
-[package]
-name = "NumCore"
-version = "0.1.0"
-edition = "2021"
-
-[[bin]]
-name              = "NumCore"
-test              = false
-bench             = false
+members = ["firmware", "hal-lm3s811", "test-suite"]
 
 [profile.release]
-opt-level = "z"   # minimise code size
-lto       = true
-panic     = "abort"
+opt-level = "z"
+lto = true
+panic = "abort"
 
 [profile.dev]
 panic = "abort"

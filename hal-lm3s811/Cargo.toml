@@ -1,0 +1,9 @@
+[package]
+name = "hal-lm3s811"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+test = false
+bench = false
+doctest = false

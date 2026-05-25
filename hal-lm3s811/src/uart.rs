@@ -18,7 +18,7 @@
 //!   PA0 = UART0 RX (receive)
 //!   PA1 = UART0 TX (transmit)
 
-use super::{clock, gpio, mmio};
+use crate::{clock, gpio, mmio};
 
 // ─── UART0 register map ───────────────────────────────────────────────────────
 

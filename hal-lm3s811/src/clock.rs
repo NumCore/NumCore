@@ -10,7 +10,7 @@
 //! configuration, update `SYSTEM_CLOCK_HZ` here and all derived constants will
 //! follow automatically.
 
-use super::mmio;
+use crate::mmio;
 
 // ─── SysCtl register map ──────────────────────────────────────────────────────
 
