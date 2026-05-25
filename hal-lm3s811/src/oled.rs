@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! # OLED Display Driver — SSD0303 / OSRAM Pictiva 96×16 (Layer 4 — HAL)
 //!
 //! Drives the 96×16 monochrome OLED display fitted to the LM3S811EVB
