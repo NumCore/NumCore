@@ -31,7 +31,7 @@
 //!   oled::render_screen(&framebuffer);   // framebuffer: [u8; 192]
 //!   ```
 
-use super::i2c;
+use crate::i2c;
 
 // ─── I2C address ──────────────────────────────────────────────────────────────
 

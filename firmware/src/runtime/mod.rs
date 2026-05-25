@@ -13,10 +13,10 @@
 pub mod event;
 pub mod state;
 
-use crate::hal::{i2c, oled, uart};
 use crate::math::engine;
 use crate::ui::formula;
 use event::{translate_input_byte_to_event, CalcEvent};
+use hal::{i2c, oled, uart};
 use state::CalcState;
 
 static mut CALCULATOR_STATE: CalcState = CalcState::new();

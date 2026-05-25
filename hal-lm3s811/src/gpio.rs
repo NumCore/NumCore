@@ -9,7 +9,7 @@
 //!
 //! Extend this module when button input or additional GPIO peripherals are added.
 
-use super::mmio;
+use crate::mmio;
 
 // ─── GPIO port base addresses ─────────────────────────────────────────────────
 

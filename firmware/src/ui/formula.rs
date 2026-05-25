@@ -3,8 +3,8 @@
 //! Keeps the math input syntax ASCII-friendly while presenting common
 //! calculator constructs in a compact 96x16 visual form.
 
-use crate::hal::oled::{Framebuffer, DISPLAY_PAGE_COUNT, DISPLAY_WIDTH_PIXELS};
 use crate::ui::font;
+use hal::oled::{Framebuffer, DISPLAY_PAGE_COUNT, DISPLAY_WIDTH_PIXELS};
 
 const GLYPH_GAP: usize = 1;
 const AGGREGATE_SYMBOL_COLUMNS: usize = 6;

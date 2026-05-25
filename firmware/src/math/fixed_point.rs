@@ -36,10 +36,6 @@
 
 // ─── Scale and precision ──────────────────────────────────────────────────────
 
-use crate::hal::uart;
-use crate::math::engine;
-use core::ptr::write_bytes;
-
 /// Number of fractional bits. Defines the entire numeric format.
 pub const FRACTIONAL_BITS: u32 = 32;
 

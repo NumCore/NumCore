@@ -2,11 +2,12 @@
 
 Bare-metal scientific calculator firmware for the **LM3S811** ARM Cortex-M3 microcontroller, written entirely in Rust with `#![no_std]` and `#![no_main]`. Features a complete fixed-point math engine, an interactive UART console, and an I2C-driven OLED display.
 
-The project is a **Cargo workspace** with two members:
+The project is a **Cargo workspace** with three members:
 
 | Member | Path | Target | Purpose |
 |--------|------|--------|---------|
-| `NumCore` (root) | `./` | `thumbv7m-none-eabi` | Firmware binary for LM3S811 |
+| `numcore` | `firmware/` | `thumbv7m-none-eabi` | Firmware binary for LM3S811 |
+| `hal-lm3s811` | `hal-lm3s811/` | `thumbv7m-none-eabi` | HAL implementation (LM3S811) |
 | `numcore_math` | `test-suite/` | Host (e.g. `x86_64`) | Host-side unit tests for the math engine |
 
 ## Features
@@ -99,11 +100,11 @@ The project is a **Cargo workspace** with two members:
 
 NumCore enforces a strict **hardware access boundary**:
 
-- **`hal/`** — the **only** layer permitted to touch hardware registers directly. All `unsafe` for MMIO access is confined to `hal/mmio.rs`. Every `unsafe` block has a `// SAFETY:` justification.
-- **`boot.rs`** — the only other file with `unsafe`, strictly for RAM initialisation (`.bss`/`.data`) before the HAL is online.
+- **`hal-lm3s811/`** — a separate Cargo crate containing all `unsafe` code. All MMIO access is confined to `mmio.rs`. Every `unsafe` block has a `// SAFETY:` justification.
+- **`firmware/src/boot_lm3s811.rs`** — the only other file with `unsafe`, strictly for RAM initialisation (`.bss`/`.data`) before the HAL is online.
 - **Everything else** — `runtime/`, `math/`, `ui/` — contains zero `unsafe`. They interact with hardware exclusively through the HAL's safe public API.
 
-This design means porting to a new MCU only requires rewriting `hal/` (and possibly `boot.rs`). The math engine, event loop, and UI remain completely untouched.
+This design means porting to a new MCU only requires writing a new HAL crate and `boot.rs` (and possibly `link.x`). The math engine, event loop, and UI remain completely untouched.
 
 ## Portability
 
@@ -112,12 +113,12 @@ The current firmware targets the **Luminary Micro Stellaris LM3S811** (ARM Corte
 | Layer     | MCU-specific | Portable          |
 |-----------|-------------|-------------------|
 | `boot.rs` | Yes — vector table format | — |
-| `hal/`    | Yes — register maps, peripherals | — |
+| HAL crate | Yes — register maps, peripherals | — |
 | `runtime/`| No          | Event loop, state machine |
 | `math/`   | No          | Entire math engine |
 | `ui/`     | No          | Font, formula renderer |
 
-To port: rewrite `hal/` for the new MCU, update `boot.rs` to match the new vector table and memory layout, and optionally adjust `link.x`. Nothing else changes.
+To port: create a new HAL crate, add `boot.rs`, update `link.x` for the new MCU's memory map, and wire it into the firmware crate. Nothing else changes.
 
 ## Quick start
 
@@ -132,7 +133,7 @@ rustup target add thumbv7m-none-eabi
 ```bash
 make build
 # or
-cargo build --release --target thumbv7m-none-eabi
+cargo build -p numcore --release --target thumbv7m-none-eabi
 ```
 
 The resulting ELF binary lives at `target/thumbv7m-none-eabi/release/NumCore`.

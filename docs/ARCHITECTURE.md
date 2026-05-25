@@ -6,24 +6,32 @@ NumCore is organised as a strict **layered architecture**. Each layer has well-d
 
 NumCore's safety model is explicit and auditable:
 
-1. **`hal/`** is the **only** layer permitted to perform memory-mapped I/O. All `unsafe` for hardware register access is confined to `hal/mmio.rs` (two functions: `read_register` and `write_register`). Every other HAL module calls through these primitives — no module outside `mmio.rs` issues raw pointer reads or writes.
+1. **HAL crate** (`hal-lm3s811/`) is the **only** crate permitted to perform memory-mapped I/O. All `unsafe` for hardware register access is confined to `mmio.rs` (two functions: `read_register` and `write_register`). Every other HAL module calls through these primitives — no module outside `mmio.rs` issues raw pointer reads or writes.
 
-2. **`boot.rs`** uses `unsafe` for a single, narrow purpose: zeroing `.bss` and copying `.data` from Flash to RAM before the HAL or any Rust code can run. This is unavoidable on bare metal — there is no OS loader to do it.
+2. **`firmware/src/boot.rs`** uses `unsafe` for a single, narrow purpose: zeroing `.bss` and copying `.data` from Flash to RAM before the HAL or any Rust code can run. This is unavoidable on bare metal — there is no OS loader to do it.
 
-3. **`runtime/`, `math/`, and `ui/` contain zero `unsafe` code.** They interact with hardware exclusively through the safe public API exposed by `hal/`. This is verified by inspection and enforced by convention.
+3. **`runtime/`, `math/`, and `ui/` contain zero `unsafe` code.** They interact with hardware exclusively through the safe public API exposed by the HAL crate. This is verified by inspection and enforced by convention.
 
 4. **Every `unsafe` block** in the codebase has an adjacent `// SAFETY:` comment explaining why the invariants hold.
 
-Porting to a new MCU means auditing and rewriting only `hal/` and `boot.rs`. Everything above the HAL is architecture-agnostic.
+Porting to a new MCU means auditing and rewriting only the HAL crate and `boot_*.rs`. Everything above the HAL is architecture-agnostic.
 
 ## Cargo workspace structure
 
-The project is a Cargo workspace with two members:
+The project is a Cargo workspace with three members:
 
 | Member | Path | Target | Purpose |
 |--------|------|--------|---------|
-| `NumCore` (root) | `./` | `thumbv7m-none-eabi` | Firmware binary for LM3S811 |
+| `numcore` | `firmware/` | `thumbv7m-none-eabi` | Firmware binary for LM3S811 |
+| `hal-lm3s811` | `hal-lm3s811/` | `thumbv7m-none-eabi` | HAL implementation for LM3S811 |
 | `numcore_math` | `test-suite/` | Host (e.g. `x86_64`) | Host-side unit tests for the math engine |
+
+The firmware crate (`firmware/`) depends on a single HAL crate:
+
+```toml
+[dependencies]
+hal-lm3s811 = { path = "../hal-lm3s811" }
+```
 
 The workspace root `.cargo/config.toml` does **not** set a default build target. All firmware commands require `--target thumbv7m-none-eabi`. The test-suite compiles for the host by default. Use `make build` / `make test` for convenience.
 
@@ -31,13 +39,13 @@ The workspace root `.cargo/config.toml` does **not** set a default build target.
 
 The firmware is currently developed and tested on the **Luminary Micro Stellaris LM3S811** (ARM Cortex-M3, 64 KB Flash, 8 KB SRAM). The layered design is explicitly engineered to support future ports to other architectures and microprocessors:
 
-- **`math/`** — zero HAL imports, zero `unsafe`, zero platform dependencies. Compiles on any target Rust supports. The `test-suite/` workspace member includes `src/math/` sources via `#[path]` and runs 143 automated tests on the host.
+- **`math/`** — zero HAL imports, zero `unsafe`, zero platform dependencies. Compiles on any target Rust supports. The `test-suite/` workspace member includes `firmware/src/math/` sources via `#[path]` and runs 143 automated tests on the host.
 - **`runtime/`** — touches hardware only through the safe HAL API. No register names or memory addresses leak in.
 - **`ui/`** — renders to an abstract framebuffer byte array. Only `hal::oled::render_screen()` is platform-specific.
-- **`hal/`** — the only layer that needs rewriting per target. Peripheral register maps, clock trees, and pin muxing are encapsulated here.
+- **HAL crate** (`hal-lm3s811/`) — the only crate that needs rewriting per target. Peripheral register maps, clock trees, and pin muxing are encapsulated here.
 - **`boot.rs`** + **`link.x`** — the only files that depend on the MCU's memory map and vector table layout.
 
-A port to a new architecture therefore involves: rewriting `hal/`, updating `boot.rs` and `link.x`, and adjusting `.cargo/config.toml` for the new target triple. No application logic changes.
+A port to a new architecture therefore involves: writing a new HAL crate, creating `boot.rs` and `link.x` for the new MCU, and adding the target triple. No application logic changes.
 
 ## Layer map
 
@@ -57,23 +65,23 @@ A port to a new architecture therefore involves: rewriting `hal/`, updating `boo
   │  Event loop, state machine, CalcState,      │
   │  event dispatch                             │
   ├─────────────────────────────────────────────┤
-  │  Layer 4:  hal/                             │
+  │  Layer 4:  HAL crate (hal-lm3s811/)          │
   │  UART, I2C, GPIO, clock, OLED driver,       │
-  │  MMIO primitives (only layer with unsafe)   │
+  │  MMIO primitives (only crate with unsafe)   │
   ├─────────────────────────────────────────────┤
-  │  Layer 3:  boot.rs                          │
+  │  Layer 3:  boot.rs (firmware/src/)           │
   │  Vector table, Reset handler, .bss/.data    │
   └─────────────────────────────────────────────┘
 ```
 
 ## Layer details
 
-### Layer 3 — Boot (`boot.rs`)
+### Layer 3 — Boot (`firmware/src/boot_lm3s811.rs`)
 
-The lowest software layer. Executes before any Rust code can safely run.
+The lowest software layer. Executes before any Rust code can safely run. One `boot_*.rs` file per MCU, selected by feature gate.
 
 **Responsibilities:**
-- Place the Cortex-M3 vector table at Flash address `0x0000_0000`
+- Place the Cortex-M vector table at Flash address `0x0000_0000`
 - Define the `Reset` handler (true entry point after power-on)
 - Zero-initialise the `.bss` section (all uninitialised statics)
 - Copy the `.data` section from Flash LMA to RAM VMA
@@ -90,9 +98,9 @@ The lowest software layer. Executes before any Rust code can safely run.
 - Slot 1: Reset vector → `Reset()` function
 - Slots 2–15: All route to `DefaultHandler` (spin loop) — upgrade individually as needed (SysTick, SVCall, fault handlers)
 
-### Layer 4 — Hardware Abstraction Layer (`hal/`)
+### Layer 4 — Hardware Abstraction Layer (separate crate: `hal-lm3s811/`)
 
-The **only** layer permitted to touch hardware registers directly. All `unsafe` for MMIO access is confined to `hal/mmio.rs`.
+The **only** crate permitted to touch hardware registers directly. All `unsafe` for MMIO access is confined to `mmio.rs`.
 
 **Modules:**
 
@@ -114,14 +122,14 @@ The **only** layer permitted to touch hardware registers directly. All `unsafe` 
 - **SSD0303 OLED** at I2C address `0x3D`: 96×16 monochrome, 2 pages × 96 columns, command framing uses `0x80/0x40` control bytes.
 
 **Rules:**
-- `unsafe` is permitted **only** inside `hal/` implementation files
+- `unsafe` is permitted **only** inside `hal-*/` crate implementation files
 - All public HAL functions **must** have safe signatures — callers never see `unsafe`
 - No HAL module may import from `runtime/`, `math/`, `ui/`, or `modes/`
 - HAL modules may import from each other (e.g. `uart` imports `mmio`, `gpio`, `clock`)
 
-### Layer 5 — Runtime (`runtime/`)
+### Layer 5 — Runtime (`firmware/src/runtime/`)
 
-The control centre of the firmware. Sits between HAL and the application layers. Contains zero `unsafe` code.
+The control centre of the firmware. Sits between the HAL crate and the application layers. Contains zero `unsafe` code.
 
 **Modules:**
 
@@ -149,15 +157,15 @@ The control centre of the firmware. Sits between HAL and the application layers.
 - This avoids stack overflow on the 8 KB SRAM (2 KB reserved for stack)
 
 **Rules:**
-- Contains zero `unsafe` — every hardware interaction goes through `hal/`'s safe API
+- Contains zero `unsafe` — every hardware interaction goes through the HAL crate's safe API
 - Owns and updates `CalcState` (including the variable store)
 - Routes input events to handlers, triggers UI re-renders
 
-### Layer 6 — Math Engine (`math/`)
+### Layer 6 — Math Engine (`firmware/src/math/`)
 
 Completely hardware-independent. Can be compiled and tested on any platform. Zero `unsafe` code, zero HAL imports, zero heap allocation.
 
-The math engine is tested via the `test-suite/` workspace member, which includes every `src/math/` source file via `#[path]` attributes and compiles them for the host. 143 automated tests cover fixed-point arithmetic, lexer, parser, evaluator, variables, distributions, and the full expression pipeline. Run with `cargo test -p numcore_math --tests` or `make test`.
+The math engine is tested via the `test-suite/` workspace member, which includes every `firmware/src/math/` source file via `#[path]` attributes and compiles them for the host. 143 automated tests cover fixed-point arithmetic, lexer, parser, evaluator, variables, distributions, and the full expression pipeline. Run with `cargo test -p numcore_math --tests` or `make test`.
 
 **Pipeline:**
 
@@ -231,10 +239,10 @@ The evaluator takes `&mut VariableStore` rather than `&VariableStore` because `s
 
 **Rules:**
 - Zero `unsafe` code anywhere in this module
-- Zero imports from `hal/`, `runtime/`, `ui/`, or `modes/`
+- Zero imports from the HAL crate, `runtime/`, `ui/`, or `modes/`
 - All memory is stack-allocated — no heap required
 
-### Layer 7 — UI (`ui/`)
+### Layer 7 — UI (`firmware/src/ui/`)
 
 OLED display rendering. Composes the 96×16 framebuffer from expression text and results. Contains zero `unsafe` code.
 
@@ -310,3 +318,5 @@ The largest single allocation is `CalcState` (~1.5 KB), dominated by the 64-node
 4. **Log-space probability**: Binomial and Poisson probabilities are computed in log space then exponentiated once. This avoids overflow for large `n` (e.g. `n=1000`) that would occur with direct factorial computation.
 
 5. **No heap**: The entire firmware uses precisely zero dynamic allocation. All data structures are fixed-size arrays sized at compile time with safety checks (bounds-checked appends returning `Option`).
+
+6. **Separate HAL crate**: The HAL is an independent Cargo crate in the workspace, not a module in the firmware crate. This enforces a compile-time boundary — the shared code never imports from a specific HAL; it imports from `hal` (the alias). Porting means creating a new crate implementing the same public API surface.
