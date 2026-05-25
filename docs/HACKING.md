@@ -110,7 +110,10 @@ cargo test -p numcore_math --tests -- --list
 ### Binary size
 
 ```bash
-# Flash occupancy
+# Quick summary (text/data/bss/dec)
+cargo size -p numcore-lm3s811 --release --target thumbv7m-none-eabi
+
+# Flash occupancy (same output, via arm-none-eabi-size)
 arm-none-eabi-size target/thumbv7m-none-eabi/release/NumCore
 
 # Section breakdown
@@ -218,12 +221,14 @@ No changes to `numcore/` required.
 
 ## Memory budgeting
 
-| Region   | Size  | Contents                        |
-|----------|-------|---------------------------------|
-| Flash    | 64 KB | Vector table (256 B), code, rodata |
-| .data    | ~256 B| Initialised statics             |
-| .bss     | ~2 KB | CalcState (~1.5 KB), other statics |
-| Stack    | 2 KB  | Call frames, local variables    |
-| Free RAM | ~3.5 KB | Available for future features |
+Actual numbers from `cargo size` (release build):
 
-Current release build is approximately **12 KB** Flash and **2.2 KB** RAM.
+| Region   | Usage          | Budget | Usage |
+|----------|----------------|--------|-------|
+| Flash    | 41 471 bytes   | 64 KB  | 63%   |
+| .data    | 0 bytes        | —      | —     |
+| .bss     | 3 896 bytes    |  8 KB  | 48%   |
+| Stack    | 2 048 bytes    |  8 KB  | 25%   |
+| **Peak RAM** | **5 944 bytes** | **8 KB** | **73%** |
+
+Stack is 2 KB as set in `hal-lm3s811/link.x`. `.data` is 0 — no initialised statics in the current build.

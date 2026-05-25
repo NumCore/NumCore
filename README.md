@@ -182,6 +182,19 @@ cat test_inputs.txt | qemu-system-arm \
   -kernel target/thumbv7m-none-eabi/release/NumCore
 ```
 
+### Firmware metrics
+
+```bash
+cargo size -p numcore-lm3s811 --release --target thumbv7m-none-eabi
+```
+
+| Metric      | Value         | Budget  | Usage |
+|-------------|---------------|---------|-------|
+| Flash (text)| 41 471 bytes  | 64 KB   | 63%   |
+| RAM (.bss)  |  3 896 bytes  |  8 KB   | 48%   |
+| Stack       |  2 048 bytes  |  8 KB   | 25%   |
+| **Peak RAM**| **5 944 bytes**| **8 KB** | **73%** |
+
 ## Hardware target
 
 | Property        | Value                          |
