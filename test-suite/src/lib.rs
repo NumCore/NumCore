@@ -48,25 +48,25 @@ pub mod hal {
 // Each file sits at crate root level so that `super::fixed_point` etc.
 // inside the math files resolves to the sibling module created here.
 
-#[path = "../../firmware/src/math/fixed_point.rs"]
+#[path = "../../numcore/src/math/fixed_point.rs"]
 pub mod fixed_point;
 
-#[path = "../../firmware/src/math/lexer.rs"]
+#[path = "../../numcore/src/math/lexer.rs"]
 pub mod lexer;
 
-#[path = "../../firmware/src/math/parser.rs"]
+#[path = "../../numcore/src/math/parser.rs"]
 pub mod parser;
 
-#[path = "../../firmware/src/math/evaluator.rs"]
+#[path = "../../numcore/src/math/evaluator.rs"]
 pub mod evaluator;
 
-#[path = "../../firmware/src/math/vars.rs"]
+#[path = "../../numcore/src/math/vars.rs"]
 pub mod vars;
 
-#[path = "../../firmware/src/math/engine.rs"]
+#[path = "../../numcore/src/math/engine.rs"]
 pub mod engine;
 
-#[path = "../../firmware/src/math/distributions.rs"]
+#[path = "../../numcore/src/math/distributions.rs"]
 pub mod distributions;
 
 // ─── Re-export under math:: for API compatibility ───────────────────────────
