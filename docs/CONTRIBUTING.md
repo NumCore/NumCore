@@ -21,9 +21,9 @@ brew install qemu
 
 ### IDE setup
 
-The project is a Cargo workspace with two members — the firmware (target `thumbv7m-none-eabi`) and the test suite (host target). The workspace root `.cargo/config.toml` does **not** set a default build target (removed because it breaks host-side test compilation in IDEs).
+The project is a Cargo workspace with four members — the shared lib crate (`numcore/`, no target restriction), the per-MCU binary crate (`numcore-lm3s811/`, target `thumbv7m-none-eabi`), the HAL crate (`hal-lm3s811/`, same target), and the test suite (host target). The workspace root `.cargo/config.toml` does **not** set a default build target (removed because it breaks host-side test compilation in IDEs).
 
-**JetBrains RustRover:** Open the workspace root. The test-suite crate is automatically analysed for the host target. For the firmware crate, configure the target in **Settings → Languages & Frameworks → Rust → Cargo → Default target** (set to `thumbv7m-none-eabi`), or use the explicit target in run configurations.
+**JetBrains RustRover:** Open the workspace root. The test-suite crate is automatically analysed for the host target. For firmware crates, configure the target in **Settings → Languages & Frameworks → Rust → Cargo → Default target** (set to `thumbv7m-none-eabi`), or use the explicit target in run configurations.
 
 **VS Code with rust-analyzer:**
 ```json
@@ -59,23 +59,23 @@ The existing doc comments on modules, types, and public functions are exceptions
 
 NumCore's **safety contract** is strict and non-negotiable:
 
-- **Only `hal/`** may perform memory-mapped I/O via `unsafe` MMIO access. All `unsafe` for hardware is contained in `hal/mmio.rs`.
-- **`boot.rs`** is the only exception — `unsafe` for `.bss`/`.data` memory initialisation before the HAL is online.
-- **`runtime/`, `math/`, and `ui/` must contain zero `unsafe` blocks.** Every hardware interaction must go through the HAL's safe public API.
+- **Only `hal-<mcu>/`** may perform memory-mapped I/O via `unsafe` MMIO access. All `unsafe` for hardware is contained in `hal-<mcu>/src/mmio.rs`.
+- **`numcore-<mcu>/src/boot.rs`** is the only exception — `unsafe` for `.bss`/`.data` memory initialisation before the HAL is online.
+- **`numcore/src/runtime/`, `numcore/src/math/`, and `numcore/src/ui/` must contain zero `unsafe` blocks.** Every hardware interaction goes through the `Uart` and `Display` traits defined in `numcore::hal`.
 - Every `unsafe` block must have a `// SAFETY:` comment explaining why the invariants hold.
-- If you must add `unsafe` outside `hal/` or `boot.rs`, discuss it in the PR first — it will receive extra scrutiny.
+- If you must add `unsafe` outside `hal-<mcu>/` or `boot.rs`, discuss it in the PR first — it will receive extra scrutiny.
 
 ### Layer rules
 
 The architecture enforces strict layering. Violations will be rejected:
 
-| Layer       | May import                              | Must not import                    | Contains `unsafe` |
-|-------------|-----------------------------------------|------------------------------------|-------------------|
-| `boot.rs`   | `core`                                  | `hal/`, `runtime/`, `math/`, `ui/` | Yes (memory init) |
-| `hal/`      | `core`, other `hal/` submodules         | `runtime/`, `math/`, `ui/`         | Yes (MMIO only)   |
-| `runtime/`  | `hal/`, `math/`, `ui/`                  | —                                  | No                |
-| `math/`     | `core` only                             | `hal/`, `runtime/`, `ui/`          | No                |
-| `ui/`       | `hal/` (framebuffer type), `core`       | `runtime/`, `math/`                | No                |
+| Layer | Location | May import | Must not import | Contains `unsafe` |
+|-------|----------|------------|-----------------|-------------------|
+| Boot | `numcore-<mcu>/src/boot.rs` | `core` | `hal-*`, `numcore::*` | Yes (memory init) |
+| HAL | `hal-<mcu>/src/*` | `core`, `numcore::hal` (traits), other HAL submodules | `numcore::runtime`, `numcore::math`, `numcore::ui` | Yes (MMIO only) |
+| Runtime | `numcore/src/runtime/` | `numcore::hal` (traits), `numcore::math`, `numcore::ui` | Concrete HAL crates | No |
+| Math | `numcore/src/math/` | `core` only | Any HAL, `runtime/`, `ui/` | No |
+| UI | `numcore/src/ui/` | `numcore::hal` (`Display` trait), `core` | Any HAL, `runtime/`, `math/` | No |
 
 ## Testing
 
@@ -137,14 +137,14 @@ When adding a math function:
 Run in QEMU and pipe test inputs:
 
 ```bash
-echo "sin(pi/2)" | cargo run --release --target thumbv7m-none-eabi
+echo "sin(pi/2)" | cargo run -p numcore-lm3s811 --release --target thumbv7m-none-eabi
 # Expected output: = 1
 ```
 
 Compare against `test_inputs.txt`:
 
 ```bash
-cat test_inputs.txt | cargo run --release --target thumbv7m-none-eabi
+cat test_inputs.txt | cargo run -p numcore-lm3s811 --release --target thumbv7m-none-eabi
 ```
 
 ### Manual QEMU testing

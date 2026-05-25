@@ -1,6 +1,6 @@
 # Architecture
 
-NumCore is organised as a strict **layered architecture**. Each layer has well-defined responsibilities and import rules enforced by convention and documented in the source code.
+NumCore is organised as a strict **layered architecture**. Each layer has well-defined responsibilities and import rules enforced at the Cargo crate boundary.
 
 ## Safety contract
 
@@ -8,29 +8,40 @@ NumCore's safety model is explicit and auditable:
 
 1. **HAL crate** (`hal-lm3s811/`) is the **only** crate permitted to perform memory-mapped I/O. All `unsafe` for hardware register access is confined to `mmio.rs` (two functions: `read_register` and `write_register`). Every other HAL module calls through these primitives — no module outside `mmio.rs` issues raw pointer reads or writes.
 
-2. **`firmware/src/boot.rs`** uses `unsafe` for a single, narrow purpose: zeroing `.bss` and copying `.data` from Flash to RAM before the HAL or any Rust code can run. This is unavoidable on bare metal — there is no OS loader to do it.
+2. **`numcore-<mcu>/src/boot.rs`** uses `unsafe` for a single, narrow purpose: zeroing `.bss` and copying `.data` from Flash to RAM before the HAL or any Rust code can run. This is unavoidable on bare metal — there is no OS loader to do it.
 
-3. **`runtime/`, `math/`, and `ui/` contain zero `unsafe` code.** They interact with hardware exclusively through the safe public API exposed by the HAL crate. This is verified by inspection and enforced by convention.
+3. **`runtime/`, `math/`, and `ui/` contain zero `unsafe` code.** They interact with hardware exclusively through the `Uart` and `Display` traits defined in `numcore::hal`. This is verified by inspection and enforced at the crate boundary.
 
 4. **Every `unsafe` block** in the codebase has an adjacent `// SAFETY:` comment explaining why the invariants hold.
 
-Porting to a new MCU means auditing and rewriting only the HAL crate and `boot_*.rs`. Everything above the HAL is architecture-agnostic.
+Porting to a new MCU means auditing and rewriting only the HAL crate and boot crate. Everything in `numcore/` is architecture-agnostic.
 
 ## Cargo workspace structure
 
-The project is a Cargo workspace with three members:
+The project is a Cargo workspace with four members:
 
 | Member | Path | Target | Purpose |
 |--------|------|--------|---------|
-| `numcore` | `firmware/` | `thumbv7m-none-eabi` | Firmware binary for LM3S811 |
-| `hal-lm3s811` | `hal-lm3s811/` | `thumbv7m-none-eabi` | HAL implementation for LM3S811 |
+| `numcore` | `numcore/` | any (host or embedded) | MCU-agnostic lib crate: traits, math engine, runtime, UI |
+| `numcore-lm3s811` | `numcore-lm3s811/` | `thumbv7m-none-eabi` | Per-MCU binary crate for LM3S811 |
+| `hal-lm3s811` | `hal-lm3s811/` | `thumbv7m-none-eabi` | HAL implementation + trait impls for LM3S811 |
 | `numcore_math` | `test-suite/` | Host (e.g. `x86_64`) | Host-side unit tests for the math engine |
 
-The firmware crate (`firmware/`) depends on a single HAL crate:
+The shared crate (`numcore/`) depends on no HAL crate. Each per-MCU binary depends on `numcore` and its corresponding HAL crate:
 
 ```toml
+# numcore-lm3s811/Cargo.toml
 [dependencies]
+numcore = { path = "../numcore" }
 hal-lm3s811 = { path = "../hal-lm3s811" }
+```
+
+Each HAL crate depends on `numcore` to access the trait definitions:
+
+```toml
+# hal-lm3s811/Cargo.toml
+[dependencies]
+numcore = { path = "../numcore" }
 ```
 
 The workspace root `.cargo/config.toml` does **not** set a default build target. All firmware commands require `--target thumbv7m-none-eabi`. The test-suite compiles for the host by default. Use `make build` / `make test` for convenience.
@@ -39,13 +50,14 @@ The workspace root `.cargo/config.toml` does **not** set a default build target.
 
 The firmware is currently developed and tested on the **Luminary Micro Stellaris LM3S811** (ARM Cortex-M3, 64 KB Flash, 8 KB SRAM). The layered design is explicitly engineered to support future ports to other architectures and microprocessors:
 
-- **`math/`** — zero HAL imports, zero `unsafe`, zero platform dependencies. Compiles on any target Rust supports. The `test-suite/` workspace member includes `firmware/src/math/` sources via `#[path]` and runs 143 automated tests on the host.
-- **`runtime/`** — touches hardware only through the safe HAL API. No register names or memory addresses leak in.
-- **`ui/`** — renders to an abstract framebuffer byte array. Only `hal::oled::render_screen()` is platform-specific.
-- **HAL crate** (`hal-lm3s811/`) — the only crate that needs rewriting per target. Peripheral register maps, clock trees, and pin muxing are encapsulated here.
-- **`boot.rs`** + **`link.x`** (inside the HAL crate) — the only files that depend on the MCU's memory map and vector table layout.
+- **`numcore/src/hal.rs`** — `Uart` and `Display` traits. This is the only HAL dependency of the shared code.
+- **`math/`** — zero HAL imports, zero `unsafe`, zero platform dependencies. Compiles on any target Rust supports. The `test-suite/` workspace member includes `numcore/src/math/` sources via `#[path]` and runs 143 automated tests on the host.
+- **`runtime/`** — generic over `<U: Uart, D: Display>`. Touches hardware only through trait method calls.
+- **`ui/`** — generic over `<D: Display>`. Renders to `D::Buffer` via `AsMut<[u8]>` / `AsRef<[u8]>`.
+- **HAL crate** (`hal-<mcu>/`) — the only crate that needs rewriting per target. Peripheral register maps, clock trees, and pin muxing are encapsulated here. Must implement `numcore::hal::Uart` and `numcore::hal::Display`.
+- **Per-MCU binary crate** (`numcore-<mcu>/`) — contains `boot.rs` (vector table, Reset handler) and `link.x` (memory map). These depend on the MCU's memory layout.
 
-A port to a new architecture therefore involves: writing a new HAL crate, creating `boot.rs` and `link.x` for the new MCU, and adding the target triple. No application logic changes.
+A port to a new architecture therefore involves: writing a new HAL crate (with trait impls), creating a new binary crate (with `boot.rs` + `link.x`), and adding the target triple. No application logic changes.
 
 ## Layer map
 
@@ -54,38 +66,38 @@ A port to a new architecture therefore involves: writing a new HAL crate, creati
   │  Layer 8:  modes/              [ROADMAP]    │
   │  Standard, Scientific, Graphing modes       │
   ├─────────────────────────────────────────────┤
-  │  Layer 7:  ui/                              │
+  │  Layer 7:  ui/  (numcore/src/ui/)           │
   │  OLED rendering, font, formula pretty-print │
   ├─────────────────────────────────────────────┤
-  │  Layer 6:  math/                            │
+  │  Layer 6:  math/  (numcore/src/math/)       │
   │  Fixed-point, lexer, parser, evaluator,     │
   │  variables, distributions                   │
   ├─────────────────────────────────────────────┤
-  │  Layer 5:  runtime/                         │
+  │  Layer 5:  runtime/  (numcore/src/runtime/) │
   │  Event loop, state machine, CalcState,      │
   │  event dispatch                             │
   ├─────────────────────────────────────────────┤
-  │  Layer 4:  HAL crate (hal-lm3s811/)          │
+  │  Layer 4:  HAL crate (hal-<mcu>/)           │
   │  UART, I2C, GPIO, clock, OLED driver,       │
   │  MMIO primitives (only crate with unsafe)   │
   ├─────────────────────────────────────────────┤
-  │  Layer 3:  boot.rs (firmware/src/)           │
+  │  Layer 3:  boot.rs (numcore-<mcu>/src/)     │
   │  Vector table, Reset handler, .bss/.data    │
   └─────────────────────────────────────────────┘
 ```
 
 ## Layer details
 
-### Layer 3 — Boot (`firmware/src/boot_lm3s811.rs`)
+### Layer 3 — Boot (`numcore-<mcu>/src/boot.rs`)
 
-The lowest software layer. Executes before any Rust code can safely run. One `boot_*.rs` file per MCU, selected by feature gate.
+The lowest software layer. Executes before any Rust code can safely run. One `boot.rs` file per MCU, lives in the per-MCU binary crate.
 
 **Responsibilities:**
 - Place the Cortex-M vector table at Flash address `0x0000_0000`
 - Define the `Reset` handler (true entry point after power-on)
 - Zero-initialise the `.bss` section (all uninitialised statics)
 - Copy the `.data` section from Flash LMA to RAM VMA
-- Jump to `runtime::start()` — never returns
+- Jump to `crate::start()` (thin wrapper in `main.rs`) — never returns
 
 **Rules:**
 - `unsafe` is permitted here **only** for raw-pointer memory initialisation
@@ -98,9 +110,11 @@ The lowest software layer. Executes before any Rust code can safely run. One `bo
 - Slot 1: Reset vector → `Reset()` function
 - Slots 2–15: All route to `DefaultHandler` (spin loop) — upgrade individually as needed (SysTick, SVCall, fault handlers)
 
-### Layer 4 — Hardware Abstraction Layer (separate crate: `hal-lm3s811/`)
+### Layer 4 — Hardware Abstraction Layer (separate crate: `hal-<mcu>/`)
 
 The **only** crate permitted to touch hardware registers directly. All `unsafe` for MMIO access is confined to `mmio.rs`.
+
+Must implement `numcore::hal::Uart` and `numcore::hal::Display`.
 
 **Modules:**
 
@@ -126,27 +140,29 @@ The **only** crate permitted to touch hardware registers directly. All `unsafe` 
 - All public HAL functions **must** have safe signatures — callers never see `unsafe`
 - No HAL module may import from `runtime/`, `math/`, `ui/`, or `modes/`
 - HAL modules may import from each other (e.g. `uart` imports `mmio`, `gpio`, `clock`)
+- Must implement `numcore::hal::Uart` and `numcore::hal::Display`
 
-### Layer 5 — Runtime (`firmware/src/runtime/`)
+### Layer 5 — Runtime (`numcore/src/runtime/`)
 
-The control centre of the firmware. Sits between the HAL crate and the application layers. Contains zero `unsafe` code.
+The control centre of the firmware. Generic over `<U: Uart, D: Display>`. Sits between the HAL crate and the application layers. Contains zero `unsafe` code.
 
 **Modules:**
 
 | Module    | Contents                                                  |
 |-----------|-----------------------------------------------------------|
-| `mod.rs`  | `start()`, hardware init sequence, event loop, event handlers, OLED rendering glue |
+| `mod.rs`  | `start::<U, D>()`, hardware init sequence, event loop, event handlers, OLED rendering glue |
 | `state.rs`| `CalcState` — owns input buffer, variable store, scratch buffers, active mode |
 | `event.rs`| `CalcEvent` enum, `translate_input_byte_to_event()` — ASCII byte → typed event |
 
 **Startup sequence:**
-1. `boot::Reset()` → `.bss`/`.data` init → `runtime::start()`
-2. `initialise_all_hardware()` — UART → I2C → OLED (in that order)
-3. Print welcome banner with all available functions
-4. `run_event_loop()` — block on UART input, dispatch events
+1. `boot::Reset()` → `.bss`/`.data` init → `crate::start()` → `numcore::runtime::start::<U, D>()`
+2. `U::init()` → `D::init()` (which initiliases I2C + OLED)
+3. `D::render(&D::new_buffer())` — clear display
+4. Print welcome banner via `U::transmit_bytes()`
+5. `run_event_loop()` — block on `U::poll_byte()`, dispatch events
 
 **Event handling:**
-- Printable ASCII (`0x20`–`0x7E`) → append to input buffer and echo
+- Printable ASCII (`0x20`–`0x7E`) → append to input buffer and echo via `U::transmit_byte()`
 - CR/LF (`0x0D`/`0x0A`) → submit expression for evaluation
 - BS/DEL (`0x08`/`0x7F`) → backspace
 - All other bytes → ignored
@@ -157,15 +173,15 @@ The control centre of the firmware. Sits between the HAL crate and the applicati
 - This avoids stack overflow on the 8 KB SRAM (2 KB reserved for stack)
 
 **Rules:**
-- Contains zero `unsafe` — every hardware interaction goes through the HAL crate's safe API
+- Contains zero `unsafe` — every hardware interaction goes through `U::*` / `D::*` trait calls
 - Owns and updates `CalcState` (including the variable store)
-- Routes input events to handlers, triggers UI re-renders
+- Routes input events to handlers, triggers UI re-renders via `formula::render_screen::<D>()`
 
-### Layer 6 — Math Engine (`firmware/src/math/`)
+### Layer 6 — Math Engine (`numcore/src/math/`)
 
 Completely hardware-independent. Can be compiled and tested on any platform. Zero `unsafe` code, zero HAL imports, zero heap allocation.
 
-The math engine is tested via the `test-suite/` workspace member, which includes every `firmware/src/math/` source file via `#[path]` attributes and compiles them for the host. 143 automated tests cover fixed-point arithmetic, lexer, parser, evaluator, variables, distributions, and the full expression pipeline. Run with `cargo test -p numcore_math --tests` or `make test`.
+The math engine is tested via the `test-suite/` workspace member, which includes every `numcore/src/math/` source file via `#[path]` attributes and compiles them for the host. 143 automated tests cover fixed-point arithmetic, lexer, parser, evaluator, variables, distributions, and the full expression pipeline. Run with `cargo test -p numcore_math --tests` or `make test`.
 
 **Pipeline:**
 
@@ -242,20 +258,20 @@ The evaluator takes `&mut VariableStore` rather than `&VariableStore` because `s
 - Zero imports from the HAL crate, `runtime/`, `ui/`, or `modes/`
 - All memory is stack-allocated — no heap required
 
-### Layer 7 — UI (`firmware/src/ui/`)
+### Layer 7 — UI (`numcore/src/ui/`)
 
-OLED display rendering. Composes the 96×16 framebuffer from expression text and results. Contains zero `unsafe` code.
+OLED display rendering. Generic over `<D: Display>`. Composes the framebuffer from expression text and results. Contains zero `unsafe` code.
 
 **Modules:**
 
 | Module     | Contents                                                    |
 |------------|-------------------------------------------------------------|
-| `font.rs`  | 5×7 bitmap font (95 printable ASCII glyphs), `render_text()`, `clear_page()` |
-| `formula.rs`| `render_screen()`, aggregate Σ/∫ display, pretty-print (π glyph, ×÷− symbols) |
+| `font.rs`  | 5×7 bitmap font (95 printable ASCII glyphs), `render_text::<D>()`, `clear_page::<D>()` |
+| `formula.rs`| `render_screen::<D>()`, aggregate Σ/∫ display, pretty-print (π glyph, ×÷− symbols) |
 
 **Display layout:**
-- Page 0 (rows 0–7): expression line, max 16 characters
-- Page 1 (rows 8–15): result line, max 16 characters
+- Page 0 (rows 0–7): expression line, max `D::WIDTH / 6` characters
+- Page 1 (rows 8–15): result line, max `D::WIDTH / 6` characters
 - Aggregate expressions (sum/int) span both pages with tall ∫/Σ glyphs
 
 ### Layer 8 — Modes (`modes/`)
@@ -267,13 +283,13 @@ OLED display rendering. Composes the 96×16 framebuffer from expression text and
 ```
 UART RX (hardware)
     ↓ byte
-hal::uart::poll_byte()          ← safe HAL call
+U::poll_byte()                    ← trait method call (monomorphized to concrete HAL)
     ↓ byte
 runtime::event::translate_input_byte_to_event()
     ↓ CalcEvent
-runtime::handle_event()
+runtime::handle_event::<U, D>()
     ↓
-├── DigitOrOperator → append to CalcState.input_buffer
+├── DigitOrOperator → append to CalcState.input_buffer, echo via U::transmit_byte()
 ├── Submit →
 │     lexer::tokenise_expression()
 │         ↓ LexResult
@@ -284,12 +300,12 @@ runtime::handle_event()
 │     runtime records Ans (+ sto register writes persist)
 │     engine::format_result()
 │         ↓ byte slice
-│     hal::uart::transmit_bytes()   ← safe HAL call
-│     hal::oled::render_screen()    ← safe HAL call
-└── Backspace → remove last char from buffer
+│     U::transmit_bytes()            ← trait method call
+│     D::render()                    ← trait method call
+└── Backspace → remove last char from buffer, U::transmit_bytes(b"\x08 \x08")
 ```
 
-Every arrow into the hardware layer goes through a safe HAL function. No `unsafe` escapes the HAL boundary.
+Every arrow into the hardware layer goes through a trait method call. No `unsafe` escapes the HAL boundary.
 
 ## Memory layout
 
@@ -319,4 +335,4 @@ The largest single allocation is `CalcState` (~1.5 KB), dominated by the 64-node
 
 5. **No heap**: The entire firmware uses precisely zero dynamic allocation. All data structures are fixed-size arrays sized at compile time with safety checks (bounds-checked appends returning `Option`).
 
-6. **Separate HAL crate**: The HAL is an independent Cargo crate in the workspace, not a module in the firmware crate. This enforces a compile-time boundary — the shared code never imports from a specific HAL; it imports from `hal` (the alias). Porting means creating a new crate implementing the same public API surface.
+6. **Trait-based HAL abstraction**: The shared code in `numcore/` depends on `Uart` and `Display` traits rather than a concrete HAL crate. Each per-MCU binary crate monomorphizes the generic runtime with concrete types. Porting means creating a new HAL crate implementing the trait + a new binary crate — zero changes to `numcore/`.
