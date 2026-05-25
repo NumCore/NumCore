@@ -43,7 +43,7 @@ The firmware is currently developed and tested on the **Luminary Micro Stellaris
 - **`runtime/`** — touches hardware only through the safe HAL API. No register names or memory addresses leak in.
 - **`ui/`** — renders to an abstract framebuffer byte array. Only `hal::oled::render_screen()` is platform-specific.
 - **HAL crate** (`hal-lm3s811/`) — the only crate that needs rewriting per target. Peripheral register maps, clock trees, and pin muxing are encapsulated here.
-- **`boot.rs`** + **`link.x`** — the only files that depend on the MCU's memory map and vector table layout.
+- **`boot.rs`** + **`link.x`** (inside the HAL crate) — the only files that depend on the MCU's memory map and vector table layout.
 
 A port to a new architecture therefore involves: writing a new HAL crate, creating `boot.rs` and `link.x` for the new MCU, and adding the target triple. No application logic changes.
 
