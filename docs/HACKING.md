@@ -221,14 +221,55 @@ No changes to `numcore/` required.
 
 ## Memory budgeting
 
-Actual numbers from `cargo size` (release build):
+Actual numbers from `cargo size` and stack canary measurement (release build):
 
-| Region   | Usage          | Budget | Usage |
-|----------|----------------|--------|-------|
-| Flash    | 41 471 bytes   | 64 KB  | 63%   |
-| .data    | 0 bytes        | —      | —     |
-| .bss     | 3 896 bytes    |  8 KB  | 48%   |
-| Stack    | 2 048 bytes    |  8 KB  | 25%   |
-| **Peak RAM** | **5 944 bytes** | **8 KB** | **73%** |
+| Region               | Usage          | Budget | Usage |
+|----------------------|----------------|--------|-------|
+| Flash                | 41 471 bytes   | 64 KB  | 63%   |
+| .data                | 0 bytes        | —      | —     |
+| .bss                 | 3 896 bytes    |  8 KB  | 48%   |
+| Stack (reserved)     | 2 048 bytes    |  8 KB  | 25%   |
+| Stack (actual max)   | 1 492 bytes    |  8 KB  | 18%   |
+| **Peak RAM**         | **5 388 bytes**| **8 KB** | **66%** |
 
-Stack is 2 KB as set in `hal-lm3s811/link.x`. `.data` is 0 — no initialised statics in the current build.
+Stack is 2 KB as set in `hal-lm3s811/link.x`. `.data` is 0 — no initialised statics in the current build. Actual max stack depth was measured empirically (see below).
+
+### Measuring peak stack usage
+
+To measure actual maximum stack depth during a representative workload:
+
+1. **Add a canary fill at boot** — in `numcore-lm3s811/src/boot.rs::Reset()`, after `copy_data_section_from_flash()`, insert:
+   ```rust
+   {
+       let start = &_stack_end as *const u8 as usize;
+       let end = &_stack_start as *const u8 as usize;
+       let sp: usize;
+       core::arch::asm!("mov {0}, sp", out(reg) sp);
+       let mut p = start;
+       while p < sp && p < end {
+           ptr::write(p as *mut u32, 0xDEADBEEF);
+           p += 4;
+       }
+   }
+   ```
+   This fills from the bottom of the stack (`_stack_end`) upward to the current SP, avoiding clobbering the boot path's own frame. Requires `extern "C" { static _stack_start: u8; static _stack_end: u8; }`.
+
+2. **Build and run the workload**:
+   ```bash
+   cargo build -p numcore-lm3s811 --release --target thumbv7m-none-eabi
+   qemu-system-arm -M lm3s811evb -serial mon:stdio -display none \
+     -kernel target/thumbv7m-none-eabi/release/NumCore \
+     -gdb tcp::1234 < test_inputs.txt
+   ```
+
+3. **Connect GDB and scan** (in another terminal):
+   ```bash
+   gdb -batch -nx \
+     -ex "target remote :1234" \
+     -ex "set print elements 0" \
+     -ex "x/512xw 0x20001800" \
+     target/thumbv7m-none-eabi/release/NumCore
+   ```
+   Look for the lowest address where `0xDEADBEEF` has been overwritten. The deepest SP = that address. Stack used = `0x20002000 − deepest_SP`.
+
+4. **Revert the canary** — remove the fill block and the `_stack_start`/`_stack_end` decls before committing (they are only needed for measurement).

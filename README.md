@@ -188,12 +188,15 @@ cat test_inputs.txt | qemu-system-arm \
 cargo size -p numcore-lm3s811 --release --target thumbv7m-none-eabi
 ```
 
-| Metric      | Value         | Budget  | Usage |
-|-------------|---------------|---------|-------|
-| Flash (text)| 41 471 bytes  | 64 KB   | 63%   |
-| RAM (.bss)  |  3 896 bytes  |  8 KB   | 48%   |
-| Stack       |  2 048 bytes  |  8 KB   | 25%   |
-| **Peak RAM**| **5 944 bytes**| **8 KB** | **73%** |
+| Metric                | Value         | Budget  | Usage |
+|-----------------------|---------------|---------|-------|
+| Flash (text)          | 41 471 bytes  | 64 KB   | 63%   |
+| RAM (.bss)            |  3 896 bytes  |  8 KB   | 48%   |
+| Stack (reserved)      |  2 048 bytes  |  8 KB   | 25%   |
+| Stack (actual max)    |  1 492 bytes  |  8 KB   | 18%   |
+| **Peak RAM (bss + actual stack)** | **5 388 bytes** | **8 KB** | **66%** |
+
+Peak stack depth was measured via a canary watermark: fill the stack region with `0xDEADBEEF` at boot, run the full test workload, then scan from the top of RAM downward to find the first intact canary. See `docs/HACKING.md` for the procedure.
 
 ## Hardware target
 
