@@ -1,12 +1,14 @@
 [package]
-name = "hal-lm3s811"
+name = "numcore-lm3s811"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 numcore = { path = "../numcore" }
+hal-lm3s811 = { path = "../hal-lm3s811" }
 
-[lib]
+[[bin]]
+name = "NumCore"
+path = "src/main.rs"
 test = false
 bench = false
-doctest = false
