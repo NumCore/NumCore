@@ -2,12 +2,13 @@
 
 Bare-metal scientific calculator firmware for the **LM3S811** ARM Cortex-M3 microcontroller, written entirely in Rust with `#![no_std]` and `#![no_main]`. Features a complete fixed-point math engine, an interactive UART console, and an I2C-driven OLED display.
 
-The project is a **Cargo workspace** with three members:
+The project is a **Cargo workspace** with four members:
 
 | Member | Path | Target | Purpose |
 |--------|------|--------|---------|
-| `numcore` | `firmware/` | `thumbv7m-none-eabi` | Firmware binary for LM3S811 |
-| `hal-lm3s811` | `hal-lm3s811/` | `thumbv7m-none-eabi` | HAL implementation (LM3S811) |
+| `numcore` | `numcore/` | any (host or embedded) | MCU-agnostic lib crate: traits, math engine, runtime, UI |
+| `numcore-lm3s811` | `numcore-lm3s811/` | `thumbv7m-none-eabi` | Per-MCU binary crate for LM3S811 |
+| `hal-lm3s811` | `hal-lm3s811/` | `thumbv7m-none-eabi` | HAL implementation + trait impls for LM3S811 |
 | `numcore_math` | `test-suite/` | Host (e.g. `x86_64`) | Host-side unit tests for the math engine |
 
 ## Features
@@ -100,25 +101,26 @@ The project is a **Cargo workspace** with three members:
 
 NumCore enforces a strict **hardware access boundary**:
 
-- **`hal-lm3s811/`** — a separate Cargo crate containing all `unsafe` code. All MMIO access is confined to `mmio.rs`. Every `unsafe` block has a `// SAFETY:` justification.
-- **`firmware/src/boot_lm3s811.rs`** — the only other file with `unsafe`, strictly for RAM initialisation (`.bss`/`.data`) before the HAL is online.
-- **Everything else** — `runtime/`, `math/`, `ui/` — contains zero `unsafe`. They interact with hardware exclusively through the HAL's safe public API.
+- **`hal-lm3s811/`** — a separate Cargo crate containing all `unsafe` code. All MMIO access is confined to `mmio.rs`. Every `unsafe` block has a `// SAFETY:` justification. Implements `numcore::hal::Uart` and `numcore::hal::Display`.
+- **`numcore-lm3s811/src/boot.rs`** — the only other file with `unsafe`, strictly for RAM initialisation (`.bss`/`.data`) before the HAL is online.
+- **`numcore/src/runtime/`, `numcore/src/math/`, `numcore/src/ui/`** — contain zero `unsafe`. They interact with hardware exclusively through the `Uart` and `Display` traits defined in `numcore::hal`.
 
-This design means porting to a new MCU only requires writing a new HAL crate and `boot.rs` (and possibly `link.x`). The math engine, event loop, and UI remain completely untouched.
+This design means porting to a new MCU only requires writing a new HAL crate (implementing the traits), a new per-MCU binary crate (with `boot.rs` + `link.x`), and updating the workspace. The shared code in `numcore/` is never touched.
 
 ## Portability
 
 The current firmware targets the **Luminary Micro Stellaris LM3S811** (ARM Cortex-M3) for testing and development. The strict layered architecture is explicitly designed to enable porting to many different architectures and microprocessors:
 
-| Layer     | MCU-specific | Portable          |
-|-----------|-------------|-------------------|
-| `boot.rs` | Yes — vector table format | — |
-| HAL crate | Yes — register maps, peripherals | — |
-| `runtime/`| No          | Event loop, state machine |
-| `math/`   | No          | Entire math engine |
-| `ui/`     | No          | Font, formula renderer |
+| Layer | Location | MCU-specific | Portable |
+|-------|----------|-------------|----------|
+| Boot | `numcore-<mcu>/src/boot.rs` | Yes — vector table format | — |
+| HAL | `hal-<mcu>/` | Yes — register maps, peripherals | — |
+| Traits | `numcore/src/hal.rs` | No | `Uart` + `Display` trait definitions |
+| Runtime | `numcore/src/runtime/` | No | Generic over `<U: Uart, D: Display>` |
+| Math | `numcore/src/math/` | No | Entire math engine |
+| UI | `numcore/src/ui/` | No | Generic over `<D: Display>` |
 
-To port: create a new HAL crate, add `boot.rs`, update `link.x` for the new MCU's memory map, and wire it into the firmware crate. Nothing else changes.
+To port: create a new HAL crate implementing `numcore::hal::Uart` and `numcore::hal::Display`, create a new per-MCU binary crate with `boot.rs` + `link.x`, add to the workspace. Nothing in `numcore/` changes.
 
 ## Quick start
 
@@ -133,7 +135,7 @@ rustup target add thumbv7m-none-eabi
 ```bash
 make build
 # or
-cargo build -p numcore --release --target thumbv7m-none-eabi
+cargo build -p numcore-lm3s811 --release --target thumbv7m-none-eabi
 ```
 
 The resulting ELF binary lives at `target/thumbv7m-none-eabi/release/NumCore`.
