@@ -127,13 +127,33 @@ fn apply_binary_operator(operator: BinaryOperator, left: Complex, right: Complex
 fn apply_function(function: MathFunction, arg: Complex) -> Option<Complex> {
     if !arg.is_real() {
         return match function {
+            MathFunction::Sin => Complex::sin(arg),
+            MathFunction::Cos => Complex::cos(arg),
+            MathFunction::Tan => Complex::tan(arg),
+            MathFunction::Asin => Complex::asin(arg),
+            MathFunction::Acos => Complex::acos(arg),
+            MathFunction::Atan => Complex::atan(arg),
+            MathFunction::SinH => Complex::sinh(arg),
+            MathFunction::CosH => Complex::cosh(arg),
+            MathFunction::TanH => Complex::tanh(arg),
+            MathFunction::ASinH => Complex::asinh(arg),
+            MathFunction::ACosH => Complex::acosh(arg),
+            MathFunction::ATanH => Complex::atanh(arg),
             MathFunction::Sqrt => Complex::sqrt(arg),
             MathFunction::Abs => {
                 let norm = arg.norm_sq()?;
                 Some(Complex::from_real(fp::sqrt(norm)?))
             }
+            MathFunction::Log => Complex::log10(arg),
+            MathFunction::Ln => Complex::ln(arg),
+            MathFunction::Log2 => Complex::log2(arg),
             MathFunction::Exp => Complex::exp(arg),
-            _ => None,
+            MathFunction::Floor
+            | MathFunction::Ceil
+            | MathFunction::Round
+            | MathFunction::Deg
+            | MathFunction::Rad
+            | MathFunction::LnGamma => None,
         };
     }
     let x = arg.re;

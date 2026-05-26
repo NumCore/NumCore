@@ -104,8 +104,12 @@ impl Complex {
     }
 
     pub fn sqrt(z: Self) -> Option<Self> {
-        if z.im == 0 {
+        if z.im == 0 && z.re >= 0 {
             return fp::sqrt(z.re).map(|r| Self { re: r, im: 0 });
+        }
+        if z.im == 0 {
+            // sqrt of a negative real: sqrt(-|r|) = 0 + i*sqrt(|r|)
+            return fp::sqrt(-z.re).map(|r| Self { re: 0, im: r });
         }
         let norm = z.norm_sq()?;
         let r = fp::sqrt(norm)?;
@@ -142,5 +146,143 @@ impl Complex {
         let re = fp::multiply(mag, c)?;
         let im = fp::multiply(mag, s)?;
         Some(Self { re, im })
+    }
+
+    // ── Logarithm ────────────────────────────────────────────────────────────
+
+    pub fn ln(z: Self) -> Option<Self> {
+        let norm = z.norm_sq()?;
+        let r = fp::sqrt(norm)?;
+        let re = fp::natural_log(r)?;
+        let im = z.arg();
+        Some(Self { re, im })
+    }
+
+    pub fn log10(z: Self) -> Option<Self> {
+        let ln_z = Self::ln(z)?;
+        let ln_10 = fp::natural_log(fp::from_integer(10))?;
+        Some(Self {
+            re: fp::divide(ln_z.re, ln_10)?,
+            im: fp::divide(ln_z.im, ln_10)?,
+        })
+    }
+
+    pub fn log2(z: Self) -> Option<Self> {
+        let ln_z = Self::ln(z)?;
+        let ln_2 = fp::natural_log(fp::from_integer(2))?;
+        Some(Self {
+            re: fp::divide(ln_z.re, ln_2)?,
+            im: fp::divide(ln_z.im, ln_2)?,
+        })
+    }
+
+    // ── Trigonometric ────────────────────────────────────────────────────────
+
+    pub fn sin(z: Self) -> Option<Self> {
+        let sh = fp::sinh(z.im)?;
+        let ch = fp::cosh(z.im)?;
+        let re = fp::multiply(fp::sin(z.re), ch)?;
+        let im = fp::multiply(fp::cos(z.re), sh)?;
+        Some(Self { re, im })
+    }
+
+    pub fn cos(z: Self) -> Option<Self> {
+        let sh = fp::sinh(z.im)?;
+        let ch = fp::cosh(z.im)?;
+        let re = fp::multiply(fp::cos(z.re), ch)?;
+        let im = fp::multiply(fp::sin(z.re), sh)?;
+        Some(Self { re, im: -im })
+    }
+
+    pub fn tan(z: Self) -> Option<Self> {
+        Self::sin(z)?.div(Self::cos(z)?)
+    }
+
+    // ── Hyperbolic ──────────────────────────────────────────────────────────
+
+    pub fn sinh(z: Self) -> Option<Self> {
+        let sh = fp::sinh(z.re)?;
+        let ch = fp::cosh(z.re)?;
+        let re = fp::multiply(sh, fp::cos(z.im))?;
+        let im = fp::multiply(ch, fp::sin(z.im))?;
+        Some(Self { re, im })
+    }
+
+    pub fn cosh(z: Self) -> Option<Self> {
+        let sh = fp::sinh(z.re)?;
+        let ch = fp::cosh(z.re)?;
+        let re = fp::multiply(ch, fp::cos(z.im))?;
+        let im = fp::multiply(sh, fp::sin(z.im))?;
+        Some(Self { re, im })
+    }
+
+    pub fn tanh(z: Self) -> Option<Self> {
+        Self::sinh(z)?.div(Self::cosh(z)?)
+    }
+
+    // ── Inverse trigonometric ───────────────────────────────────────────────
+
+    pub fn asin(z: Self) -> Option<Self> {
+        let i = Self { re: 0, im: fp::FIXED_ONE };
+        let one = Self::from_real(fp::FIXED_ONE);
+        let iz = i.mul(z)?;
+        let z_sq = z.mul(z)?;
+        let inner = Self::sqrt(one.sub(z_sq))?;
+        let sum = iz.add(inner);
+        let ln_val = Self::ln(sum)?;
+        let neg_i = Self { re: 0, im: -fp::FIXED_ONE };
+        neg_i.mul(ln_val)
+    }
+
+    pub fn acos(z: Self) -> Option<Self> {
+        let i = Self { re: 0, im: fp::FIXED_ONE };
+        let one = Self::from_real(fp::FIXED_ONE);
+        let z_sq = z.mul(z)?;
+        let inner = Self::sqrt(one.sub(z_sq))?;
+        let i_inner = i.mul(inner)?;
+        let sum = z.add(i_inner);
+        let ln_val = Self::ln(sum)?;
+        let neg_i = Self { re: 0, im: -fp::FIXED_ONE };
+        neg_i.mul(ln_val)
+    }
+
+    pub fn atan(z: Self) -> Option<Self> {
+        let i = Self { re: 0, im: fp::FIXED_ONE };
+        let two = Self::from_real(fp::from_integer(2));
+        let i_plus_z = i.add(z);
+        let i_minus_z = i.sub(z);
+        let q = i_plus_z.div(i_minus_z)?;
+        let ln_val = Self::ln(q)?;
+        let i_over_2 = i.div(two)?;
+        i_over_2.mul(ln_val)
+    }
+
+    // ── Inverse hyperbolic ──────────────────────────────────────────────────
+
+    pub fn asinh(z: Self) -> Option<Self> {
+        let one = Self::from_real(fp::FIXED_ONE);
+        let z_sq = z.mul(z)?;
+        let inner = Self::sqrt(z_sq.add(one))?;
+        let sum = z.add(inner);
+        Self::ln(sum)
+    }
+
+    pub fn acosh(z: Self) -> Option<Self> {
+        let one = Self::from_real(fp::FIXED_ONE);
+        let z_minus_one = Self::sqrt(z.sub(one))?;
+        let z_plus_one = Self::sqrt(z.add(one))?;
+        let prod = z_minus_one.mul(z_plus_one)?;
+        let sum = z.add(prod);
+        Self::ln(sum)
+    }
+
+    pub fn atanh(z: Self) -> Option<Self> {
+        let one = Self::from_real(fp::FIXED_ONE);
+        let half = Self::from_real(fp::divide(fp::FIXED_ONE, fp::from_integer(2))?);
+        let one_plus_z = one.add(z);
+        let one_minus_z = one.sub(z);
+        let q = one_plus_z.div(one_minus_z)?;
+        let ln_val = Self::ln(q)?;
+        half.mul(ln_val)
     }
 }

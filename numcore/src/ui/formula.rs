@@ -7,6 +7,108 @@ const AGGREGATE_BOUND_CHARS: usize = 5;
 const AGGREGATE_BOUND_COLUMNS: usize = AGGREGATE_BOUND_CHARS * font::CHAR_ADVANCE;
 const AGGREGATE_BODY_START: usize = AGGREGATE_SYMBOL_COLUMNS + AGGREGATE_BOUND_COLUMNS;
 
+// ─── Scroll-indicator sentinel bytes ──────────────────────────────────────────
+
+/// Used by the display layer for the right-arrow glyph. Outside printable ASCII
+/// range so it never collides with normal expression or result text.
+pub const RIGHT_ARROW_BYTE: u8 = 0x01;
+/// Left-arrow sentinel byte.
+pub const LEFT_ARROW_BYTE: u8 = 0x02;
+
+// ─── Custom glyphs ────────────────────────────────────────────────────────────
+
+#[rustfmt::skip]
+const RIGHT_ARROW_GLYPH: [u8; 5] = [
+    0b00001000,
+    0b00010100,
+    0b00100010,
+    0b01111111,
+    0b00000000,
+];
+
+#[rustfmt::skip]
+const LEFT_ARROW_GLYPH: [u8; 5] = [
+    0b00100010,
+    0b00010100,
+    0b00001000,
+    0b01111111,
+    0b00000000,
+];
+
+#[rustfmt::skip]
+const INTEGRAL_TOP: [u8; 5] = [
+    0b00000000,
+    0b00000000,
+    0b11111110,
+    0b00000001,
+    0b00000001,
+];
+
+#[rustfmt::skip]
+const INTEGRAL_BOTTOM: [u8; 5] = [
+    0b01000000,
+    0b01000000,
+    0b00111111,
+    0b00000000,
+    0b00000000,
+];
+
+#[rustfmt::skip]
+const SIGMA_TOP: [u8; 5] = [
+    0b00001100,
+    0b00010100,
+    0b00100100,
+    0b01000100,
+    0b10000100,
+];
+
+#[rustfmt::skip]
+const SIGMA_BOTTOM: [u8; 5] = [
+    0b00011000,
+    0b00010100,
+    0b00010010,
+    0b00010001,
+    0b00010000,
+];
+
+#[rustfmt::skip]
+const PI_GLYPH: [u8; 5] = [
+    0b00000100,
+    0b01111100,
+    0b00000100,
+    0b01111100,
+    0b00000100,
+];
+
+#[rustfmt::skip]
+const MULTIPLY_GLYPH: [u8; 5] = [
+    0b00100010,
+    0b00010100,
+    0b00001000,
+    0b00010100,
+    0b00100010,
+];
+
+#[rustfmt::skip]
+const DIVIDE_GLYPH: [u8; 5] = [
+    0b00001000,
+    0b00001000,
+    0b00101010,
+    0b00001000,
+    0b00001000,
+];
+
+#[rustfmt::skip]
+const MINUS_GLYPH: [u8; 5] = [
+    0b00001000,
+    0b00001000,
+    0b00001000,
+    0b00001000,
+    0b00001000,
+];
+
+// ─── Aggregate types ──────────────────────────────────────────────────────────
+
 #[derive(Clone, Copy)]
 struct AggregateView<'a> {
     op: AggregateOp,
@@ -22,27 +124,81 @@ enum AggregateOp {
     Sum,
 }
 
-pub fn render_screen<D: Display>(fb: &mut D::Buffer, expression: &[u8], result: Option<&[u8]>) {
+// ─── Public API ───────────────────────────────────────────────────────────────
+
+pub fn render_screen<D: Display>(
+    fb: &mut D::Buffer,
+    expression: &[u8],
+    cursor_pos: usize,
+    result: Option<&[u8]>,
+    result_scroll_offset: usize,
+) {
     clear_framebuffer::<D>(fb);
 
     if let Some(aggregate) = parse_aggregate(expression) {
-        render_aggregate::<D>(fb, aggregate, result);
+        render_aggregate_screen::<D>(fb, aggregate, result);
         return;
     }
 
-    render_ascii_pretty::<D>(fb, 0, 0, tail_for_line(expression, font::CHARS_PER_LINE));
+    render_expression_line::<D>(fb, expression, cursor_pos);
+
     if let Some(result) = result {
         render_ascii_pretty::<D>(fb, 1, 0, b"=");
-        render_ascii_pretty::<D>(
-            fb,
-            1,
-            font::CHAR_ADVANCE,
-            tail_for_line(result, font::CHARS_PER_LINE - 1),
-        );
+        render_result_line::<D>(fb, result, result_scroll_offset);
     }
 }
 
-fn render_aggregate<D: Display>(
+// ─── Expression line with cursor ──────────────────────────────────────────────
+
+fn render_expression_line<D: Display>(fb: &mut D::Buffer, expression: &[u8], cursor_pos: usize) {
+    let len = expression.len();
+    let visible = tail_for_line(expression, font::CHARS_PER_LINE);
+
+    render_ascii_pretty::<D>(fb, 0, 0, visible);
+
+    let visible_start = len.saturating_sub(visible.len());
+    if cursor_pos >= visible_start && cursor_pos < visible_start + visible.len() {
+        let char_in_visible = cursor_pos - visible_start;
+        invert_char_at::<D>(fb, 0, char_in_visible);
+    }
+}
+
+fn invert_char_at<D: Display>(fb: &mut D::Buffer, page: usize, char_index: usize) {
+    let col = char_index * font::CHAR_ADVANCE;
+    if col + font::GLYPH_WIDTH > D::WIDTH {
+        return;
+    }
+    let offset = page * D::WIDTH + col;
+    for i in 0..font::GLYPH_WIDTH {
+        fb.as_mut()[offset + i] ^= 0x7F;
+    }
+}
+
+// ─── Result line with scrolling ───────────────────────────────────────────────
+
+fn render_result_line<D: Display>(fb: &mut D::Buffer, result: &[u8], scroll_offset: usize) {
+    const RESULT_CHARS: usize = 15;
+    let len = result.len();
+    let mut display = [b' '; RESULT_CHARS];
+
+    if len <= RESULT_CHARS {
+        display[..len].copy_from_slice(result);
+    } else {
+        display[..13].copy_from_slice(&result[scroll_offset..scroll_offset + 13]);
+        display[13] = b' ';
+        if len - scroll_offset > 13 {
+            display[14] = RIGHT_ARROW_BYTE;
+        } else {
+            display[14] = LEFT_ARROW_BYTE;
+        }
+    }
+
+    render_ascii_pretty::<D>(fb, 1, font::CHAR_ADVANCE, &display);
+}
+
+// ─── Aggregate display ────────────────────────────────────────────────────────
+
+fn render_aggregate_screen<D: Display>(
     fb: &mut D::Buffer,
     aggregate: AggregateView,
     result: Option<&[u8]>,
@@ -151,6 +307,8 @@ fn split_top_level_commas<'a>(input: &'a [u8], parts: &mut [&'a [u8]; 4]) -> Opt
     Some(())
 }
 
+// ─── Rendering primitives ─────────────────────────────────────────────────────
+
 fn render_ascii_pretty<D: Display>(fb: &mut D::Buffer, page: usize, start_col: usize, text: &[u8]) {
     let page_count = D::HEIGHT / 8;
     if page >= page_count {
@@ -165,6 +323,8 @@ fn render_ascii_pretty<D: Display>(fb: &mut D::Buffer, page: usize, start_col: u
             2
         } else {
             match text[index] {
+                RIGHT_ARROW_BYTE => draw_page_glyph::<D>(fb, page, col, &RIGHT_ARROW_GLYPH),
+                LEFT_ARROW_BYTE => draw_page_glyph::<D>(fb, page, col, &LEFT_ARROW_GLYPH),
                 b'*' => draw_page_glyph::<D>(fb, page, col, &MULTIPLY_GLYPH),
                 b'/' => draw_page_glyph::<D>(fb, page, col, &DIVIDE_GLYPH),
                 b'-' => draw_page_glyph::<D>(fb, page, col, &MINUS_GLYPH),
@@ -209,6 +369,8 @@ fn clear_framebuffer<D: Display>(fb: &mut D::Buffer) {
     }
 }
 
+// ─── Utility ──────────────────────────────────────────────────────────────────
+
 fn trim_ascii(bytes: &[u8]) -> &[u8] {
     let mut start = 0usize;
     let mut end = bytes.len();
@@ -245,75 +407,3 @@ fn tail_for_line(bytes: &[u8], chars: usize) -> &[u8] {
 fn tail_for_columns(bytes: &[u8], columns: usize) -> &[u8] {
     tail_for_line(bytes, columns / font::CHAR_ADVANCE)
 }
-
-#[rustfmt::skip]
-const INTEGRAL_TOP: [u8; 5] = [
-    0b00000000,
-    0b00000000,
-    0b11111110,
-    0b00000001,
-    0b00000001,
-];
-
-#[rustfmt::skip]
-const INTEGRAL_BOTTOM: [u8; 5] = [
-    0b01000000,
-    0b01000000,
-    0b00111111,
-    0b00000000,
-    0b00000000,
-];
-
-#[rustfmt::skip]
-const SIGMA_TOP: [u8; 5] = [
-    0b00001100,
-    0b00010100,
-    0b00100100,
-    0b01000100,
-    0b10000100,
-];
-
-#[rustfmt::skip]
-const SIGMA_BOTTOM: [u8; 5] = [
-    0b00011000,
-    0b00010100,
-    0b00010010,
-    0b00010001,
-    0b00010000,
-];
-
-#[rustfmt::skip]
-const PI_GLYPH: [u8; 5] = [
-    0b00000100,
-    0b01111100,
-    0b00000100,
-    0b01111100,
-    0b00000100,
-];
-
-#[rustfmt::skip]
-const MULTIPLY_GLYPH: [u8; 5] = [
-    0b00100010,
-    0b00010100,
-    0b00001000,
-    0b00010100,
-    0b00100010,
-];
-
-#[rustfmt::skip]
-const DIVIDE_GLYPH: [u8; 5] = [
-    0b00001000,
-    0b00001000,
-    0b00101010,
-    0b00001000,
-    0b00001000,
-];
-
-#[rustfmt::skip]
-const MINUS_GLYPH: [u8; 5] = [
-    0b00001000,
-    0b00001000,
-    0b00001000,
-    0b00001000,
-    0b00001000,
-];
