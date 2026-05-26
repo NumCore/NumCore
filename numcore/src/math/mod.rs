@@ -16,6 +16,7 @@
 //!   - All functions are pure (no side effects, no global mutable state)
 //!   - All memory is stack-allocated — no heap required
 
+pub mod complex;
 pub mod distributions;
 pub mod engine;
 pub mod evaluator;
@@ -23,3 +24,11 @@ pub mod fixed_point;
 pub mod lexer;
 pub mod parser;
 pub mod vars;
+
+pub use complex::Complex;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum MathMode {
+    Standard,
+    Advanced,
+}

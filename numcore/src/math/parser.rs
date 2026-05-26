@@ -132,6 +132,7 @@ pub enum LoopOperation {
 pub enum MathConstant {
     Pi,
     E,
+    ImaginaryUnit,
 }
 
 /// Variable references.
@@ -387,6 +388,7 @@ fn parse_primary(cursor: &mut ParserCursor, tree: &mut ParseTree) -> Option<usiz
         // Named constants.
         Token::ConstPi => tree.allocate_node(AstNode::Constant(MathConstant::Pi)),
         Token::ConstE => tree.allocate_node(AstNode::Constant(MathConstant::E)),
+        Token::ConstI => tree.allocate_node(AstNode::Constant(MathConstant::ImaginaryUnit)),
 
         // Variables.
         Token::VarAns => tree.allocate_node(AstNode::Variable(VariableRef::Ans)),
@@ -591,6 +593,7 @@ fn is_primary_start(token: Token) -> bool {
             | Token::VarRegister(_)
             | Token::ConstPi
             | Token::ConstE
+            | Token::ConstI
             | Token::LeftParen
     ) || is_single_arg_function_token(token)
         || is_three_arg_function_token(token)

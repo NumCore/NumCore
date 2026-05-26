@@ -32,6 +32,16 @@
 
 #![no_std]
 
+// ─── MathMode ────────────────────────────────────────────────────────────────
+// Defined at crate root so that `super::MathMode` resolves correctly in the
+// #[path]-included engine.rs and lexer.rs.
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum MathMode {
+    Standard,
+    Advanced,
+}
+
 // ─── HAL stub ────────────────────────────────────────────────────────────────
 // Satisfies `use crate::hal::uart;` in fixed_point.rs (line 39), a dead
 // import only used in commented-out debug prints.
@@ -69,9 +79,13 @@ pub mod engine;
 #[path = "../../numcore/src/math/distributions.rs"]
 pub mod distributions;
 
+#[path = "../../numcore/src/math/complex.rs"]
+pub mod complex;
+
 // ─── Re-export under math:: for API compatibility ───────────────────────────
 
 pub mod math {
+    pub use crate::complex;
     pub use crate::distributions;
     pub use crate::engine;
     pub use crate::evaluator;
@@ -79,4 +93,5 @@ pub mod math {
     pub use crate::lexer;
     pub use crate::parser;
     pub use crate::vars;
+    pub use crate::MathMode;
 }

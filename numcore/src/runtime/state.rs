@@ -11,9 +11,11 @@
 //! No hardware knowledge lives here. No math logic lives here.
 //! This is a pure data container with intention-revealing mutator methods.
 
+use crate::math::complex::Complex;
 use crate::math::lexer::{LexResult, Token, MAX_TOKEN_COUNT};
 use crate::math::parser::{AstNode, ParseTree, MAX_NODE_COUNT};
 use crate::math::vars::VariableStore;
+use crate::math::MathMode;
 
 // ─── Calculator modes ─────────────────────────────────────────────────────────
 
@@ -129,12 +131,12 @@ impl CalcState {
     }
 
     /// Store a new value for `Ans`. Called by the runtime after evaluation.
-    pub fn record_answer(&mut self, answer: i64) {
+    pub fn record_answer(&mut self, answer: Complex) {
         self.variables.write_ans(answer);
     }
 
     /// Write a user register (A–F). Returns false if letter is out of range.
-    pub fn write_user_register(&mut self, letter: u8, value: i64) -> bool {
+    pub fn write_user_register(&mut self, letter: u8, value: Complex) -> bool {
         self.variables.write_register(letter, value)
     }
 
@@ -149,6 +151,14 @@ impl CalcState {
     pub fn switch_mode(&mut self, new_mode: CalculatorMode) {
         self.active_mode = new_mode;
         self.clear_input();
+    }
+
+    /// Return the MathMode equivalent of the current calculator mode.
+    pub fn math_mode(&self) -> MathMode {
+        match self.active_mode {
+            CalculatorMode::Standard => MathMode::Standard,
+            CalculatorMode::Advanced => MathMode::Advanced,
+        }
     }
 }
 
