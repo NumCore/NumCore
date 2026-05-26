@@ -152,14 +152,27 @@ pub fn render_screen<D: Display>(
 
 fn render_expression_line<D: Display>(fb: &mut D::Buffer, expression: &[u8], cursor_pos: usize) {
     let len = expression.len();
-    let visible = tail_for_line(expression, font::CHARS_PER_LINE);
+    let max_chars = font::CHARS_PER_LINE;
+    // If cursor is at the end and expression fills the line, shift visible
+    // left by one so the trailing insertion cursor has a slot.
+    let visible = if cursor_pos == len && len >= max_chars {
+        &expression[len - max_chars + 1..]
+    } else {
+        tail_for_line(expression, max_chars)
+    };
 
     render_ascii_pretty::<D>(fb, 0, 0, visible);
 
     let visible_start = len.saturating_sub(visible.len());
-    if cursor_pos >= visible_start && cursor_pos < visible_start + visible.len() {
-        let char_in_visible = cursor_pos - visible_start;
-        invert_char_at::<D>(fb, 0, char_in_visible);
+    if cursor_pos >= visible_start && cursor_pos <= visible_start + visible.len() {
+        let char_in_visible = cursor_pos.saturating_sub(visible_start);
+        if cursor_pos == visible_start + visible.len() && visible.len() < max_chars {
+            // Trailing insertion cursor at the end of a non-full line: draw
+            // an inverted blank cell right after the last visible character.
+            invert_char_at::<D>(fb, 0, visible.len());
+        } else if char_in_visible < visible.len() {
+            invert_char_at::<D>(fb, 0, char_in_visible);
+        }
     }
 }
 

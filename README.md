@@ -27,8 +27,6 @@ The project is a **Cargo workspace** with four members:
 **Complex numbers** (Advanced mode): input `i` for imaginary unit, get `a+bi` output. All functions work on complex arguments.
 
 **Trigonometry** (all functions take/return radians):
-
-**Trigonometry** (all functions take/return radians):
 | Function | Description |
 |----------|-------------|
 | `sin(x)` `cos(x)` `tan(x)` | Standard trig |

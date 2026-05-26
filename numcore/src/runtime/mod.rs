@@ -68,9 +68,11 @@ fn run_event_loop<U: Uart, D: Display>(state: &mut CalcState) -> ! {
     let mut ansi_buf = [0u8; ANSI_BUF_CAP];
     let mut ansi_len = 0usize;
     let mut ansi_state = AnsiSeq::None;
+    let mut ansi_idle = 0usize;
 
     loop {
         if let Some(raw_byte) = U::poll_byte() {
+            ansi_idle = 0;
             match ansi_state {
                 AnsiSeq::None => {
                     if raw_byte == 0x1B {
@@ -108,13 +110,18 @@ fn run_event_loop<U: Uart, D: Display>(state: &mut CalcState) -> ! {
                 }
             }
         } else if ansi_state != AnsiSeq::None {
-            // No new byte from UART this cycle — flush any pending sequence.
-            // A standalone 0x1B with no continuation is treated as ToggleMode.
-            if ansi_len == 1 {
-                handle_event::<U, D>(CalcEvent::ToggleMode, state);
+            // No new byte from UART this cycle — increment idle counter.
+            // Flush only after 2 consecutive idle polls, giving the next byte
+            // of a multi-byte ANSI sequence (e.g. '[' after 0x1B) time to arrive.
+            ansi_idle += 1;
+            if ansi_idle >= 2 {
+                if ansi_len == 1 {
+                    handle_event::<U, D>(CalcEvent::ToggleMode, state);
+                }
+                ansi_state = AnsiSeq::None;
+                ansi_len = 0;
+                ansi_idle = 0;
             }
-            ansi_state = AnsiSeq::None;
-            ansi_len = 0;
         }
     }
 }

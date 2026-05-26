@@ -1460,7 +1460,7 @@ fn eval_expr(expr: &str, vars: &mut VariableStore) -> Option<i64> {
         &mut parse_scratch,
         MathMode::Standard,
     )
-    .map(|c| c.re)
+    .and_then(|c| if c.im != 0 { None } else { Some(c.re) })
 }
 
 fn eval_complex(expr: &str, vars: &mut VariableStore) -> Option<Complex> {

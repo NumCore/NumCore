@@ -102,7 +102,7 @@ fn apply_binary_operator(
         BinaryOperator::Multiply => left.mul(right),
         BinaryOperator::Divide => left.div(right),
         BinaryOperator::Modulo => {
-            if right.im != 0 || right.re == 0 {
+            if left.im != 0 || right.im != 0 || right.re == 0 {
                 return None;
             }
             Some(Complex::from_real(left.re % right.re))
@@ -174,7 +174,13 @@ fn apply_function(function: MathFunction, arg: Complex) -> Option<Complex> {
         MathFunction::ASinH => fp::asinh(x).map(Complex::from_real),
         MathFunction::ACosH => fp::acosh(x).map(Complex::from_real),
         MathFunction::ATanH => fp::atanh(x).map(Complex::from_real),
-        MathFunction::Sqrt => fp::sqrt(x).map(Complex::from_real),
+        MathFunction::Sqrt => {
+            if x >= 0 {
+                fp::sqrt(x).map(Complex::from_real)
+            } else {
+                Complex::sqrt(Complex::new(x, 0))
+            }
+        }
         MathFunction::Abs => Some(Complex::from_real(fp::abs(x))),
         MathFunction::Log => fp::log10(x).map(Complex::from_real),
         MathFunction::Ln => fp::natural_log(x).map(Complex::from_real),
@@ -298,18 +304,19 @@ fn evaluate_loop_aggregate(
 
                 let coeff = if i % 2 == 1 { 4 } else { 2 };
 
-                let term = fp::multiply(fp::from_integer(coeff), f_x.re)?;
-                sum = sum.add(Complex::from_real(term));
+                let term = Complex::from_real(fp::from_integer(coeff)).mul(f_x)?;
+                sum = sum.add(term);
             }
 
-            let result = fp::divide(fp::multiply(h, sum.re)?, fp::from_integer(3))?;
+            let h_times_sum = Complex::from_real(h).mul(sum)?;
+            let result = h_times_sum.div(Complex::from_real(fp::from_integer(3)))?;
 
-            let nearest = fp::round(result);
+            let nearest = fp::round(result.re);
 
-            if (result - nearest).abs() < INTEGRATION_SNAP_THRESHOLD {
-                Some(Complex::from_real(nearest))
+            if (result.re - nearest).abs() < INTEGRATION_SNAP_THRESHOLD {
+                Some(Complex::new(nearest, result.im))
             } else {
-                Some(Complex::from_real(result))
+                Some(result)
             }
         }
     }
