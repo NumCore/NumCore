@@ -524,6 +524,9 @@ pub fn reduce_angle_to_principal(angle: i64) -> i64 {
 /// Call `cordic_sin_cos` (which handles quadrant folding) instead of this
 /// directly unless you are certain the angle is already in range.
 fn cordic_raw(angle: i64) -> (i64, i64) {
+    if angle == 0 {
+        return (0, FIXED_ONE);
+    }
     let mut x: i128 = CORDIC_GAIN as i128;
     let mut y: i128 = 0;
     let mut z: i128 = angle as i128;
@@ -656,6 +659,9 @@ fn exact_sin_cos_lookup(a: i64) -> Option<(i64, i64)> {
 
 /// atan(x) in Q31.32 radians via CORDIC vectoring mode with i128 intermediates.
 pub fn atan(x: i64) -> i64 {
+    if x == 0 {
+        return 0;
+    }
     let mut vx: i128 = FIXED_ONE as i128;
     let mut vy: i128 = x as i128;
     let mut z: i128 = 0;
@@ -664,7 +670,7 @@ pub fn atan(x: i64) -> i64 {
         let vxp = vx;
         let vyp = vy;
         let table = CORDIC_ATAN_TABLE[i] as i128;
-        if vy >= 0 {
+        if vy > 0 {
             vx = vxp + (vyp >> i);
             vy = vyp - (vxp >> i);
             z += table;

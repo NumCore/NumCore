@@ -33,6 +33,12 @@ pub enum CalcEvent {
     /// The user pressed Backspace or Delete — remove the last character.
     Backspace,
 
+    /// Move the cursor one position to the left (in input or result scroll).
+    CursorLeft,
+
+    /// Move the cursor one position to the right.
+    CursorRight,
+
     /// Toggle between Standard and Advanced calculator modes.
     ToggleMode,
 
@@ -45,30 +51,23 @@ pub enum CalcEvent {
 
 /// Translate a raw byte received from the input peripheral into a `CalcEvent`.
 ///
-/// This function encodes all knowledge of terminal conventions and ASCII
-/// control codes. Nothing outside this module needs to know what `0x08` means.
+/// This function handles single-byte inputs only. Multi-byte ANSI escape
+/// sequences (arrow keys) are parsed by the runtime event loop before
+/// reaching this function.
 ///
 /// # Byte classification
 ///   0x08, 0x7F        → Backspace (BS and DEL both erase the last character)
 ///   0x0D, 0x0A        → Submit (carriage return and line feed both confirm input)
 ///   0x20 – 0x7E       → DigitOrOperator (the full printable ASCII range)
+///   0x1B              → ToggleMode (standalone Escape — ANSI sequences
+///                        are intercepted before reaching this function)
 ///   everything else   → Ignored
 pub fn translate_input_byte_to_event(raw_byte: u8) -> CalcEvent {
     match raw_byte {
-        // Carriage return (Enter on most terminals) and line feed.
         b'\r' | b'\n' => CalcEvent::Submit,
-
-        // Backspace (0x08) and Delete (0x7F) both remove the previous character.
         0x08 | 0x7F => CalcEvent::Backspace,
-
-        // Printable ASCII: digits, operators, letters, punctuation.
-        // The math engine will validate whether the content is a legal expression.
         0x20..=0x7E => CalcEvent::DigitOrOperator(raw_byte),
-
-        // Escape key — toggle calculator mode.
         0x1B => CalcEvent::ToggleMode,
-
-        // Everything else: null bytes, escape sequences, function keys, etc.
         _ => CalcEvent::Ignored,
     }
 }
