@@ -81,7 +81,7 @@ The architecture enforces strict layering. Violations will be rejected:
 
 ### Host-side unit test suite
 
-The `math/` layer is hardware-independent, and **143 automated tests** in the `test-suite/` workspace member verify every public function in the math engine. Run them from the workspace root:
+The `math/` layer is hardware-independent, and **250 automated tests** in the `test-suite/` workspace member verify every public function in the math engine. Run them from the workspace root:
 
 ```bash
 # Full suite
@@ -102,19 +102,21 @@ The test suite covers:
 - **Core arithmetic** — `from_integer`, `to_integer_truncated`, `to_integer_rounded`
 - **Multiply/Divide** — exact, fractional, negative, overflow, and rounding cases
 - **Rounding & abs** — `floor`, `ceil`, `round`, `abs` (all integer rounding modes)
-- **Square root** — perfect squares, fractional, large values, domain errors
-- **Power & integer power** — integer exponents, fractional exponents, negative base, overflow
+- **Square root** — perfect squares, fractional, large values, domain errors, negative-real branch
+- **Power & integer power** — integer exponents, fractional exponents, negative base, overflow, zero base, `0^0`
 - **N-th root** — exact roots, negative n, negative base, domain errors
-- **Trigonometry** — sin/cos/tan for standard angles, CORDIC precision, sin²+cos² identity
-- **Inverse trig** — asin/acos/atan for standard values, domain bounds
+- **Trigonometry** — sin/cos/tan for standard angles, CORDIC precision, sin²+cos² identity, negative angles, tan poles
+- **Inverse trig** — asin/acos/atan for standard values, domain bounds, exact boundaries
 - **Hyperbolic** — sinh/cosh/tanh basic values and saturation
-- **Inverse hyperbolic** — asinh/acosh/atanh basic values and domain
-- **Exponential & log** — exp/ln/log10/log2 basic values, overflow/underflow, roundtrip
-- **Angle conversion** — deg/rad roundtrip, standard conversions
-- **Formatting** — zero, integer, fractional, trailing zeros, negative, large numbers
-- **VariableStore** — read/write ans and registers, invalid register rejection, Copy semantics
-- **Distributions** — ln_factorial, ln_gamma, binomial, Poisson, chi-squared
-- **Full pipeline** — lex→parse→eval for arithmetic, functions, constants, sto, sum, int
+- **Inverse hyperbolic** — asinh/acosh/atanh basic values and domain, edge cases at 0/1
+- **Exponential & log** — exp/ln/log10/log2 basic values, overflow/underflow, roundtrip, extra log values
+- **Angle conversion** — deg/rad roundtrip, standard conversions, zero and negative
+- **Formatting** — zero, integer, fractional, trailing zeros, negative, large numbers, mode-aware (Standard strips imag, Advanced shows `a+bi`)
+- **Complex numbers** — arithmetic (`add`, `sub`, `mul`, `div`, `neg`, `conj`, `arg` all quadrants, `from_polar`), transcendental functions (`sqrt`, `exp`, `ln`, `log10`, `log2`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`), edge cases (negative real sqrt, zero mul/div, `integer_pow` zero base)
+- **VariableStore** — read/write ans and registers, invalid register rejection, Copy semantics, complex values
+- **Distributions** — ln_factorial, ln_gamma, binomial, Poisson, chi-squared, edge cases (p=0, k=0, extreme k)
+- **Full pipeline** — lex→parse→eval for arithmetic, functions, constants, sto, sum, int, complex expressions
+- **Lexer edge cases** — `.5`, `007`, trailing space, empty input, Standard rejects `i`, Advanced accepts `i`, `log2` prefix priority
 - **QEMU smoke-test parity** — exactly matches the expressions in `test_inputs.txt`
 
 11 tests are **ignored** on the host due to known differences in overflow behaviour between the host compiler and the embedded target (CORDIC overflow, integrator limits, Stirling/Lanczos precision). These pass correctly on the real hardware.

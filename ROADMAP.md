@@ -14,6 +14,10 @@
 - [x] Case-sensitive identifiers — `e` is Euler's constant, `E` is register E
 - [x] `sto(value, var)` — store a value into a register A–Z, returns the value
 - [x] Implicit multiplication — `3(5)`, `(a)b`, `(x)(y)`, `2sin(x)` all work without `*`
+- [x] Complex numbers — full arithmetic, transcendental functions, `a+bi` display via mode switching
+- [x] Mode switching — Escape key toggles Standard (real-only) / Advanced (complex) modes
+- [x] Scrollable results — left/right arrow keys scroll long results on 96×16 OLED
+- [x] Cursor-based input editing — insert/delete at arbitrary buffer positions
 
 ## Short-term
 
@@ -64,11 +68,6 @@ For each port: rewrite `hal/`, update `boot.rs` + `link.x`, adjust `.cargo/confi
 - [ ] Matrix type as a new `Variable` variant (stored in a fixed-size buffer)
 - [ ] Matrix addition, multiplication, transposition, determinant, inverse
 - [ ] Solve systems of linear equations
-
-### Complex numbers
-- [ ] Complex type: store as a pair of Q31.32 values
-- [ ] Complex arithmetic: `+`, `-`, `*`, `/`, `^`
-- [ ] Complex functions: `sqrt`, `exp`, `ln`, `sin`, `cos` — using real/imag decomposition
 
 ### Standalone math crate
 - [ ] Extract `math/` into a separate `numcore-math` crate on crates.io

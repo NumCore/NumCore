@@ -51,7 +51,7 @@ The workspace root `.cargo/config.toml` does **not** set a default build target.
 The firmware is currently developed and tested on the **Luminary Micro Stellaris LM3S811** (ARM Cortex-M3, 64 KB Flash, 8 KB SRAM). The layered design is explicitly engineered to support future ports to other architectures and microprocessors:
 
 - **`numcore/src/hal.rs`** — `Uart` and `Display` traits. This is the only HAL dependency of the shared code.
-- **`math/`** — zero HAL imports, zero `unsafe`, zero platform dependencies. Compiles on any target Rust supports. The `test-suite/` workspace member includes `numcore/src/math/` sources via `#[path]` and runs 143 automated tests on the host.
+- **`math/`** — zero HAL imports, zero `unsafe`, zero platform dependencies. Compiles on any target Rust supports. The `test-suite/` workspace member includes `numcore/src/math/` sources via `#[path]` and runs 250 automated tests on the host.
 - **`runtime/`** — generic over `<U: Uart, D: Display>`. Touches hardware only through trait method calls.
 - **`ui/`** — generic over `<D: Display>`. Renders to `D::Buffer` via `AsMut<[u8]>` / `AsRef<[u8]>`.
 - **HAL crate** (`hal-<mcu>/`) — the only crate that needs rewriting per target. Peripheral register maps, clock trees, and pin muxing are encapsulated here. Must implement `numcore::hal::Uart` and `numcore::hal::Display`.
@@ -162,10 +162,12 @@ The control centre of the firmware. Generic over `<U: Uart, D: Display>`. Sits b
 5. `run_event_loop()` — block on `U::poll_byte()`, dispatch events
 
 **Event handling:**
-- Printable ASCII (`0x20`–`0x7E`) → append to input buffer and echo via `U::transmit_byte()`
+- Printable ASCII (`0x20`–`0x7E`) → insert at cursor position in input buffer and echo via `U::transmit_byte()`
 - CR/LF (`0x0D`/`0x0A`) → submit expression for evaluation
-- BS/DEL (`0x08`/`0x7F`) → backspace
-- All other bytes → ignored
+- BS/DEL (`0x08`/`0x7F`) → delete character before cursor
+- Escape (`0x1B`) → toggle between Standard and Advanced math modes
+- ANSI escape sequences (`Esc[D` / `Esc[C`) → cursor left/right navigation within input buffer (detected by a 3-byte state machine in the event loop)
+- Scrolling: long results display left/right arrow sentinel glyphs when the formatted result exceeds 13 characters; arrow keys scroll the viewport
 
 **Memory management:**
 - `CalcState` is a single `static mut` allocated once in `.bss`
@@ -181,7 +183,7 @@ The control centre of the firmware. Generic over `<U: Uart, D: Display>`. Sits b
 
 Completely hardware-independent. Can be compiled and tested on any platform. Zero `unsafe` code, zero HAL imports, zero heap allocation.
 
-The math engine is tested via the `test-suite/` workspace member, which includes every `numcore/src/math/` source file via `#[path]` attributes and compiles them for the host. 143 automated tests cover fixed-point arithmetic, lexer, parser, evaluator, variables, distributions, and the full expression pipeline. Run with `cargo test -p numcore_math --tests` or `make test`.
+The math engine is tested via the `test-suite/` workspace member, which includes every `numcore/src/math/` source file via `#[path]` attributes and compiles them for the host. 250 automated tests cover fixed-point arithmetic, lexer, parser, evaluator, variables, distributions, complex numbers, and the full expression pipeline. Run with `cargo test -p numcore_math --tests` or `make test`.
 
 **Pipeline:**
 
@@ -243,7 +245,7 @@ The evaluator takes `&mut VariableStore` rather than `&VariableStore` because `s
 | Node | Purpose |
 |------|---------|
 | `Literal(i64)` | Numeric constant |
-| `Constant(MathConstant)` | `pi` or `e` |
+| `Constant(MathConstant)` | `pi`, `e`, or `i` (imaginary unit) |
 | `Variable(VariableRef)` | `Ans` or register A–Z |
 | `UnaryNegation` | Prefix `−` |
 | `BinaryOperation` | `+` `−` `*` `/` `%` `^` |
@@ -282,46 +284,51 @@ OLED display rendering. Generic over `<D: Display>`. Composes the framebuffer fr
 
 ```
 UART RX (hardware)
-    ↓ byte
+    ↓ byte(s)
 U::poll_byte()                    ← trait method call (monomorphized to concrete HAL)
-    ↓ byte
+    ↓ byte(s)
 runtime::event::translate_input_byte_to_event()
     ↓ CalcEvent
 runtime::handle_event::<U, D>()
     ↓
-├── DigitOrOperator → append to CalcState.input_buffer, echo via U::transmit_byte()
+├── DigitOrOperator → insert at cursor in CalcState.input_buffer, echo via U::transmit_byte()
 ├── Submit →
 │     lexer::tokenise_expression()
 │         ↓ LexResult
 │     parser::parse_token_stream()
 │         ↓ ParseTree
-│     evaluator::evaluate_tree()   ← reads & writes VariableStore
-│         ↓ Q31.32
+│     evaluator::evaluate_tree()   ← reads & writes VariableStore (Complex)
+│         ↓ Complex
 │     runtime records Ans (+ sto register writes persist)
-│     engine::format_result()
+│     engine::format_result()      ← checks MathMode for a+bi vs real-only
 │         ↓ byte slice
 │     U::transmit_bytes()            ← trait method call
 │     D::render()                    ← trait method call
-└── Backspace → remove last char from buffer, U::transmit_bytes(b"\x08 \x08")
+├── Backspace → delete char before cursor from buffer, U::transmit_bytes(b"\x08 \x08")
+├── CursorLeft / CursorRight → move cursor in buffer, re-render OLED
+└── ToggleMode → flip MathMode in CalcState, re-render OLED with mode banner
 ```
 
 Every arrow into the hardware layer goes through a trait method call. No `unsafe` escapes the HAL boundary.
+
+The evaluator now works entirely with `Complex` values internally; `MathMode` only affects lexer (`i` token acceptance) and formatter (real-only vs `a+bi` display).
 
 ## Memory layout
 
 ```
 Flash (0x0000_0000, 64 KB):
   [0x0000]  Vector table (initial SP + Reset vector + exceptions)
-  [0x0040]  .text (code + rodata)
+  [0x0040]  .text (code + rodata)  — 56 959 bytes used (87%)
 
 RAM (0x2000_0000, 8 KB):
-  [0x2000_0000]  .data (initialised statics, copied from Flash)
-  [0x2000_0100]  .bss  (zero-initialised statics — CalcState lives here)
-  [0x2000_1700]  .stack (2 KB, grows downward from 0x2000_2000)
+  [0x2000_0000]  .data (initialised statics, 0 bytes)
+  [0x2000_0000]  .bss  (zero-initialised statics — CalcState, 4 176 bytes)
+  [0x2000_1050]  (gap, not used)
+  [0x2000_1800]  .stack (2 KB, grows downward from 0x2000_2000)
   [0x2000_2000]  Top of SRAM (initial SP)
 ```
 
-The largest single allocation is `CalcState` (~1.5 KB), dominated by the 64-node `ParseTree` arena (~1 KB). The 2 KB stack budget is safe — the deepest call chain (integration via Simpson's rule) uses under 200 bytes.
+The largest single allocation is `CalcState` (~1.5 KB), dominated by the 64-node `ParseTree` arena (~1 KB). Peak stack usage (measured via canary watermark under the full test workload) is 2 032 bytes out of the 2 KB budget. The deepest call chains involve complex transcendental evaluation (CORDIC + series expansions + formatting).
 
 ## Key design decisions
 

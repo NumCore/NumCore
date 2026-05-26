@@ -90,7 +90,7 @@ qemu-system-arm -M lm3s811evb -serial mon:stdio -display none \
 
 ## Host-side unit tests
 
-The `test-suite/` workspace member includes every `numcore/src/math/*.rs` file via `#[path]` attributes and compiles them for the host. 143 tests exercise the entire math engine:
+The `test-suite/` workspace member includes every `numcore/src/math/*.rs` file via `#[path]` attributes and compiles them for the host. 250 tests exercise the entire math engine:
 
 ```bash
 # Run all tests
@@ -225,12 +225,12 @@ Actual numbers from `cargo size` and stack canary measurement (release build):
 
 | Region               | Usage          | Budget | Usage |
 |----------------------|----------------|--------|-------|
-| Flash                | 41 471 bytes   | 64 KB  | 63%   |
+| Flash                | 56 959 bytes   | 64 KB  | 87%   |
 | .data                | 0 bytes        | —      | —     |
-| .bss                 | 3 896 bytes    |  8 KB  | 48%   |
+| .bss                 | 4 176 bytes    |  8 KB  | 51%   |
 | Stack (reserved)     | 2 048 bytes    |  8 KB  | 25%   |
-| Stack (actual max)   | 1 492 bytes    |  8 KB  | 18%   |
-| **Peak RAM**         | **5 388 bytes**| **8 KB** | **66%** |
+| Stack (actual max)   | 2 032 bytes    |  8 KB  | 25%   |
+| **Peak RAM**         | **6 208 bytes**| **8 KB** | **76%** |
 
 Stack is 2 KB as set in `hal-lm3s811/link.x`. `.data` is 0 — no initialised statics in the current build. Actual max stack depth was measured empirically (see below).
 

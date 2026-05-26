@@ -24,6 +24,10 @@ The project is a **Cargo workspace** with four members:
 
 **Operators:** `+` `-` `*` `/` `^` `%`
 
+**Complex numbers** (Advanced mode): input `i` for imaginary unit, get `a+bi` output. All functions work on complex arguments.
+
+**Trigonometry** (all functions take/return radians):
+
 **Trigonometry** (all functions take/return radians):
 | Function | Description |
 |----------|-------------|
@@ -96,6 +100,9 @@ The project is a **Cargo workspace** with four members:
 - **Scratch buffers** pre-allocated in static RAM to avoid stack overflow on 8 KB SRAM
 - No heap, no allocator, no OS — fully deterministic, all memory static
 - **No explicit `*` required** before `(`, variables, constants, or function calls — `3(5)`, `A(B)`, `2sin(x)` all work
+- **Mode switching**: press Escape to toggle between Standard (real-only) and Advanced (full complex) modes
+- **Scrollable results**: left/right arrow keys scroll long expressions on the OLED
+- **Cursor editing**: insert and delete characters at arbitrary positions in the input buffer
 
 ## Safety contract
 
@@ -148,7 +155,7 @@ make test
 cargo test -p numcore_math --tests
 ```
 
-143 tests cover the entire math engine (fixed-point arithmetic, lexer, parser, evaluator, variables, distributions, and full pipeline integration). 11 tests are skipped on host due to known overflow differences with the embedded target.
+250 tests cover the entire math engine (fixed-point arithmetic, lexer, parser, evaluator, variables, distributions, complex numbers, and full pipeline integration). 11 tests are skipped on host due to known overflow differences with the embedded target.
 
 ### Run in QEMU
 
@@ -190,11 +197,11 @@ cargo size -p numcore-lm3s811 --release --target thumbv7m-none-eabi
 
 | Metric                | Value         | Budget  | Usage |
 |-----------------------|---------------|---------|-------|
-| Flash (text)          | 41 471 bytes  | 64 KB   | 63%   |
-| RAM (.bss)            |  3 896 bytes  |  8 KB   | 48%   |
+| Flash (text)          | 56 959 bytes  | 64 KB   | 87%   |
+| RAM (.bss)            |  4 176 bytes  |  8 KB   | 51%   |
 | Stack (reserved)      |  2 048 bytes  |  8 KB   | 25%   |
-| Stack (actual max)    |  1 492 bytes  |  8 KB   | 18%   |
-| **Peak RAM (bss + actual stack)** | **5 388 bytes** | **8 KB** | **66%** |
+| Stack (actual max)    |  2 032 bytes  |  8 KB   | 25%   |
+| **Peak RAM (bss + actual stack)** | **6 208 bytes** | **8 KB** | **76%** |
 
 Peak stack depth was measured via a canary watermark: fill the stack region with `0xDEADBEEF` at boot, run the full test workload, then scan from the top of RAM downward to find the first intact canary. See `docs/HACKING.md` for the procedure.
 
