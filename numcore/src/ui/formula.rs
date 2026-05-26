@@ -164,14 +164,14 @@ fn render_expression_line<D: Display>(fb: &mut D::Buffer, expression: &[u8], cur
     render_ascii_pretty::<D>(fb, 0, 0, visible);
 
     let visible_start = len.saturating_sub(visible.len());
-    if cursor_pos >= visible_start && cursor_pos <= visible_start + visible.len() {
-        let char_in_visible = cursor_pos.saturating_sub(visible_start);
-        if cursor_pos == visible_start + visible.len() && visible.len() < max_chars {
-            // Trailing insertion cursor at the end of a non-full line: draw
-            // an inverted blank cell right after the last visible character.
-            invert_char_at::<D>(fb, 0, visible.len());
-        } else if char_in_visible < visible.len() {
-            invert_char_at::<D>(fb, 0, char_in_visible);
+    let visible_end = visible_start + visible.len();
+    let visible_glyphs = byte_pos_to_glyph_col(expression, visible_start, visible_end);
+    if cursor_pos >= visible_start && cursor_pos <= visible_end {
+        let glyph_col = byte_pos_to_glyph_col(expression, visible_start, cursor_pos);
+        if cursor_pos == visible_end && visible.len() < max_chars {
+            invert_char_at::<D>(fb, 0, visible_glyphs);
+        } else if glyph_col < visible_glyphs {
+            invert_char_at::<D>(fb, 0, glyph_col);
         }
     }
 }
@@ -320,6 +320,35 @@ fn split_top_level_commas<'a>(input: &'a [u8], parts: &mut [&'a [u8]; 4]) -> Opt
     Some(())
 }
 
+// ─── Glyph helpers ─────────────────────────────────────────────────────────────
+
+/// Number of byte positions the glyph starting at `text[0]` occupies.
+/// A value >1 means multiple bytes are collapsed into one display slot.
+fn glyph_byte_width(text: &[u8]) -> usize {
+    if text.len() >= 2 && starts_with_ignore_ascii_case(text, b"pi") {
+        2
+    } else {
+        1
+    }
+}
+
+/// Map a byte-position in the expression to a 0-based display column,
+/// accounting for multi-byte glyphs that collapse (e.g. `pi` → π).
+fn byte_pos_to_glyph_col(expr: &[u8], visible_start: usize, cursor_pos: usize) -> usize {
+    let mut col = 0usize;
+    let mut i = visible_start;
+    let end = cursor_pos.min(expr.len());
+    while i < end {
+        let w = glyph_byte_width(&expr[i..]);
+        if w == 0 {
+            break;
+        }
+        col += 1;
+        i += w;
+    }
+    col
+}
+
 // ─── Rendering primitives ─────────────────────────────────────────────────────
 
 fn render_ascii_pretty<D: Display>(fb: &mut D::Buffer, page: usize, start_col: usize, text: &[u8]) {
@@ -331,9 +360,9 @@ fn render_ascii_pretty<D: Display>(fb: &mut D::Buffer, page: usize, start_col: u
     let mut col = start_col;
     let mut index = 0usize;
     while index < text.len() && col + font::GLYPH_WIDTH <= D::WIDTH {
-        let consumed = if starts_with_ignore_ascii_case(&text[index..], b"pi") {
+        let consumed = glyph_byte_width(&text[index..]);
+        if consumed == 2 {
             draw_page_glyph::<D>(fb, page, col, &PI_GLYPH);
-            2
         } else {
             match text[index] {
                 RIGHT_ARROW_BYTE => draw_page_glyph::<D>(fb, page, col, &RIGHT_ARROW_GLYPH),
@@ -343,8 +372,7 @@ fn render_ascii_pretty<D: Display>(fb: &mut D::Buffer, page: usize, start_col: u
                 b'-' => draw_page_glyph::<D>(fb, page, col, &MINUS_GLYPH),
                 byte => draw_page_glyph::<D>(fb, page, col, font::glyph_columns(byte)),
             }
-            1
-        };
+        }
 
         col += font::GLYPH_WIDTH + GLYPH_GAP;
         index += consumed;
