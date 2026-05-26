@@ -64,6 +64,18 @@ fn handle_event<U: Uart, D: Display>(event: CalcEvent, state: &mut CalcState) {
         }
         CalcEvent::Submit => handle_expression_submission::<U, D>(state),
         CalcEvent::Backspace => handle_backspace::<U, D>(state),
+        CalcEvent::ToggleMode => {
+            let new_mode = match state.active_mode() {
+                state::CalculatorMode::Standard => state::CalculatorMode::Advanced,
+                state::CalculatorMode::Advanced => state::CalculatorMode::Standard,
+            };
+            state.switch_mode(new_mode);
+            let banner = match new_mode {
+                state::CalculatorMode::Standard => b"= Standard",
+                state::CalculatorMode::Advanced => b"= Advanced",
+            };
+            render_oled::<D>(state.current_input(), Some(banner));
+        }
         CalcEvent::Ignored => {}
     }
 }
@@ -111,17 +123,18 @@ fn handle_expression_submission<U: Uart, D: Display>(state: &mut CalcState) {
                 &mut *variables,
                 &mut *lex_scratch,
                 &mut *parse_scratch,
+                state.math_mode(),
             )
         }
     };
 
-    let mut result_line = [0u8; 24];
+    let mut result_line = [0u8; 48];
     let result_text = match result {
         Some(result) => {
             state.record_answer(result);
 
             U::transmit_bytes(b"= ");
-            let formatted = engine::format_result(result, &mut result_line);
+            let formatted = engine::format_result(result, state.math_mode(), &mut result_line);
             U::transmit_bytes(formatted);
             U::transmit_bytes(b"\r\n");
             formatted

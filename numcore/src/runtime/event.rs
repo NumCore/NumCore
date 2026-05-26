@@ -33,6 +33,9 @@ pub enum CalcEvent {
     /// The user pressed Backspace or Delete — remove the last character.
     Backspace,
 
+    /// Toggle between Standard and Advanced calculator modes.
+    ToggleMode,
+
     /// A byte with no meaning in the current context (null, escape, etc.).
     /// The event loop discards these without taking any action.
     Ignored,
@@ -61,6 +64,9 @@ pub fn translate_input_byte_to_event(raw_byte: u8) -> CalcEvent {
         // Printable ASCII: digits, operators, letters, punctuation.
         // The math engine will validate whether the content is a legal expression.
         0x20..=0x7E => CalcEvent::DigitOrOperator(raw_byte),
+
+        // Escape key — toggle calculator mode.
+        0x1B => CalcEvent::ToggleMode,
 
         // Everything else: null bytes, escape sequences, function keys, etc.
         _ => CalcEvent::Ignored,

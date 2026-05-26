@@ -21,12 +21,14 @@
 //!     is exact (±0 ULP), CORDIC trig ≤ 2 ULP, Taylor-series functions
 //!     ≤ 10 ULP, log/exp chains ≤ 20 ULP.
 
+use numcore_math::math::complex::Complex;
 use numcore_math::math::distributions;
 use numcore_math::math::engine;
 use numcore_math::math::fixed_point as fp;
 use numcore_math::math::lexer;
 use numcore_math::math::parser;
 use numcore_math::math::vars::VariableStore;
+use numcore_math::math::MathMode;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -1010,49 +1012,49 @@ fn test_variable_store_new() {
     // Ans is undefined.
     assert_eq!(vs.read_ans(), None);
     // Registers read as 0 by default.
-    assert_eq!(vs.read_register(b'A'), Some(0));
-    assert_eq!(vs.read_register(b'Z'), Some(0));
+    assert_eq!(vs.read_register(b'A'), Some(Complex::zero()));
+    assert_eq!(vs.read_register(b'Z'), Some(Complex::zero()));
 }
 
 #[test]
 fn test_variable_store_write_ans() {
     let mut vs = VariableStore::new();
-    vs.write_ans(fp::from_integer(42));
-    assert_eq!(vs.read_ans(), Some(fp::from_integer(42)));
-    vs.write_ans(fp::from_integer(-7));
-    assert_eq!(vs.read_ans(), Some(fp::from_integer(-7)));
+    vs.write_ans(Complex::from_real(fp::from_integer(42)));
+    assert_eq!(vs.read_ans(), Some(Complex::from_real(fp::from_integer(42))));
+    vs.write_ans(Complex::from_real(fp::from_integer(-7)));
+    assert_eq!(vs.read_ans(), Some(Complex::from_real(fp::from_integer(-7))));
 }
 
 #[test]
 fn test_variable_store_write_register() {
     let mut vs = VariableStore::new();
-    assert!(vs.write_register(b'A', fp::from_integer(10)));
-    assert_eq!(vs.read_register(b'A'), Some(fp::from_integer(10)));
-    assert!(vs.write_register(b'Z', fp::from_integer(-5)));
-    assert_eq!(vs.read_register(b'Z'), Some(fp::from_integer(-5)));
+    assert!(vs.write_register(b'A', Complex::from_real(fp::from_integer(10))));
+    assert_eq!(vs.read_register(b'A'), Some(Complex::from_real(fp::from_integer(10))));
+    assert!(vs.write_register(b'Z', Complex::from_real(fp::from_integer(-5))));
+    assert_eq!(vs.read_register(b'Z'), Some(Complex::from_real(fp::from_integer(-5))));
 }
 
 #[test]
 fn test_variable_store_invalid_register() {
     let mut vs = VariableStore::new();
     // Lowercase should fail.
-    assert!(!vs.write_register(b'a', SCALE));
+    assert!(!vs.write_register(b'a', Complex::from_real(SCALE)));
     // Beyond Z should fail.
-    assert!(!vs.write_register(b'[', SCALE));
+    assert!(!vs.write_register(b'[', Complex::from_real(SCALE)));
     // Before A should fail.
-    assert!(!vs.write_register(b'@', SCALE));
+    assert!(!vs.write_register(b'@', Complex::from_real(SCALE)));
 }
 
 #[test]
 fn test_variable_store_copy() {
     // VariableStore derives Copy — used by loop aggregate scoping.
     let mut vs1 = VariableStore::new();
-    vs1.write_register(b'B', fp::from_integer(99));
+    vs1.write_register(b'B', Complex::from_real(fp::from_integer(99)));
     let vs2 = vs1;
-    assert_eq!(vs2.read_register(b'B'), Some(fp::from_integer(99)));
+    assert_eq!(vs2.read_register(b'B'), Some(Complex::from_real(fp::from_integer(99))));
     // Mutating vs1 shouldn't affect vs2.
-    vs1.write_register(b'B', fp::from_integer(0));
-    assert_eq!(vs2.read_register(b'B'), Some(fp::from_integer(99)));
+    vs1.write_register(b'B', Complex::from_real(fp::from_integer(0)));
+    assert_eq!(vs2.read_register(b'B'), Some(Complex::from_real(fp::from_integer(99))));
 }
 
 // ─── 17. Distributions ───────────────────────────────────────────────────────
@@ -1286,7 +1288,21 @@ fn eval_expr(expr: &str, vars: &mut VariableStore) -> Option<i64> {
         node_count: 0,
         root_index: 0,
     };
-    engine::evaluate_expression(expr.as_bytes(), vars, &mut lex_scratch, &mut parse_scratch)
+    engine::evaluate_expression(expr.as_bytes(), vars, &mut lex_scratch, &mut parse_scratch, MathMode::Standard)
+        .map(|c| c.re)
+}
+
+fn eval_complex(expr: &str, vars: &mut VariableStore) -> Option<Complex> {
+    let mut lex_scratch = lexer::LexResult {
+        tokens: [lexer::Token::Number(0); lexer::MAX_TOKEN_COUNT],
+        token_count: 0,
+    };
+    let mut parse_scratch = parser::ParseTree {
+        nodes: [parser::AstNode::Literal(0); parser::MAX_NODE_COUNT],
+        node_count: 0,
+        root_index: 0,
+    };
+    engine::evaluate_expression(expr.as_bytes(), vars, &mut lex_scratch, &mut parse_scratch, MathMode::Advanced)
 }
 
 #[test]
@@ -1525,12 +1541,12 @@ fn test_eval_integration_non_trivial() {
 
 #[test]
 fn test_engine_format_result() {
-    let mut buf = [0u8; 24];
-    let r = engine::format_result(0, &mut buf);
+    let mut buf = [0u8; 48];
+    let r = engine::format_result(Complex::from_real(0), MathMode::Standard, &mut buf);
     assert_eq!(core::str::from_utf8(r).unwrap(), "0");
-    let r = engine::format_result(SCALE, &mut buf);
+    let r = engine::format_result(Complex::from_real(SCALE), MathMode::Standard, &mut buf);
     assert_eq!(core::str::from_utf8(r).unwrap(), "1");
-    let r = engine::format_result(fp::FIXED_PI, &mut buf);
+    let r = engine::format_result(Complex::from_real(fp::FIXED_PI), MathMode::Standard, &mut buf);
     assert_eq!(core::str::from_utf8(r).unwrap(), "3.141593");
 }
 
@@ -1601,7 +1617,7 @@ fn test_lexer_decimal_numbers() {
         tokens: [lexer::Token::Number(0); lexer::MAX_TOKEN_COUNT],
         token_count: 0,
     };
-    assert!(lexer::tokenise_expression(b"3.14", &mut lex).is_some());
+    assert!(lexer::tokenise_expression(b"3.14", &mut lex, MathMode::Standard).is_some());
     assert_eq!(lex.token_count, 1);
     if let lexer::Token::Number(v) = lex.tokens[0] {
         assert_approx_eq(v, q(3.14), 1);
@@ -1617,7 +1633,7 @@ fn test_lexer_unary_minus_detection() {
         token_count: 0,
     };
     // "-5" should produce [UnaryMinus, Number(5)]
-    assert!(lexer::tokenise_expression(b"-5", &mut lex).is_some());
+    assert!(lexer::tokenise_expression(b"-5", &mut lex, MathMode::Standard).is_some());
     assert_eq!(lex.token_count, 2);
     assert_eq!(lex.tokens[0], lexer::Token::UnaryMinus);
     assert_eq!(lex.tokens[1], lexer::Token::Number(fp::from_integer(5)));
@@ -1627,7 +1643,7 @@ fn test_lexer_unary_minus_detection() {
         tokens: [lexer::Token::Number(0); lexer::MAX_TOKEN_COUNT],
         token_count: 0,
     };
-    assert!(lexer::tokenise_expression(b"3-5", &mut lex).is_some());
+    assert!(lexer::tokenise_expression(b"3-5", &mut lex, MathMode::Standard).is_some());
     assert_eq!(lex.token_count, 3);
     assert_eq!(lex.tokens[0], lexer::Token::Number(fp::from_integer(3)));
     assert_eq!(lex.tokens[1], lexer::Token::Minus);
@@ -1640,7 +1656,7 @@ fn test_lexer_function_names() {
         tokens: [lexer::Token::Number(0); lexer::MAX_TOKEN_COUNT],
         token_count: 0,
     };
-    assert!(lexer::tokenise_expression(b"sin(0)", &mut lex).is_some());
+    assert!(lexer::tokenise_expression(b"sin(0)", &mut lex, MathMode::Standard).is_some());
     assert_eq!(lex.tokens[0], lexer::Token::FuncSin);
     assert_eq!(lex.tokens[1], lexer::Token::LeftParen);
     assert_eq!(lex.tokens[2], lexer::Token::Number(0));
@@ -1654,7 +1670,7 @@ fn test_lexer_case_sensitivity() {
         token_count: 0,
     };
     // "SIN" is not a valid function name (case-sensitive)
-    assert!(lexer::tokenise_expression(b"SIN(0)", &mut lex).is_none());
+    assert!(lexer::tokenise_expression(b"SIN(0)", &mut lex, MathMode::Standard).is_none());
 }
 
 #[test]
@@ -1664,7 +1680,7 @@ fn test_lexer_variable_registers() {
         token_count: 0,
     };
     // "A" should lex as VarRegister(b'A')
-    assert!(lexer::tokenise_expression(b"A", &mut lex).is_some());
+    assert!(lexer::tokenise_expression(b"A", &mut lex, MathMode::Standard).is_some());
     assert_eq!(lex.tokens[0], lexer::Token::VarRegister(b'A'));
 }
 
@@ -1674,7 +1690,7 @@ fn test_parser_simple() {
         tokens: [lexer::Token::Number(0); lexer::MAX_TOKEN_COUNT],
         token_count: 0,
     };
-    lexer::tokenise_expression(b"2+3", &mut lex).unwrap();
+    lexer::tokenise_expression(b"2+3", &mut lex, MathMode::Standard).unwrap();
     let mut tree = parser::ParseTree {
         nodes: [parser::AstNode::Literal(0); parser::MAX_NODE_COUNT],
         node_count: 0,
@@ -1690,7 +1706,7 @@ fn test_parser_mismatched_parens() {
         tokens: [lexer::Token::Number(0); lexer::MAX_TOKEN_COUNT],
         token_count: 0,
     };
-    lexer::tokenise_expression(b"(2+3", &mut lex).unwrap();
+    lexer::tokenise_expression(b"(2+3", &mut lex, MathMode::Standard).unwrap();
     let mut tree = parser::ParseTree {
         nodes: [parser::AstNode::Literal(0); parser::MAX_NODE_COUNT],
         node_count: 0,
@@ -2048,4 +2064,182 @@ fn test_power_realistic() {
         eval_expr("10^6", &mut vars),
         Some(fp::from_integer(1_000_000))
     );
+}
+
+// ─── 34. Complex number tests (Advanced mode) ────────────────────────────────
+
+#[test]
+fn test_complex_imaginary_unit() {
+    let mut vars = VariableStore::new();
+    let r = eval_complex("i", &mut vars);
+    assert_eq!(r, Some(Complex::new(0, fp::FIXED_ONE)));
+}
+
+#[test]
+fn test_complex_literal_3_plus_4i() {
+    let mut vars = VariableStore::new();
+    let r = eval_complex("3+4i", &mut vars);
+    assert_eq!(r, Some(Complex::new(fp::from_integer(3), fp::from_integer(4))));
+}
+
+#[test]
+fn test_complex_implicit_mul_after_paren() {
+    let mut vars = VariableStore::new();
+    let r = eval_complex("(2+3)i", &mut vars);
+    assert_eq!(r, Some(Complex::new(0, fp::from_integer(5))));
+}
+
+#[test]
+fn test_complex_addition() {
+    let mut vars = VariableStore::new();
+    let r = eval_complex("(1+2i)+(3+4i)", &mut vars);
+    assert_eq!(r, Some(Complex::new(fp::from_integer(4), fp::from_integer(6))));
+}
+
+#[test]
+fn test_complex_multiplication() {
+    let mut vars = VariableStore::new();
+    // (1+2i)*(3+4i) = 3 + 4i + 6i + 8i^2 = 3 + 10i - 8 = -5 + 10i
+    let r = eval_complex("(1+2i)*(3+4i)", &mut vars);
+    assert_eq!(r, Some(Complex::new(fp::from_integer(-5), fp::from_integer(10))));
+}
+
+#[test]
+fn test_complex_i_squared() {
+    let mut vars = VariableStore::new();
+    let r = eval_complex("i^2", &mut vars);
+    assert_eq!(r, Some(Complex::new(-fp::FIXED_ONE, 0)));
+}
+
+#[test]
+fn test_complex_standard_mode_rejects_i() {
+    let mut vars = VariableStore::new();
+    let mut lex_scratch = lexer::LexResult {
+        tokens: [lexer::Token::Number(0); lexer::MAX_TOKEN_COUNT],
+        token_count: 0,
+    };
+    let mut parse_scratch = parser::ParseTree {
+        nodes: [parser::AstNode::Literal(0); parser::MAX_NODE_COUNT],
+        node_count: 0,
+        root_index: 0,
+    };
+    let r = engine::evaluate_expression(
+        b"i",
+        &mut vars,
+        &mut lex_scratch,
+        &mut parse_scratch,
+        MathMode::Standard,
+    );
+    assert_eq!(r, None);
+}
+
+#[test]
+fn test_complex_format_standard() {
+    let mut buf = [0u8; 48];
+    let r = engine::format_result(Complex::new(fp::from_integer(3), fp::from_integer(4)), MathMode::Standard, &mut buf);
+    assert_eq!(core::str::from_utf8(r).unwrap(), "3");
+}
+
+#[test]
+fn test_complex_format_advanced_real() {
+    let mut buf = [0u8; 48];
+    let r = engine::format_result(Complex::from_real(fp::FIXED_PI), MathMode::Advanced, &mut buf);
+    assert_eq!(core::str::from_utf8(r).unwrap(), "3.141593");
+}
+
+#[test]
+fn test_complex_format_advanced_3_plus_4i() {
+    let mut buf = [0u8; 48];
+    let r = engine::format_result(Complex::new(fp::from_integer(3), fp::from_integer(4)), MathMode::Advanced, &mut buf);
+    assert_eq!(core::str::from_utf8(r).unwrap(), "3+4i");
+}
+
+#[test]
+fn test_complex_format_advanced_negative_im() {
+    let mut buf = [0u8; 48];
+    let r = engine::format_result(Complex::new(fp::from_integer(3), -fp::from_integer(4)), MathMode::Advanced, &mut buf);
+    assert_eq!(core::str::from_utf8(r).unwrap(), "3-4i");
+}
+
+#[test]
+fn test_complex_format_advanced_pure_imaginary() {
+    let mut buf = [0u8; 48];
+    let r = engine::format_result(Complex::new(0, fp::FIXED_ONE), MathMode::Advanced, &mut buf);
+    assert_eq!(core::str::from_utf8(r).unwrap(), "i");
+}
+
+#[test]
+fn test_complex_format_advanced_negative_pure_imaginary() {
+    let mut buf = [0u8; 48];
+    let r = engine::format_result(Complex::new(0, -fp::FIXED_ONE), MathMode::Advanced, &mut buf);
+    assert_eq!(core::str::from_utf8(r).unwrap(), "-i");
+}
+
+#[test]
+fn test_complex_format_advanced_2i() {
+    let mut buf = [0u8; 48];
+    let r = engine::format_result(Complex::new(0, fp::from_integer(2)), MathMode::Advanced, &mut buf);
+    assert_eq!(core::str::from_utf8(r).unwrap(), "2i");
+}
+
+#[test]
+fn test_complex_format_advanced_neg_2i() {
+    let mut buf = [0u8; 48];
+    let r = engine::format_result(Complex::new(0, -fp::from_integer(2)), MathMode::Advanced, &mut buf);
+    assert_eq!(core::str::from_utf8(r).unwrap(), "-2i");
+}
+
+#[test]
+fn test_complex_power_integer_exponent() {
+    let mut vars = VariableStore::new();
+    // (2+3i)^2 = -5+12i
+    let r = eval_complex("(2+3i)^2", &mut vars);
+    assert_eq!(r, Some(Complex::new(fp::from_integer(-5), fp::from_integer(12))));
+}
+
+#[test]
+fn test_complex_power_zero_exponent() {
+    let mut vars = VariableStore::new();
+    let r = eval_complex("(2+3i)^0", &mut vars);
+    assert_eq!(r, Some(Complex::from_real(fp::FIXED_ONE)));
+}
+
+#[test]
+fn test_complex_power_negative_exponent() {
+    let mut vars = VariableStore::new();
+    // (2+3i)^(-1) = 1/(2+3i) = (2-3i)/(4+9) = (2-3i)/13
+    // In Q31.32: re = 2/13 ≈ 0.15385, im = -3/13 ≈ -0.23077
+    let r = eval_complex("(2+3i)^(-1)", &mut vars);
+    assert!(r.is_some());
+    let c = r.unwrap();
+    let expected_re = fp::divide(fp::from_integer(2), fp::from_integer(13)).unwrap();
+    let expected_im = -fp::divide(fp::from_integer(3), fp::from_integer(13)).unwrap();
+    let re_diff = (c.re - expected_re).abs();
+    let im_diff = (c.im - expected_im).abs();
+    assert!(re_diff < 1000, "re diff = {}", re_diff);  // within ~1000 Q31.32 ULP
+    assert!(im_diff < 1000, "im diff = {}", im_diff);
+}
+
+#[test]
+fn test_complex_power_real_base() {
+    let mut vars = VariableStore::new();
+    // 2^(2+0i) = 4+0i
+    let r = eval_complex("2^(2)", &mut vars);
+    assert_eq!(r, Some(Complex::from_real(fp::from_integer(4))));
+}
+
+#[test]
+fn test_complex_power_large_exponent() {
+    let mut vars = VariableStore::new();
+    // (1+0i)^100 = 1+0i
+    let r = eval_complex("(1+0i)^100", &mut vars);
+    assert_eq!(r, Some(Complex::from_real(fp::FIXED_ONE)));
+}
+
+#[test]
+fn test_complex_power_cubic() {
+    let mut vars = VariableStore::new();
+    // (1+2i)^3 = (1+2i)*(1+2i)^2 = (1+2i)*(-3+4i) = -3+4i-6i+8i^2 = -3-2i-8 = -11-2i
+    let r = eval_complex("(1+2i)^3", &mut vars);
+    assert_eq!(r, Some(Complex::new(fp::from_integer(-11), -fp::from_integer(2))));
 }

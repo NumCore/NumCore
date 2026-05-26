@@ -677,6 +677,30 @@ pub fn atan(x: i64) -> i64 {
     z as i64
 }
 
+/// Four-quadrant arctangent atan2(y, x) in Q31.32 radians.
+/// Returns angle in [-pi, pi].
+pub fn atan2(y: i64, x: i64) -> i64 {
+    if x == 0 {
+        if y > 0 {
+            return FIXED_PI_OVER_2;
+        }
+        if y < 0 {
+            return -FIXED_PI_OVER_2;
+        }
+        return 0;
+    }
+    let ratio = divide(y, x).unwrap_or(0);
+    let mut angle = atan(ratio);
+    if x < 0 {
+        if y >= 0 {
+            angle += FIXED_PI;
+        } else {
+            angle -= FIXED_PI;
+        }
+    }
+    angle
+}
+
 /// asin(x) in Q31.32 radians. Returns None if |x| > 1.
 /// asin(x) = atan(x / √(1 − x²))
 pub fn asin(x: i64) -> Option<i64> {
@@ -953,7 +977,7 @@ pub fn radians_to_degrees(radians: i64) -> Option<i64> {
 /// fractional digits, trailing zeros stripped.
 ///
 /// Writes into `buffer` (must be ≥ 24 bytes) and returns the filled slice.
-pub fn format_fixed_point(value: i64, buffer: &mut [u8; 24]) -> &[u8] {
+pub fn format_fixed_point(value: i64, buffer: &mut [u8]) -> &[u8] {
     let is_negative = value < 0;
     // Use i128 to safely handle i64::MIN.
     let abs_val: i128 = if is_negative {
