@@ -19,18 +19,18 @@ pub const LEFT_ARROW_BYTE: u8 = 0x02;
 
 #[rustfmt::skip]
 const RIGHT_ARROW_GLYPH: [u8; 5] = [
-    0b00001000,
-    0b00010100,
-    0b00100010,
     0b01111111,
+    0b00100010,
+    0b00010100,
+    0b00001000,
     0b00000000,
 ];
 
 #[rustfmt::skip]
 const LEFT_ARROW_GLYPH: [u8; 5] = [
-    0b00100010,
-    0b00010100,
     0b00001000,
+    0b00010100,
+    0b00100010,
     0b01111111,
     0b00000000,
 ];
