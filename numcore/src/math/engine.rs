@@ -17,8 +17,8 @@ use super::fixed_point;
 use super::lexer::LexResult;
 use super::parser::ParseTree;
 use super::vars::VariableStore;
-use super::{evaluator, lexer, parser};
 use super::MathMode;
+use super::{evaluator, lexer, parser};
 
 /// Evaluate a mathematical expression byte slice.
 ///

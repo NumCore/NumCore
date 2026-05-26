@@ -116,7 +116,11 @@ pub struct LexResult {
 /// Resets `result` before use so stale tokens from prior calls are never visible.
 /// Returns `None` if any unrecognised character or malformed number is found.
 /// Whitespace is discarded. Identifiers are case-sensitive.
-pub fn tokenise_expression(expression: &[u8], mut result: &mut LexResult, mode: MathMode) -> Option<()> {
+pub fn tokenise_expression(
+    expression: &[u8],
+    mut result: &mut LexResult,
+    mode: MathMode,
+) -> Option<()> {
     // Reset scratch buffer — must clear token_count so old tokens are invisible.
     result.token_count = 0;
 
@@ -146,10 +150,7 @@ pub fn tokenise_expression(expression: &[u8], mut result: &mut LexResult, mode: 
         // is NOT an identifier — it is the imaginary unit. The number was
         // already emitted as Token::Number above. We emit Token::ConstI as a
         // second token so the parser can apply implicit multiplication.
-        if mode == MathMode::Advanced
-            && cursor < expression.len()
-            && expression[cursor] == b'i'
-        {
+        if mode == MathMode::Advanced && cursor < expression.len() && expression[cursor] == b'i' {
             append_token(&mut result, Token::ConstI)?;
             cursor += 1;
             continue;
