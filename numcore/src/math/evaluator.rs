@@ -91,7 +91,11 @@ fn evaluate_node(tree: &ParseTree, node_index: usize, vars: &mut VariableStore) 
     }
 }
 
-fn apply_binary_operator(operator: BinaryOperator, left: Complex, right: Complex) -> Option<Complex> {
+fn apply_binary_operator(
+    operator: BinaryOperator,
+    left: Complex,
+    right: Complex,
+) -> Option<Complex> {
     match operator {
         BinaryOperator::Add => Some(left.add(right)),
         BinaryOperator::Subtract => Some(left.sub(right)),
@@ -185,7 +189,11 @@ fn apply_function(function: MathFunction, arg: Complex) -> Option<Complex> {
     }
 }
 
-fn apply_two_arg_function(function: TwoArgMathFunction, a0: Complex, a1: Complex) -> Option<Complex> {
+fn apply_two_arg_function(
+    function: TwoArgMathFunction,
+    a0: Complex,
+    a1: Complex,
+) -> Option<Complex> {
     if !a0.is_real() || !a1.is_real() {
         return None;
     }

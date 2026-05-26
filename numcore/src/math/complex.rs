@@ -125,9 +125,16 @@ impl Complex {
     pub fn integer_pow(self, exp: i64) -> Option<Self> {
         if exp < 0 {
             let pos = self.integer_pow(-exp)?;
-            return Self { re: fp::FIXED_ONE, im: 0 }.div(pos);
+            return Self {
+                re: fp::FIXED_ONE,
+                im: 0,
+            }
+            .div(pos);
         }
-        let mut result = Self { re: fp::FIXED_ONE, im: 0 };
+        let mut result = Self {
+            re: fp::FIXED_ONE,
+            im: 0,
+        };
         let mut base = self;
         let mut e = exp;
         while e > 0 {
@@ -223,31 +230,46 @@ impl Complex {
     // ── Inverse trigonometric ───────────────────────────────────────────────
 
     pub fn asin(z: Self) -> Option<Self> {
-        let i = Self { re: 0, im: fp::FIXED_ONE };
+        let i = Self {
+            re: 0,
+            im: fp::FIXED_ONE,
+        };
         let one = Self::from_real(fp::FIXED_ONE);
         let iz = i.mul(z)?;
         let z_sq = z.mul(z)?;
         let inner = Self::sqrt(one.sub(z_sq))?;
         let sum = iz.add(inner);
         let ln_val = Self::ln(sum)?;
-        let neg_i = Self { re: 0, im: -fp::FIXED_ONE };
+        let neg_i = Self {
+            re: 0,
+            im: -fp::FIXED_ONE,
+        };
         neg_i.mul(ln_val)
     }
 
     pub fn acos(z: Self) -> Option<Self> {
-        let i = Self { re: 0, im: fp::FIXED_ONE };
+        let i = Self {
+            re: 0,
+            im: fp::FIXED_ONE,
+        };
         let one = Self::from_real(fp::FIXED_ONE);
         let z_sq = z.mul(z)?;
         let inner = Self::sqrt(one.sub(z_sq))?;
         let i_inner = i.mul(inner)?;
         let sum = z.add(i_inner);
         let ln_val = Self::ln(sum)?;
-        let neg_i = Self { re: 0, im: -fp::FIXED_ONE };
+        let neg_i = Self {
+            re: 0,
+            im: -fp::FIXED_ONE,
+        };
         neg_i.mul(ln_val)
     }
 
     pub fn atan(z: Self) -> Option<Self> {
-        let i = Self { re: 0, im: fp::FIXED_ONE };
+        let i = Self {
+            re: 0,
+            im: fp::FIXED_ONE,
+        };
         let two = Self::from_real(fp::from_integer(2));
         let i_plus_z = i.add(z);
         let i_minus_z = i.sub(z);

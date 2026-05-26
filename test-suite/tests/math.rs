@@ -741,7 +741,11 @@ fn test_tan_poles() {
     let r = fp::tan(near_pole);
     assert!(r.is_some(), "tan near pole should be Some, got None");
     let val = r.unwrap();
-    assert!(val > fp::from_integer(100), "tan near pole should be large, got {:?}", val);
+    assert!(
+        val > fp::from_integer(100),
+        "tan near pole should be large, got {:?}",
+        val
+    );
 }
 
 // ─── 10. Inverse Trig ─────────────────────────────────────────────────────────
@@ -996,16 +1000,32 @@ fn test_log2_domain() {
 #[test]
 fn test_log_extra_values() {
     // log10(e) ≈ 0.43429448
-    assert_approx_eq(fp::log10(fp::FIXED_E).unwrap(), q(0.434_294_481_903_251_8), 10);
+    assert_approx_eq(
+        fp::log10(fp::FIXED_E).unwrap(),
+        q(0.434_294_481_903_251_8),
+        10,
+    );
     // log10(π) ≈ 0.49714987
-    assert_approx_eq(fp::log10(fp::FIXED_PI).unwrap(), q(0.497_149_872_694_133_85), 10);
+    assert_approx_eq(
+        fp::log10(fp::FIXED_PI).unwrap(),
+        q(0.497_149_872_694_133_85),
+        10,
+    );
     // log10(very small) = negative
     let r = fp::log10(q(0.0001)).unwrap();
     assert!(r < 0);
     // log2(e) ≈ 1.44269504
-    assert_approx_eq(fp::log2(fp::FIXED_E).unwrap(), q(1.442_695_040_888_963_4), 10);
+    assert_approx_eq(
+        fp::log2(fp::FIXED_E).unwrap(),
+        q(1.442_695_040_888_963_4),
+        10,
+    );
     // log2(π) ≈ 1.65149613
-    assert_approx_eq(fp::log2(fp::FIXED_PI).unwrap(), q(1.651_496_129_472_318), 10);
+    assert_approx_eq(
+        fp::log2(fp::FIXED_PI).unwrap(),
+        q(1.651_496_129_472_318),
+        10,
+    );
     // log2(very small) = negative
     let r = fp::log2(q(0.0001)).unwrap();
     assert!(r < 0);
@@ -1014,7 +1034,11 @@ fn test_log_extra_values() {
 #[test]
 fn test_natural_log_extra() {
     // ln(π) ≈ 1.14472989
-    assert_approx_eq(fp::natural_log(fp::FIXED_PI).unwrap(), q(1.144_729_885_849_400_2), 20);
+    assert_approx_eq(
+        fp::natural_log(fp::FIXED_PI).unwrap(),
+        q(1.144_729_885_849_400_2),
+        20,
+    );
     // ln(0.01) ≈ -4.60517019
     let r = fp::natural_log(q(0.01)).unwrap();
     assert_approx_eq(r, q(-4.605_170_185_988_091), 500);
@@ -1143,18 +1167,30 @@ fn test_variable_store_new() {
 fn test_variable_store_write_ans() {
     let mut vs = VariableStore::new();
     vs.write_ans(Complex::from_real(fp::from_integer(42)));
-    assert_eq!(vs.read_ans(), Some(Complex::from_real(fp::from_integer(42))));
+    assert_eq!(
+        vs.read_ans(),
+        Some(Complex::from_real(fp::from_integer(42)))
+    );
     vs.write_ans(Complex::from_real(fp::from_integer(-7)));
-    assert_eq!(vs.read_ans(), Some(Complex::from_real(fp::from_integer(-7))));
+    assert_eq!(
+        vs.read_ans(),
+        Some(Complex::from_real(fp::from_integer(-7)))
+    );
 }
 
 #[test]
 fn test_variable_store_write_register() {
     let mut vs = VariableStore::new();
     assert!(vs.write_register(b'A', Complex::from_real(fp::from_integer(10))));
-    assert_eq!(vs.read_register(b'A'), Some(Complex::from_real(fp::from_integer(10))));
+    assert_eq!(
+        vs.read_register(b'A'),
+        Some(Complex::from_real(fp::from_integer(10)))
+    );
     assert!(vs.write_register(b'Z', Complex::from_real(fp::from_integer(-5))));
-    assert_eq!(vs.read_register(b'Z'), Some(Complex::from_real(fp::from_integer(-5))));
+    assert_eq!(
+        vs.read_register(b'Z'),
+        Some(Complex::from_real(fp::from_integer(-5)))
+    );
 }
 
 #[test]
@@ -1174,10 +1210,16 @@ fn test_variable_store_copy() {
     let mut vs1 = VariableStore::new();
     vs1.write_register(b'B', Complex::from_real(fp::from_integer(99)));
     let vs2 = vs1;
-    assert_eq!(vs2.read_register(b'B'), Some(Complex::from_real(fp::from_integer(99))));
+    assert_eq!(
+        vs2.read_register(b'B'),
+        Some(Complex::from_real(fp::from_integer(99)))
+    );
     // Mutating vs1 shouldn't affect vs2.
     vs1.write_register(b'B', Complex::from_real(fp::from_integer(0)));
-    assert_eq!(vs2.read_register(b'B'), Some(Complex::from_real(fp::from_integer(99))));
+    assert_eq!(
+        vs2.read_register(b'B'),
+        Some(Complex::from_real(fp::from_integer(99)))
+    );
 }
 
 // ─── 17. Distributions ───────────────────────────────────────────────────────
@@ -1411,8 +1453,14 @@ fn eval_expr(expr: &str, vars: &mut VariableStore) -> Option<i64> {
         node_count: 0,
         root_index: 0,
     };
-    engine::evaluate_expression(expr.as_bytes(), vars, &mut lex_scratch, &mut parse_scratch, MathMode::Standard)
-        .map(|c| c.re)
+    engine::evaluate_expression(
+        expr.as_bytes(),
+        vars,
+        &mut lex_scratch,
+        &mut parse_scratch,
+        MathMode::Standard,
+    )
+    .map(|c| c.re)
 }
 
 fn eval_complex(expr: &str, vars: &mut VariableStore) -> Option<Complex> {
@@ -1425,7 +1473,13 @@ fn eval_complex(expr: &str, vars: &mut VariableStore) -> Option<Complex> {
         node_count: 0,
         root_index: 0,
     };
-    engine::evaluate_expression(expr.as_bytes(), vars, &mut lex_scratch, &mut parse_scratch, MathMode::Advanced)
+    engine::evaluate_expression(
+        expr.as_bytes(),
+        vars,
+        &mut lex_scratch,
+        &mut parse_scratch,
+        MathMode::Advanced,
+    )
 }
 
 #[test]
@@ -1669,7 +1723,11 @@ fn test_engine_format_result() {
     assert_eq!(core::str::from_utf8(r).unwrap(), "0");
     let r = engine::format_result(Complex::from_real(SCALE), MathMode::Standard, &mut buf);
     assert_eq!(core::str::from_utf8(r).unwrap(), "1");
-    let r = engine::format_result(Complex::from_real(fp::FIXED_PI), MathMode::Standard, &mut buf);
+    let r = engine::format_result(
+        Complex::from_real(fp::FIXED_PI),
+        MathMode::Standard,
+        &mut buf,
+    );
     assert_eq!(core::str::from_utf8(r).unwrap(), "3.141593");
 }
 
@@ -2114,11 +2172,20 @@ fn test_floor_ceil_round_boundaries() {
     assert_eq!(fp::ceil(fp::from_integer(42)), fp::from_integer(42));
     assert_eq!(fp::round(fp::from_integer(42)), fp::from_integer(42));
     // floor of positive fraction
-    assert_eq!(fp::floor(fp::from_integer(3) + fp::FIXED_HALF), fp::from_integer(3));
+    assert_eq!(
+        fp::floor(fp::from_integer(3) + fp::FIXED_HALF),
+        fp::from_integer(3)
+    );
     // ceil of negative fraction
-    assert_eq!(fp::ceil(-fp::from_integer(3) - fp::FIXED_HALF), -fp::from_integer(3));
+    assert_eq!(
+        fp::ceil(-fp::from_integer(3) - fp::FIXED_HALF),
+        -fp::from_integer(3)
+    );
     // round of negative values away from zero
-    assert_eq!(fp::round(-fp::from_integer(3) - fp::FIXED_HALF), -fp::from_integer(4));
+    assert_eq!(
+        fp::round(-fp::from_integer(3) - fp::FIXED_HALF),
+        -fp::from_integer(4)
+    );
 }
 
 // ─── 27. Angle conversion functions ──────────────────────────────────────────
@@ -2222,7 +2289,10 @@ fn test_complex_imaginary_unit() {
 fn test_complex_literal_3_plus_4i() {
     let mut vars = VariableStore::new();
     let r = eval_complex("3+4i", &mut vars);
-    assert_eq!(r, Some(Complex::new(fp::from_integer(3), fp::from_integer(4))));
+    assert_eq!(
+        r,
+        Some(Complex::new(fp::from_integer(3), fp::from_integer(4)))
+    );
 }
 
 #[test]
@@ -2236,7 +2306,10 @@ fn test_complex_implicit_mul_after_paren() {
 fn test_complex_addition() {
     let mut vars = VariableStore::new();
     let r = eval_complex("(1+2i)+(3+4i)", &mut vars);
-    assert_eq!(r, Some(Complex::new(fp::from_integer(4), fp::from_integer(6))));
+    assert_eq!(
+        r,
+        Some(Complex::new(fp::from_integer(4), fp::from_integer(6)))
+    );
 }
 
 #[test]
@@ -2244,7 +2317,10 @@ fn test_complex_multiplication() {
     let mut vars = VariableStore::new();
     // (1+2i)*(3+4i) = 3 + 4i + 6i + 8i^2 = 3 + 10i - 8 = -5 + 10i
     let r = eval_complex("(1+2i)*(3+4i)", &mut vars);
-    assert_eq!(r, Some(Complex::new(fp::from_integer(-5), fp::from_integer(10))));
+    assert_eq!(
+        r,
+        Some(Complex::new(fp::from_integer(-5), fp::from_integer(10)))
+    );
 }
 
 #[test]
@@ -2279,28 +2355,44 @@ fn test_complex_standard_mode_rejects_i() {
 #[test]
 fn test_complex_format_standard() {
     let mut buf = [0u8; 48];
-    let r = engine::format_result(Complex::new(fp::from_integer(3), fp::from_integer(4)), MathMode::Standard, &mut buf);
+    let r = engine::format_result(
+        Complex::new(fp::from_integer(3), fp::from_integer(4)),
+        MathMode::Standard,
+        &mut buf,
+    );
     assert_eq!(core::str::from_utf8(r).unwrap(), "3");
 }
 
 #[test]
 fn test_complex_format_advanced_real() {
     let mut buf = [0u8; 48];
-    let r = engine::format_result(Complex::from_real(fp::FIXED_PI), MathMode::Advanced, &mut buf);
+    let r = engine::format_result(
+        Complex::from_real(fp::FIXED_PI),
+        MathMode::Advanced,
+        &mut buf,
+    );
     assert_eq!(core::str::from_utf8(r).unwrap(), "3.141593");
 }
 
 #[test]
 fn test_complex_format_advanced_3_plus_4i() {
     let mut buf = [0u8; 48];
-    let r = engine::format_result(Complex::new(fp::from_integer(3), fp::from_integer(4)), MathMode::Advanced, &mut buf);
+    let r = engine::format_result(
+        Complex::new(fp::from_integer(3), fp::from_integer(4)),
+        MathMode::Advanced,
+        &mut buf,
+    );
     assert_eq!(core::str::from_utf8(r).unwrap(), "3+4i");
 }
 
 #[test]
 fn test_complex_format_advanced_negative_im() {
     let mut buf = [0u8; 48];
-    let r = engine::format_result(Complex::new(fp::from_integer(3), -fp::from_integer(4)), MathMode::Advanced, &mut buf);
+    let r = engine::format_result(
+        Complex::new(fp::from_integer(3), -fp::from_integer(4)),
+        MathMode::Advanced,
+        &mut buf,
+    );
     assert_eq!(core::str::from_utf8(r).unwrap(), "3-4i");
 }
 
@@ -2314,21 +2406,33 @@ fn test_complex_format_advanced_pure_imaginary() {
 #[test]
 fn test_complex_format_advanced_negative_pure_imaginary() {
     let mut buf = [0u8; 48];
-    let r = engine::format_result(Complex::new(0, -fp::FIXED_ONE), MathMode::Advanced, &mut buf);
+    let r = engine::format_result(
+        Complex::new(0, -fp::FIXED_ONE),
+        MathMode::Advanced,
+        &mut buf,
+    );
     assert_eq!(core::str::from_utf8(r).unwrap(), "-i");
 }
 
 #[test]
 fn test_complex_format_advanced_2i() {
     let mut buf = [0u8; 48];
-    let r = engine::format_result(Complex::new(0, fp::from_integer(2)), MathMode::Advanced, &mut buf);
+    let r = engine::format_result(
+        Complex::new(0, fp::from_integer(2)),
+        MathMode::Advanced,
+        &mut buf,
+    );
     assert_eq!(core::str::from_utf8(r).unwrap(), "2i");
 }
 
 #[test]
 fn test_complex_format_advanced_neg_2i() {
     let mut buf = [0u8; 48];
-    let r = engine::format_result(Complex::new(0, -fp::from_integer(2)), MathMode::Advanced, &mut buf);
+    let r = engine::format_result(
+        Complex::new(0, -fp::from_integer(2)),
+        MathMode::Advanced,
+        &mut buf,
+    );
     assert_eq!(core::str::from_utf8(r).unwrap(), "-2i");
 }
 
@@ -2337,7 +2441,10 @@ fn test_complex_power_integer_exponent() {
     let mut vars = VariableStore::new();
     // (2+3i)^2 = -5+12i
     let r = eval_complex("(2+3i)^2", &mut vars);
-    assert_eq!(r, Some(Complex::new(fp::from_integer(-5), fp::from_integer(12))));
+    assert_eq!(
+        r,
+        Some(Complex::new(fp::from_integer(-5), fp::from_integer(12)))
+    );
 }
 
 #[test]
@@ -2359,7 +2466,7 @@ fn test_complex_power_negative_exponent() {
     let expected_im = -fp::divide(fp::from_integer(3), fp::from_integer(13)).unwrap();
     let re_diff = (c.re - expected_re).abs();
     let im_diff = (c.im - expected_im).abs();
-    assert!(re_diff < 1000, "re diff = {}", re_diff);  // within ~1000 Q31.32 ULP
+    assert!(re_diff < 1000, "re diff = {}", re_diff); // within ~1000 Q31.32 ULP
     assert!(im_diff < 1000, "im diff = {}", im_diff);
 }
 
@@ -2384,7 +2491,10 @@ fn test_complex_power_cubic() {
     let mut vars = VariableStore::new();
     // (1+2i)^3 = (1+2i)*(1+2i)^2 = (1+2i)*(-3+4i) = -3+4i-6i+8i^2 = -3-2i-8 = -11-2i
     let r = eval_complex("(1+2i)^3", &mut vars);
-    assert_eq!(r, Some(Complex::new(fp::from_integer(-11), -fp::from_integer(2))));
+    assert_eq!(
+        r,
+        Some(Complex::new(fp::from_integer(-11), -fp::from_integer(2)))
+    );
 }
 
 // ── Complex transcendental function tests ───────────────────────────────────
@@ -2406,7 +2516,11 @@ fn test_complex_ln() {
     assert!(complex_approx_close(r, Complex::new(0, half_pi), 100));
     // ln(e) = 1
     let r = Complex::ln(Complex::from_real(fp::FIXED_E)).unwrap();
-    assert!(complex_approx_close(r, Complex::from_real(fp::FIXED_ONE), 100));
+    assert!(complex_approx_close(
+        r,
+        Complex::from_real(fp::FIXED_ONE),
+        100
+    ));
 }
 
 #[test]
@@ -2417,7 +2531,11 @@ fn test_complex_sin() {
     // sin(pi/2) = 1
     let half_pi = fp::divide(fp::FIXED_PI, fp::from_integer(2)).unwrap();
     let r = Complex::sin(Complex::from_real(half_pi)).unwrap();
-    assert!(complex_approx_close(r, Complex::from_real(fp::FIXED_ONE), 100));
+    assert!(complex_approx_close(
+        r,
+        Complex::from_real(fp::FIXED_ONE),
+        100
+    ));
     // sin(i) = i*sinh(1)
     let sh1 = fp::sinh(fp::FIXED_ONE).unwrap();
     let r = Complex::sin(Complex::new(0, fp::FIXED_ONE)).unwrap();
@@ -2448,7 +2566,11 @@ fn test_complex_sin_cos_identity() {
     let sin_sq = sin_z.mul(sin_z).unwrap();
     let cos_sq = cos_z.mul(cos_z).unwrap();
     let sum = sin_sq.add(cos_sq);
-    assert!(complex_approx_close(sum, Complex::from_real(fp::FIXED_ONE), 200));
+    assert!(complex_approx_close(
+        sum,
+        Complex::from_real(fp::FIXED_ONE),
+        200
+    ));
 }
 
 #[test]
@@ -2459,7 +2581,11 @@ fn test_complex_tan() {
     // tan(pi/4) ≈ 1
     let quarter_pi = fp::divide(fp::FIXED_PI, fp::from_integer(4)).unwrap();
     let r = Complex::tan(Complex::from_real(quarter_pi)).unwrap();
-    assert!(complex_approx_close(r, Complex::from_real(fp::FIXED_ONE), 200));
+    assert!(complex_approx_close(
+        r,
+        Complex::from_real(fp::FIXED_ONE),
+        200
+    ));
 }
 
 #[test]
@@ -2496,21 +2622,33 @@ fn test_complex_euler() {
     // e^(i*pi) = -1
     let i_pi = Complex::new(0, fp::FIXED_PI);
     let r = Complex::exp(i_pi).unwrap();
-    assert!(complex_approx_close(r, Complex::from_real(-fp::FIXED_ONE), 200));
+    assert!(complex_approx_close(
+        r,
+        Complex::from_real(-fp::FIXED_ONE),
+        200
+    ));
 }
 
 #[test]
 fn test_complex_log10() {
     // log10(10) = 1
     let r = Complex::log10(Complex::from_real(fp::from_integer(10))).unwrap();
-    assert!(complex_approx_close(r, Complex::from_real(fp::FIXED_ONE), 100));
+    assert!(complex_approx_close(
+        r,
+        Complex::from_real(fp::FIXED_ONE),
+        100
+    ));
 }
 
 #[test]
 fn test_complex_log2() {
     // log2(8) = 3
     let r = Complex::log2(Complex::from_real(fp::from_integer(8))).unwrap();
-    assert!(complex_approx_close(r, Complex::from_real(fp::from_integer(3)), 200));
+    assert!(complex_approx_close(
+        r,
+        Complex::from_real(fp::from_integer(3)),
+        200
+    ));
 }
 
 #[test]
@@ -2598,11 +2736,25 @@ fn test_complex_conj() {
 fn test_complex_arg() {
     assert_eq!(Complex::arg(Complex::zero()), 0);
     assert_eq!(Complex::arg(Complex::from_real(fp::FIXED_ONE)), 0);
-    assert_eq!(Complex::arg(Complex::new(0, fp::FIXED_ONE)), fp::FIXED_PI_OVER_2);
-    assert_approx_eq(Complex::arg(Complex::from_real(-fp::FIXED_ONE)), fp::FIXED_PI, 100);
-    assert_eq!(Complex::arg(Complex::new(0, -fp::FIXED_ONE)), -fp::FIXED_PI_OVER_2);
+    assert_eq!(
+        Complex::arg(Complex::new(0, fp::FIXED_ONE)),
+        fp::FIXED_PI_OVER_2
+    );
+    assert_approx_eq(
+        Complex::arg(Complex::from_real(-fp::FIXED_ONE)),
+        fp::FIXED_PI,
+        100,
+    );
+    assert_eq!(
+        Complex::arg(Complex::new(0, -fp::FIXED_ONE)),
+        -fp::FIXED_PI_OVER_2
+    );
     let three_quarter_pi = fp::FIXED_PI - fp::FIXED_PI_OVER_2 / 2;
-    assert_approx_eq(Complex::arg(Complex::new(-fp::FIXED_ONE, -fp::FIXED_ONE)), -three_quarter_pi, 500);
+    assert_approx_eq(
+        Complex::arg(Complex::new(-fp::FIXED_ONE, -fp::FIXED_ONE)),
+        -three_quarter_pi,
+        500,
+    );
 }
 
 #[test]
@@ -2618,10 +2770,18 @@ fn test_complex_from_polar() {
     assert!(complex_approx_close(z, Complex::new(0, fp::FIXED_ONE), 100));
     // r=1, θ=π → -1+0i
     let z = Complex::from_polar(fp::FIXED_ONE, fp::FIXED_PI).unwrap();
-    assert!(complex_approx_close(z, Complex::from_real(-fp::FIXED_ONE), 100));
+    assert!(complex_approx_close(
+        z,
+        Complex::from_real(-fp::FIXED_ONE),
+        100
+    ));
     // r=1, θ=-π/2 → 0-1i
     let z = Complex::from_polar(fp::FIXED_ONE, -fp::FIXED_PI_OVER_2).unwrap();
-    assert!(complex_approx_close(z, Complex::new(0, -fp::FIXED_ONE), 100));
+    assert!(complex_approx_close(
+        z,
+        Complex::new(0, -fp::FIXED_ONE),
+        100
+    ));
 }
 
 #[test]
@@ -2702,7 +2862,11 @@ fn test_complex_sin_cos_standard_angles() {
     let half_pi = fp::divide(fp::FIXED_PI, fp::from_integer(2)).unwrap();
     // sin(π/2) = 1
     let r = Complex::sin(Complex::from_real(half_pi)).unwrap();
-    assert!(complex_approx_close(r, Complex::from_real(fp::FIXED_ONE), 100));
+    assert!(complex_approx_close(
+        r,
+        Complex::from_real(fp::FIXED_ONE),
+        100
+    ));
     // cos(0) = 1
     let r = Complex::cos(Complex::zero()).unwrap();
     assert_eq!(r, Complex::from_real(fp::FIXED_ONE));
@@ -2712,7 +2876,11 @@ fn test_complex_sin_cos_standard_angles() {
 fn test_complex_tan_pole() {
     // tan of large pure imaginary → should converge to i
     let r = Complex::tan(Complex::new(0, fp::from_integer(10))).unwrap();
-    assert!(complex_approx_close(r, Complex::new(0, fp::FIXED_ONE), 1000));
+    assert!(complex_approx_close(
+        r,
+        Complex::new(0, fp::FIXED_ONE),
+        1000
+    ));
 }
 
 #[test]
@@ -2722,10 +2890,18 @@ fn test_complex_asin_acos_edges() {
     assert!(complex_approx_close(r, Complex::zero(), 100));
     // asin(1) ≈ π/2
     let r = Complex::asin(Complex::from_real(fp::FIXED_ONE)).unwrap();
-    assert!(complex_approx_close(r, Complex::from_real(fp::FIXED_PI_OVER_2), 200));
+    assert!(complex_approx_close(
+        r,
+        Complex::from_real(fp::FIXED_PI_OVER_2),
+        200
+    ));
     // acos(0) ≈ π/2
     let r = Complex::acos(Complex::zero()).unwrap();
-    assert!(complex_approx_close(r, Complex::from_real(fp::FIXED_PI_OVER_2), 200));
+    assert!(complex_approx_close(
+        r,
+        Complex::from_real(fp::FIXED_PI_OVER_2),
+        200
+    ));
     // acos(1) ≈ 0
     let r = Complex::acos(Complex::from_real(fp::FIXED_ONE)).unwrap();
     assert!(complex_approx_close(r, Complex::zero(), 200));
@@ -2755,7 +2931,11 @@ fn test_complex_asinh_acosh_atanh_edges() {
     assert!(complex_approx_close(r, Complex::zero(), 100));
     // acosh(0) = i*π/2 (valid in complex plane)
     let r = Complex::acosh(Complex::zero()).unwrap();
-    assert!(complex_approx_close(r, Complex::new(0, fp::FIXED_PI_OVER_2), 200));
+    assert!(complex_approx_close(
+        r,
+        Complex::new(0, fp::FIXED_PI_OVER_2),
+        200
+    ));
     // atanh(0) = 0
     let r = Complex::atanh(Complex::zero()).unwrap();
     assert_eq!(r, Complex::zero());
@@ -2769,15 +2949,20 @@ fn test_complex_asinh_acosh_atanh_edges() {
 fn test_complex_sub_via_eval() {
     let mut vars = VariableStore::new();
     let r = eval_complex("(3+4i)-(1+2i)", &mut vars);
-    assert_eq!(r, Some(Complex::new(fp::from_integer(2), fp::from_integer(2))));
+    assert_eq!(
+        r,
+        Some(Complex::new(fp::from_integer(2), fp::from_integer(2)))
+    );
 }
 
 #[test]
 fn test_complex_div_via_eval() {
     let mut vars = VariableStore::new();
     let r = eval_complex("(3+4i)/(1+2i)", &mut vars);
-    let expected = Complex::new(fp::divide(fp::from_integer(11), fp::from_integer(5)).unwrap(),
-                                 fp::divide(fp::from_integer(-2), fp::from_integer(5)).unwrap());
+    let expected = Complex::new(
+        fp::divide(fp::from_integer(11), fp::from_integer(5)).unwrap(),
+        fp::divide(fp::from_integer(-2), fp::from_integer(5)).unwrap(),
+    );
     assert!(complex_approx_close(r.unwrap(), expected, 100));
 }
 
@@ -2792,7 +2977,10 @@ fn test_complex_div_by_zero_via_eval() {
 fn test_complex_neg_via_eval() {
     let mut vars = VariableStore::new();
     let r = eval_complex("-(3+4i)", &mut vars);
-    assert_eq!(r, Some(Complex::new(-fp::from_integer(3), -fp::from_integer(4))));
+    assert_eq!(
+        r,
+        Some(Complex::new(-fp::from_integer(3), -fp::from_integer(4)))
+    );
 }
 
 #[test]
@@ -2915,7 +3103,11 @@ fn test_format_result_advanced_real_only() {
 fn test_format_result_standard_strips_imaginary() {
     let mode = MathMode::Standard;
     let mut buf = [0u8; 48];
-    let s = engine::format_result(Complex::new(fp::from_integer(3), fp::from_integer(4)), mode, &mut buf);
+    let s = engine::format_result(
+        Complex::new(fp::from_integer(3), fp::from_integer(4)),
+        mode,
+        &mut buf,
+    );
     assert_eq!(core::str::from_utf8(s).unwrap(), "3");
 }
 
@@ -3051,21 +3243,14 @@ fn test_eval_log_via_eval() {
 #[test]
 fn test_eval_log10_of_10() {
     let mut vars = VariableStore::new();
-    assert_approx_eq(
-        eval_expr("log(10)", &mut vars).unwrap(),
-        fp::FIXED_ONE,
-        5,
-    );
+    assert_approx_eq(eval_expr("log(10)", &mut vars).unwrap(), fp::FIXED_ONE, 5);
 }
 
 #[test]
 fn test_eval_sin_negative_via_eval() {
     let mut vars = VariableStore::new();
     // sin(-π/2) = -1
-    assert_eq!(
-        eval_expr("sin(-pi/2)", &mut vars),
-        Some(-fp::FIXED_ONE)
-    );
+    assert_eq!(eval_expr("sin(-pi/2)", &mut vars), Some(-fp::FIXED_ONE));
 }
 
 #[test]
@@ -3106,11 +3291,7 @@ fn test_ln_gamma_two_point_five() {
 #[test]
 fn test_binomial_probability_edge_params() {
     // P(X=0) for X~Binom(10, 0.001) ≈ 0.99004
-    let r = distributions::binomial_probability(
-        fp::from_integer(10),
-        0,
-        q(0.001),
-    ).unwrap();
+    let r = distributions::binomial_probability(fp::from_integer(10), 0, q(0.001)).unwrap();
     assert_approx_eq(r, q(0.990_044_880_209_648_8), 100);
 }
 
@@ -3124,7 +3305,10 @@ fn test_poisson_probability_k_zero() {
 #[test]
 fn test_chi_squared_cdf_edge_cases() {
     // χ²(0, k) = 0 for any k
-    assert_eq!(distributions::chi_squared_cdf(0, fp::from_integer(2)), Some(0));
+    assert_eq!(
+        distributions::chi_squared_cdf(0, fp::from_integer(2)),
+        Some(0)
+    );
     // χ²(x, 2) = 1 - exp(-x/2) for k=2
     let r = distributions::chi_squared_cdf(fp::from_integer(4), fp::from_integer(2)).unwrap();
     assert_approx_eq(r, q(0.864_664_716_763_387_3), 1000); // 1 - e^(-2)
