@@ -150,7 +150,14 @@ pub fn tokenise_expression(
         // is NOT an identifier — it is the imaginary unit. The number was
         // already emitted as Token::Number above. We emit Token::ConstI as a
         // second token so the parser can apply implicit multiplication.
-        if mode == MathMode::Advanced && cursor < expression.len() && expression[cursor] == b'i' {
+        // We only emit ConstI when 'i' is at an identifier boundary (followed
+        // by non-alphanumeric or end-of-input) so real identifiers like "int"
+        // are not split.
+        if mode == MathMode::Advanced
+            && cursor < expression.len()
+            && expression[cursor] == b'i'
+            && (cursor + 1 >= expression.len() || !expression[cursor + 1].is_ascii_alphanumeric())
+        {
             append_token(&mut result, Token::ConstI)?;
             cursor += 1;
             continue;

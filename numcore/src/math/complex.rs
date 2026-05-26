@@ -42,8 +42,8 @@ impl Complex {
         let bd = (self.im as i128) * (other.im as i128);
         let ad = (self.re as i128) * (other.im as i128);
         let bc = (self.im as i128) * (other.re as i128);
-        let real = (ac - bd) >> 32;
-        let imag = (ad + bc) >> 32;
+        let real = ac.checked_sub(bd)? >> 32;
+        let imag = ad.checked_add(bc)? >> 32;
         if real > i64::MAX as i128 || real < i64::MIN as i128 {
             return None;
         }
@@ -76,15 +76,15 @@ impl Complex {
 
     pub fn neg(self) -> Self {
         Self {
-            re: -self.re,
-            im: -self.im,
+            re: self.re.saturating_neg(),
+            im: self.im.saturating_neg(),
         }
     }
 
     pub fn conj(self) -> Self {
         Self {
             re: self.re,
-            im: -self.im,
+            im: self.im.saturating_neg(),
         }
     }
 
@@ -109,7 +109,7 @@ impl Complex {
         }
         if z.im == 0 {
             // sqrt of a negative real: sqrt(-|r|) = 0 + i*sqrt(|r|)
-            return fp::sqrt(-z.re).map(|r| Self { re: 0, im: r });
+            return fp::sqrt(z.re.checked_neg()?).map(|r| Self { re: 0, im: r });
         }
         let norm = z.norm_sq()?;
         let r = fp::sqrt(norm)?;
@@ -198,7 +198,10 @@ impl Complex {
         let ch = fp::cosh(z.im)?;
         let re = fp::multiply(fp::cos(z.re), ch)?;
         let im = fp::multiply(fp::sin(z.re), sh)?;
-        Some(Self { re, im: -im })
+        Some(Self {
+            re,
+            im: im.checked_neg()?,
+        })
     }
 
     pub fn tan(z: Self) -> Option<Self> {

@@ -695,13 +695,32 @@ pub fn atan2(y: i64, x: i64) -> i64 {
         }
         return 0;
     }
-    let ratio = divide(y, x).unwrap_or(0);
+    // Use the smaller of |y/x| or |x/y| to avoid divide overflow on steep slopes.
+    let (small, large) = if y.abs() > x.abs() { (x, y) } else { (y, x) };
+    let ratio = divide(small, large).unwrap_or(0);
     let mut angle = atan(ratio);
-    if x < 0 {
-        if y >= 0 {
-            angle += FIXED_PI;
+    if y.abs() > x.abs() {
+        // |y| > |x|: atan2(y,x) = sign(y/x) * π/2 - atan(x/y)
+        // sign(y/x) = sign(y) * sign(x) determines the base formula.
+        if (y > 0) == (x > 0) {
+            angle = FIXED_PI_OVER_2 - angle;
         } else {
-            angle -= FIXED_PI;
+            angle = -FIXED_PI_OVER_2 - angle;
+        }
+        if x < 0 {
+            if y >= 0 {
+                angle += FIXED_PI;
+            } else {
+                angle -= FIXED_PI;
+            }
+        }
+    } else {
+        if x < 0 {
+            if y >= 0 {
+                angle += FIXED_PI;
+            } else {
+                angle -= FIXED_PI;
+            }
         }
     }
     angle

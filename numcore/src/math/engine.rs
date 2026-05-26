@@ -39,7 +39,11 @@ pub fn evaluate_expression(
 ) -> Option<Complex> {
     lexer::tokenise_expression(expression, lex_scratch, mode)?;
     parser::parse_token_stream(lex_scratch, parse_scratch)?;
-    evaluator::evaluate_tree(parse_scratch, variables)
+    let result = evaluator::evaluate_tree(parse_scratch, variables)?;
+    if mode == MathMode::Standard && result.im != 0 {
+        return None;
+    }
+    Some(result)
 }
 
 /// Format a numeric result into a human-readable byte slice.
