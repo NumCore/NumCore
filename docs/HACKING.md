@@ -225,14 +225,14 @@ Actual numbers from `cargo size` and stack canary measurement (release build):
 
 | Region               | Usage          | Budget | Usage |
 |----------------------|----------------|--------|-------|
-| Flash                | 56 959 bytes   | 64 KB  | 87%   |
+| Flash                | 56 855 bytes   | 64 KB  | 87%   |
 | .data                | 0 bytes        | —      | —     |
-| .bss                 | 4 176 bytes    |  8 KB  | 51%   |
-| Stack (reserved)     | 2 048 bytes    |  8 KB  | 25%   |
-| Stack (actual max)   | 2 032 bytes    |  8 KB  | 25%   |
-| **Peak RAM**         | **6 208 bytes**| **8 KB** | **76%** |
+| .bss (statics)       | 2 128 bytes    |  8 KB  | 26%   |
+| Stack (reserved)     | 3 072 bytes    |  8 KB  | 37%   |
+| Stack (actual max)   | 2 624 bytes    |  3 KB  | 85%   |
+| **Peak RAM**         | **4 752 bytes**| **8 KB** | **58%** |
 
-Stack is 2 KB as set in `hal-lm3s811/link.x`. `.data` is 0 — no initialised statics in the current build. Actual max stack depth was measured empirically (see below).
+Stack is 3 KB as set in `hal-lm3s811/link.x` (increased from 2 KB after complex number and cursor-editing features pushed utilization to 99%). `.data` is 0 — no initialised statics. Actual max stack depth was measured empirically (see below).
 
 ### Measuring peak stack usage
 
