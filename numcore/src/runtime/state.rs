@@ -28,10 +28,10 @@ const RESULT_BUFFER_CAPACITY: usize = 48;
 
 pub struct CalcState {
     /// The expression the user is currently composing.
-    input_buffer: [u8; INPUT_BUFFER_CAPACITY],
+    pub(crate) input_buffer: [u8; INPUT_BUFFER_CAPACITY],
 
     /// Number of valid bytes in `input_buffer`.
-    input_length: usize,
+    pub(crate) input_length: usize,
 
     /// Cursor position within `input_buffer` (0..=input_length).
     cursor_position: usize,
@@ -59,6 +59,9 @@ pub struct CalcState {
 
     /// Reusable scratch buffer for the parser output (AST).
     pub parse_scratch: ParseTree,
+
+    /// Scratch buffer for expression submission (avoids stack allocation).
+    pub expr_scratch: [u8; INPUT_BUFFER_CAPACITY],
 }
 
 impl CalcState {
@@ -83,6 +86,7 @@ impl CalcState {
                 node_count: 0,
                 root_index: 0,
             },
+            expr_scratch: [0u8; INPUT_BUFFER_CAPACITY],
         }
     }
 
