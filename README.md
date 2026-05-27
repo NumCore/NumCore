@@ -195,7 +195,7 @@ cargo size -p numcore-lm3s811 --release --target thumbv7m-none-eabi
 
 | Metric                | Value         | Budget  | Usage |
 |-----------------------|---------------|---------|-------|
-| Flash (text)          | 50 407 bytes  | 64 KB   | 77%   |
+| Flash (text)          | 50 343 bytes  | 64 KB   | 77%   |
 | RAM (.data + .bss)    |     0 + 2 128 |  8 KB   | 26%   |
 | Stack (reserved)      |  3 072 bytes  |  8 KB   | 37%   |
 | Stack (actual max)    |  3 064 bytes  |  3 KB   | 99%   |

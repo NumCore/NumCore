@@ -318,7 +318,7 @@ The evaluator now works entirely with `Complex` values internally; `MathMode` on
 ```
 Flash (0x0000_0000, 64 KB):
   [0x0000]  Vector table (initial SP + Reset vector + exceptions)
-  [0x0040]  .text (code + rodata)  — 50 407 bytes used (77%)
+  [0x0040]  .text (code + rodata)  — 50 343 bytes used (77%)
 
 RAM (0x2000_0000, 8 KB):
   [0x2000_0000]  .data (initialised statics, 0 bytes)

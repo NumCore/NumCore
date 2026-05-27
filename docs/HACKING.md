@@ -225,7 +225,7 @@ Actual numbers from `cargo size` and stack canary measurement (release build):
 
 | Region               | Usage          | Budget | Usage |
 |----------------------|----------------|--------|-------|
-| Flash                | 50 407 bytes   | 64 KB  | 77%   |
+| Flash                | 50 343 bytes   | 64 KB  | 77%   |
 | .data                | 0 bytes        | —      | —     |
 | .bss (statics)       | 2 128 bytes    |  8 KB  | 26%   |
 | Stack (reserved)     | 3 072 bytes    |  8 KB  | 37%   |
