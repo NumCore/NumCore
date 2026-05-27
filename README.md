@@ -195,13 +195,13 @@ cargo size -p numcore-lm3s811 --release --target thumbv7m-none-eabi
 
 | Metric                | Value         | Budget  | Usage |
 |-----------------------|---------------|---------|-------|
-| Flash (text)          | 56 855 bytes  | 64 KB   | 87%   |
+| Flash (text)          | 50 407 bytes  | 64 KB   | 77%   |
 | RAM (.data + .bss)    |     0 + 2 128 |  8 KB   | 26%   |
 | Stack (reserved)      |  3 072 bytes  |  8 KB   | 37%   |
-| Stack (actual max)    |  2 624 bytes  |  8 KB   | 32%   |
-| **Peak RAM (statics + actual stack)** | **4 752 bytes** | **8 KB** | **58%** |
+| Stack (actual max)    |  1 056 bytes  |  3 KB   | 34%   |
+| **Peak RAM (statics + actual stack)** | **3 184 bytes** | **8 KB** | **39%** |
 
-Peak stack depth was measured via a canary watermark: fill the stack region with `0xDEADBEEF` at boot, run the full test workload, then scan from the top of RAM downward to find the first intact canary. See `docs/HACKING.md` for the procedure.
+Peak stack depth was measured via a canary watermark: fill the stack region with `0xDEADBEEF` at boot, run the full test workload, then scan from the bottom of the stack upward to find the first overwritten canary. See `docs/HACKING.md` for the procedure.
 
 Stack was increased from 2 KB to 3 KB in `hal-lm3s811/link.x` to provide 448 bytes of headroom (the 2 KB budget had 99% utilization after adding complex number and cursor-editing features).
 
