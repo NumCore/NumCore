@@ -145,7 +145,6 @@ pub fn to_integer_rounded(fp: i64) -> i64 {
 /// Result = (a × b) >> 32, computed in i128 to capture the full
 /// Q31.64 product.  Symmetric rounding is applied before truncation.
 /// If the Q31.32 result does not fit in i64, `None` is returned.
-#[inline]
 pub fn multiply(a: i64, b: i64) -> Option<i64> {
     let product = (a as i128) * (b as i128);
     let offset = 1i128 << (FRACTIONAL_BITS - 1);
@@ -176,16 +175,10 @@ pub fn multiply(a: i64, b: i64) -> Option<i64> {
 
 /// Divide two Q31.32 values. Returns None if divisor is zero.
 /// Result = (a << 32) / b, computed in i128 to prevent overflow.
-#[inline]
 pub fn divide(a: i64, b: i64) -> Option<i64> {
     if b == 0 {
         return None;
     }
-    // The code below was used for testing purposes
-    // let mut display_buffer = [0u8; 24];
-    // let c = Some((((a as i128) << FRACTIONAL_BITS) / (b as i128)) as i64);
-    // uart::transmit_bytes(engine::format_result(c?, &mut display_buffer));
-    // uart::transmit_bytes(b"\r\n");
     Some((((a as i128) << FRACTIONAL_BITS) / (b as i128)) as i64)
 }
 

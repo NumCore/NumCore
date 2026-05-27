@@ -300,9 +300,9 @@ fn evaluate_loop_aggregate(
     vars: &mut VariableStore,
     angle_mode: AngleMode,
 ) -> Option<Complex> {
-    let mut local_vars = *vars;
+    let saved = vars.read_register(variable);
 
-    match operation {
+    let result = (|| match operation {
         LoopOperation::Summation => {
             if start.im != 0 || end.im != 0 {
                 return None;
@@ -327,8 +327,8 @@ fn evaluate_loop_aggregate(
             let mut accumulator = Complex::zero();
             let mut k = start_int;
             while k <= end_int {
-                local_vars.write_register(variable, Complex::from_real(fp::from_integer(k)));
-                let term = evaluate_node(tree, body_index, &mut local_vars, angle_mode)?;
+                vars.write_register(variable, Complex::from_real(fp::from_integer(k)));
+                let term = evaluate_node(tree, body_index, vars, angle_mode)?;
                 accumulator = accumulator.add(term);
                 k += 1;
             }
@@ -345,11 +345,11 @@ fn evaluate_loop_aggregate(
             let range = end.re.checked_sub(start.re)?;
             let h = fp::divide(range, fp::from_integer(n))?;
 
-            local_vars.write_register(variable, start);
-            let f_start = evaluate_node(tree, body_index, &mut local_vars, angle_mode)?;
+            vars.write_register(variable, start);
+            let f_start = evaluate_node(tree, body_index, vars, angle_mode)?;
 
-            local_vars.write_register(variable, end);
-            let f_end = evaluate_node(tree, body_index, &mut local_vars, angle_mode)?;
+            vars.write_register(variable, end);
+            let f_end = evaluate_node(tree, body_index, vars, angle_mode)?;
 
             let mut sum = f_start.add(f_end);
 
@@ -357,8 +357,8 @@ fn evaluate_loop_aggregate(
                 let i_fp = fp::from_integer(i);
                 let x = start.re.checked_add(fp::multiply(i_fp, h)?)?;
 
-                local_vars.write_register(variable, Complex::from_real(x));
-                let f_x = evaluate_node(tree, body_index, &mut local_vars, angle_mode)?;
+                vars.write_register(variable, Complex::from_real(x));
+                let f_x = evaluate_node(tree, body_index, vars, angle_mode)?;
 
                 let coeff = if i % 2 == 1 { 4 } else { 2 };
 
@@ -377,5 +377,10 @@ fn evaluate_loop_aggregate(
                 Some(result)
             }
         }
+    })();
+
+    if let Some(val) = saved {
+        vars.write_register(variable, val);
     }
+    result
 }
