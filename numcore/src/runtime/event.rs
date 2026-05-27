@@ -59,6 +59,7 @@ pub enum CalcEvent {
 /// reaching this function.
 ///
 /// # Byte classification
+///   0x04              → ToggleAngleMode (control-D toggles between Radians and Degrees)
 ///   0x08, 0x7F        → Backspace (BS and DEL both erase the last character)
 ///   0x0D, 0x0A        → Submit (carriage return and line feed both confirm input)
 ///   0x20 – 0x7E       → DigitOrOperator (the full printable ASCII range)

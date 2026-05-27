@@ -359,14 +359,13 @@ pub fn nthroot(x: i64, n: i64) -> Option<i64> {
     }
 }
 
-// ─── Trigonometry (CORDIC Q31.32 + exact hardcoded values) ───────────────────
+// ─── Trigonometry (CORDIC Q31.32) ────────────────────────────────────────────
 
 /// Compute (sin, cos) for a Q31.32 radian angle. Results are Q31.32.
 ///
-/// Strategy:
-///   1. Reduce angle to [−π, π].
-///   2. Check exact-value table for standard angles (0°, 30°, 45°, 60°, 90°…).
-///   3. Run CORDIC with i128 intermediates for all other angles.
+/// First normalises the angle to the principal range [−π, π] via
+/// `reduce_angle_to_principal`, then delegates to `cordic_sin_cos` which runs
+/// CORDIC with i128 intermediates.
 pub fn sin_cos(angle: i64) -> (i64, i64) {
     let a = reduce_angle_to_principal(angle);
     cordic_sin_cos(a)
@@ -824,15 +823,9 @@ pub fn natural_log(x: i64) -> Option<i64> {
     // 20-term Taylor: ln(1+t) = Σ (−1)^(n+1) × t^n / n
     // With |t| ≤ 0.414 the 20th term is < 1 Q31.32 LSB.
     //
-    // NOTE on division: Rust integer division truncates toward zero.
-    // For negative t_power this biases every term toward zero, losing
-    // up to (n−1)/n ULP per term (~17 ULP worst-case accumulated).
-    // We use symmetric rounding (half away from zero) instead, halving
-    // the per-term error to at most 0.5 ULP.
-    //
-    // NOTE on multiplication: the (t_power * t) >> 32 step discards the
-    // low 32 bits.  Adding ±SCALE/2 before shifting rounds to nearest
-    // instead of truncating.
+    // term = t_power / n truncates toward zero (Rust integer division).
+    // The right-shift (t_power * t) >> 32 discards the low 32 bits
+    // (truncating toward zero for positive products).
     let mut t_power = t;
     let mut result: i128 = 0;
     for n in 1i128..=20 {

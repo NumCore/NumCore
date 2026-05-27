@@ -18,8 +18,8 @@
 //!     differ by at most `tolerance` ULP (1 ULP ≈ 2.33×10⁻¹⁰).
 //!
 //!   - Tolerance values are documented per test section; most arithmetic
-//!     is exact (±0 ULP), CORDIC trig ≤ 800 ULP (no exact standard-angle
-//!     lookup), Taylor-series functions ≤ 10 ULP, log/exp chains ≤ 20 ULP.
+//!     is exact (±0 ULP), CORDIC trig ≤ 1000 ULP, Taylor-series
+//!     functions ≤ 10 ULP, log/exp chains ≤ 20 ULP.
 
 use numcore_math::math::complex::Complex;
 use numcore_math::math::distributions;
@@ -636,7 +636,7 @@ fn test_nthroot_large_n() {
 }
 
 // ─── 9. Trigonometry ─────────────────────────────────────────────────────────
-// CORDIC-based, ≤ 2 ULP for most angles.
+// CORDIC-based, ≤ 1000 ULP.
 
 #[test]
 fn test_sin_standard_angles() {
@@ -1448,7 +1448,7 @@ fn test_chi_squared_cdf_domain() {
 // These tests exercise the entire pipeline end-to-end.
 
 /// Helper: evaluate an expression string using the full pipeline.
-fn eval_expr(expr: &str, vars: &mut VariableStore) -> Option<i64> {
+fn eval_expr_with_mode(expr: &str, vars: &mut VariableStore, angle_mode: AngleMode) -> Option<i64> {
     let mut lex_scratch = lexer::LexResult {
         tokens: [lexer::Token::Number(0); lexer::MAX_TOKEN_COUNT],
         token_count: 0,
@@ -1464,12 +1464,20 @@ fn eval_expr(expr: &str, vars: &mut VariableStore) -> Option<i64> {
         &mut lex_scratch,
         &mut parse_scratch,
         MathMode::Standard,
-        AngleMode::Radians,
+        angle_mode,
     )
     .and_then(|c| if c.im != 0 { None } else { Some(c.re) })
 }
 
-fn eval_complex(expr: &str, vars: &mut VariableStore) -> Option<Complex> {
+fn eval_expr(expr: &str, vars: &mut VariableStore) -> Option<i64> {
+    eval_expr_with_mode(expr, vars, AngleMode::Radians)
+}
+
+fn eval_complex_with_mode(
+    expr: &str,
+    vars: &mut VariableStore,
+    angle_mode: AngleMode,
+) -> Option<Complex> {
     let mut lex_scratch = lexer::LexResult {
         tokens: [lexer::Token::Number(0); lexer::MAX_TOKEN_COUNT],
         token_count: 0,
@@ -1485,8 +1493,12 @@ fn eval_complex(expr: &str, vars: &mut VariableStore) -> Option<Complex> {
         &mut lex_scratch,
         &mut parse_scratch,
         MathMode::Advanced,
-        AngleMode::Radians,
+        angle_mode,
     )
+}
+
+fn eval_complex(expr: &str, vars: &mut VariableStore) -> Option<Complex> {
+    eval_complex_with_mode(expr, vars, AngleMode::Radians)
 }
 
 #[test]
@@ -3326,4 +3338,46 @@ fn test_chi_squared_cdf_edge_cases() {
     // χ²(x, 2) = 1 - exp(-x/2) for k=2
     let r = distributions::chi_squared_cdf(fp::from_integer(4), fp::from_integer(2)).unwrap();
     assert_approx_eq(r, q(0.864_664_716_763_387_3), 1000); // 1 - e^(-2)
+}
+
+// ─── 35. Degrees mode (pipeline) ──────────────────────────────────────────────
+
+#[test]
+fn test_degrees_mode_sin_30() {
+    let mut vars = VariableStore::new();
+    let result = eval_expr_with_mode("sin(30)", &mut vars, AngleMode::Degrees);
+    assert_approx_eq(result.unwrap(), q(0.5), 1000);
+}
+
+#[test]
+fn test_degrees_mode_sin_90() {
+    let mut vars = VariableStore::new();
+    let result = eval_expr_with_mode("sin(90)", &mut vars, AngleMode::Degrees);
+    assert_approx_eq(result.unwrap(), q(1.0), 1000);
+}
+
+#[test]
+fn test_degrees_mode_cos_60() {
+    let mut vars = VariableStore::new();
+    let result = eval_expr_with_mode("cos(60)", &mut vars, AngleMode::Degrees);
+    assert_approx_eq(result.unwrap(), q(0.5), 1000);
+}
+
+#[test]
+fn test_degrees_mode_asin_acos_roundtrip() {
+    let mut vars = VariableStore::new();
+    // asin(sin(30 deg)) should give ~30 (in degrees mode)
+    let result = eval_expr_with_mode("asin(sin(30))", &mut vars, AngleMode::Degrees);
+    assert_approx_eq(result.unwrap(), q(30.0), 100000);
+}
+
+#[test]
+fn test_degrees_mode_radians_fallback() {
+    // Complex-arg trig always uses radians regardless of mode.
+    let mut vars = VariableStore::new();
+    let r = eval_complex_with_mode("sin(i)", &mut vars, AngleMode::Degrees);
+    let c = r.unwrap();
+    // sin(i) = i·sinh(1) ≈ i·1.1752 — real part should be 0
+    assert_eq!(c.re, 0);
+    assert!(fp::abs(c.im - q(1.1752011936438014)) < 100000);
 }

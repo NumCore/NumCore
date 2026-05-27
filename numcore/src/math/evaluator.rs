@@ -97,14 +97,7 @@ fn evaluate_node(
             let start = evaluate_node(tree, start_index, vars, angle_mode)?;
             let end = evaluate_node(tree, end_index, vars, angle_mode)?;
             evaluate_loop_aggregate(
-                operation,
-                variable,
-                start,
-                end,
-                body_index,
-                tree,
-                vars,
-                angle_mode,
+                operation, variable, start, end, body_index, tree, vars, angle_mode,
             )
         }
     }
