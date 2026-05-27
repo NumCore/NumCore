@@ -197,14 +197,9 @@ fn handle_cursor_right<U: Uart, D: Display>(state: &mut CalcState) {
 fn handle_expression_submission<U: Uart, D: Display>(state: &mut CalcState) {
     U::transmit_bytes(b"\r\n");
 
-    let mut expr_copy = [0u8; 64];
-    let expr_len = {
-        let expression = state.current_input();
-        let len = expression.len();
-        expr_copy[..len].copy_from_slice(expression);
-        len
-    };
-    let expr_slice = &expr_copy[..expr_len];
+    let expr_len = state.input_length;
+    state.expr_scratch[..expr_len].copy_from_slice(&state.input_buffer[..expr_len]);
+    let expr_slice = &state.expr_scratch[..expr_len];
 
     if !expr_slice.iter().any(|&b| b != b' ') {
         state.clear_input();
