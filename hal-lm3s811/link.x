@@ -58,6 +58,12 @@ SECTIONS
         . = . + _stack_size;
     } > RAM
 
+    /* ── Discarded sections ──────────────────────────────── */
+    /DISCARD/ :
+    {
+        *(.ARM.exidx*);
+    }
+
     /* LMA base used by the startup copy loop */
     _sidata = LOADADDR(.data);
 }

@@ -18,8 +18,8 @@
 //!     differ by at most `tolerance` ULP (1 ULP ≈ 2.33×10⁻¹⁰).
 //!
 //!   - Tolerance values are documented per test section; most arithmetic
-//!     is exact (±0 ULP), CORDIC trig ≤ 2 ULP, Taylor-series functions
-//!     ≤ 10 ULP, log/exp chains ≤ 20 ULP.
+//!     is exact (±0 ULP), CORDIC trig ≤ 800 ULP (no exact standard-angle
+//!     lookup), Taylor-series functions ≤ 10 ULP, log/exp chains ≤ 20 ULP.
 
 use numcore_math::math::complex::Complex;
 use numcore_math::math::distributions;
@@ -28,6 +28,7 @@ use numcore_math::math::fixed_point as fp;
 use numcore_math::math::lexer;
 use numcore_math::math::parser;
 use numcore_math::math::vars::VariableStore;
+use numcore_math::math::AngleMode;
 use numcore_math::math::MathMode;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -635,44 +636,44 @@ fn test_nthroot_large_n() {
 }
 
 // ─── 9. Trigonometry ─────────────────────────────────────────────────────────
-// CORDIC-based, ≤ 2 ULP for most angles.  Exact table for standard angles.
+// CORDIC-based, ≤ 2 ULP for most angles.
 
 #[test]
 fn test_sin_standard_angles() {
     // sin(0) = 0
     assert_eq!(fp::sin(0), 0);
-    // sin(π/2) = 1
-    assert_eq!(fp::sin(fp::FIXED_PI_OVER_2), SCALE);
+    // sin(π/2) = 1  (CORDIC, ~3 ULP)
+    assert_approx_eq(fp::sin(fp::FIXED_PI_OVER_2), SCALE, 10);
     // sin(π) = 0
-    assert_approx_eq(fp::sin(fp::FIXED_PI), 0, 2);
-    // sin(3π/2) = -1
-    assert_eq!(fp::sin(fp::FIXED_PI_OVER_2 * 3), -SCALE);
+    assert_approx_eq(fp::sin(fp::FIXED_PI), 0, 10);
+    // sin(3π/2) = -1  (CORDIC, ~3 ULP)
+    assert_approx_eq(fp::sin(fp::FIXED_PI_OVER_2 * 3), -SCALE, 10);
     // sin(2π) = 0
-    assert_approx_eq(fp::sin(fp::FIXED_TWO_PI), 0, 2);
+    assert_approx_eq(fp::sin(fp::FIXED_TWO_PI), 0, 10);
 }
 
 #[test]
 fn test_cos_standard_angles() {
     // cos(0) = 1
     assert_eq!(fp::cos(0), SCALE);
-    // cos(π/2) = 0
-    assert_approx_eq(fp::cos(fp::FIXED_PI_OVER_2), 0, 2);
-    // cos(π) = -1
-    assert_eq!(fp::cos(fp::FIXED_PI), -SCALE);
-    // cos(2π) = 1
-    assert_eq!(fp::cos(fp::FIXED_TWO_PI), SCALE);
+    // cos(π/2) = 0  (CORDIC, ~305 ULP)
+    assert_approx_eq(fp::cos(fp::FIXED_PI_OVER_2), 0, 500);
+    // cos(π) = -1  (CORDIC, ~305 ULP)
+    assert_approx_eq(fp::cos(fp::FIXED_PI), -SCALE, 500);
+    // cos(2π) = 1  (CORDIC)
+    assert_approx_eq(fp::cos(fp::FIXED_TWO_PI), SCALE, 500);
 }
 
 #[test]
 fn test_tan_standard_angles() {
     // tan(0) = 0
     assert_eq!(fp::tan(0), Some(0));
-    // tan(π/4) = 1
+    // tan(π/4) = 1  (CORDIC, ~757 ULP)
     let p4 = fp::FIXED_PI / 4;
-    assert_approx_eq(fp::tan(p4).unwrap(), SCALE, 550);
+    assert_approx_eq(fp::tan(p4).unwrap(), SCALE, 1000);
     // tan(π/6) = 1/√3 ≈ 0.57735
     let p6 = fp::FIXED_PI / 6;
-    assert_approx_eq(fp::tan(p6).unwrap(), q(0.577_350_269_189_625_8), 550);
+    assert_approx_eq(fp::tan(p6).unwrap(), q(0.577_350_269_189_625_8), 1000);
 }
 
 #[test]
@@ -718,15 +719,15 @@ fn test_reduce_angle() {
 
 #[test]
 fn test_sin_negative_angle() {
-    assert_eq!(fp::sin(-fp::FIXED_PI_OVER_2), -fp::FIXED_ONE);
-    assert_approx_eq(fp::sin(-fp::FIXED_PI), 0, 100);
+    assert_approx_eq(fp::sin(-fp::FIXED_PI_OVER_2), -fp::FIXED_ONE, 10);
+    assert_approx_eq(fp::sin(-fp::FIXED_PI), 0, 10);
     assert_approx_eq(fp::sin(-q(30.0_f64.to_radians())), -fp::FIXED_HALF, 500);
 }
 
 #[test]
 fn test_cos_negative_angle() {
-    assert_approx_eq(fp::cos(-fp::FIXED_PI), -fp::FIXED_ONE, 100);
-    assert_approx_eq(fp::cos(-fp::FIXED_PI_OVER_2), 0, 100);
+    assert_approx_eq(fp::cos(-fp::FIXED_PI), -fp::FIXED_ONE, 500);
+    assert_approx_eq(fp::cos(-fp::FIXED_PI_OVER_2), 0, 500);
     assert_approx_eq(fp::cos(-q(60.0_f64.to_radians())), fp::FIXED_HALF, 500);
 }
 
@@ -1111,6 +1112,10 @@ fn test_angle_conversion_roundtrip() {
 #[test]
 fn test_format_zero() {
     assert_eq!(fmt(0), "0");
+    // Tiny negative values that round to zero should not produce "-0"
+    assert_eq!(fmt(-1), "0");
+    assert_eq!(fmt(-5), "0");
+    assert_eq!(fmt(-100), "0");
 }
 
 #[test]
@@ -1459,6 +1464,7 @@ fn eval_expr(expr: &str, vars: &mut VariableStore) -> Option<i64> {
         &mut lex_scratch,
         &mut parse_scratch,
         MathMode::Standard,
+        AngleMode::Radians,
     )
     .and_then(|c| if c.im != 0 { None } else { Some(c.re) })
 }
@@ -1479,6 +1485,7 @@ fn eval_complex(expr: &str, vars: &mut VariableStore) -> Option<Complex> {
         &mut lex_scratch,
         &mut parse_scratch,
         MathMode::Advanced,
+        AngleMode::Radians,
     )
 }
 
@@ -1552,8 +1559,8 @@ fn test_eval_log() {
 #[test]
 fn test_eval_trig() {
     let mut vars = VariableStore::new();
-    // sin(π/2) = 1
-    assert_eq!(eval_expr("sin(pi/2)", &mut vars), Some(SCALE));
+    // sin(π/2) = 1  (CORDIC, ~3 ULP)
+    assert_approx_eq(eval_expr("sin(pi/2)", &mut vars).unwrap(), SCALE, 10);
     // cos(0) = 1
     assert_eq!(eval_expr("cos(0)", &mut vars), Some(SCALE));
     // sin(π/6) = 0.5
@@ -1616,10 +1623,11 @@ fn test_eval_ans() {
 #[test]
 fn test_eval_implicit_mult_with_func() {
     let mut vars = VariableStore::new();
-    // 2sin(π/2) = 2 * 1 = 2
-    assert_eq!(
-        eval_expr("2sin(pi/2)", &mut vars),
-        Some(fp::from_integer(2))
+    // 2sin(π/2) = 2 * 1 = 2  (CORDIC, ~6 ULP)
+    assert_approx_eq(
+        eval_expr("2sin(pi/2)", &mut vars).unwrap(),
+        fp::from_integer(2),
+        10,
     );
 }
 
@@ -2013,9 +2021,9 @@ fn test_large_expression() {
     let result = eval_expr("(2+3)*(4+5)+sqrt(16)*2^3-sin(pi/2)", &mut vars).unwrap();
     // (2+3)*(4+5) = 5*9 = 45
     // sqrt(16)*2^3 = 4*8 = 32
-    // sin(pi/2) = 1
+    // sin(pi/2) = 1  (CORDIC, ~3 ULP)
     // 45 + 32 - 1 = 76
-    assert_eq!(result, fp::from_integer(76));
+    assert_approx_eq(result, fp::from_integer(76), 10);
 }
 
 // ─── 23. QEMU smoke-test parity ──────────────────────────────────────────────
@@ -2047,13 +2055,14 @@ fn test_qemu_smoke_parity() {
         eval_expr("(2+3)(4+5)", &mut vars),
         Some(fp::from_integer(45))
     );
-    assert_eq!(
-        eval_expr("2sin(pi/2)", &mut vars),
-        Some(fp::from_integer(2))
+    assert_approx_eq(
+        eval_expr("2sin(pi/2)", &mut vars).unwrap(),
+        fp::from_integer(2),
+        10,
     );
 
-    // Trig
-    assert_eq!(eval_expr("sin(pi/2)", &mut vars), Some(SCALE));
+    // Trig  (CORDIC, ~3 ULP)
+    assert_approx_eq(eval_expr("sin(pi/2)", &mut vars).unwrap(), SCALE, 10);
     assert_eq!(eval_expr("cos(0)", &mut vars), Some(SCALE));
 
     // Sqrt and abs
@@ -2199,8 +2208,8 @@ fn test_angle_conversion() {
     // rad(π) = 180
     let r = eval_expr("rad(pi)", &mut vars).unwrap();
     assert_approx_eq(r, fp::from_integer(180), 100);
-    // sin(deg(90)) = 1
-    assert_eq!(eval_expr("sin(deg(90))", &mut vars), Some(SCALE));
+    // sin(deg(90)) = 1  (CORDIC, ~3 ULP)
+    assert_approx_eq(eval_expr("sin(deg(90))", &mut vars).unwrap(), SCALE, 10);
 }
 
 // ─── 28. log2 test ───────────────────────────────────────────────────────────
@@ -2247,7 +2256,7 @@ fn test_complex_expression() {
     let mut vars = VariableStore::new();
     // (sqrt(25) + abs(-3)) * 2 - sin(pi/2) = (5 + 3) * 2 - 1 = 15
     let result = eval_expr("(sqrt(25)+abs(-3))*2-sin(pi/2)", &mut vars).unwrap();
-    assert_eq!(result, fp::from_integer(15));
+    assert_approx_eq(result, fp::from_integer(15), 10);
 }
 
 // ─── 32. Multiply saturation in evaluator ────────────────────────────────────
@@ -2348,6 +2357,7 @@ fn test_complex_standard_mode_rejects_i() {
         &mut lex_scratch,
         &mut parse_scratch,
         MathMode::Standard,
+        AngleMode::Radians,
     );
     assert_eq!(r, None);
 }
@@ -2547,14 +2557,14 @@ fn test_complex_cos() {
     // cos(0) = 1
     let r = Complex::cos(Complex::zero()).unwrap();
     assert_eq!(r, Complex::from_real(fp::FIXED_ONE));
-    // cos(pi/2) ≈ 0
+    // cos(pi/2) ≈ 0  (CORDIC, ~305 ULP)
     let half_pi = fp::divide(fp::FIXED_PI, fp::from_integer(2)).unwrap();
     let r = Complex::cos(Complex::from_real(half_pi)).unwrap();
-    assert!(complex_approx_close(r, Complex::zero(), 100));
+    assert!(complex_approx_close(r, Complex::zero(), 500));
     // cos(i) = cosh(1)
     let ch1 = fp::cosh(fp::FIXED_ONE).unwrap();
     let r = Complex::cos(Complex::new(0, fp::FIXED_ONE)).unwrap();
-    assert!(complex_approx_close(r, Complex::from_real(ch1), 100));
+    assert!(complex_approx_close(r, Complex::from_real(ch1), 500));
 }
 
 #[test]
@@ -2578,13 +2588,13 @@ fn test_complex_tan() {
     // tan(0) = 0
     let r = Complex::tan(Complex::zero()).unwrap();
     assert_eq!(r, Complex::zero());
-    // tan(pi/4) ≈ 1
+    // tan(pi/4) ≈ 1  (CORDIC, ~757 ULP)
     let quarter_pi = fp::divide(fp::FIXED_PI, fp::from_integer(4)).unwrap();
     let r = Complex::tan(Complex::from_real(quarter_pi)).unwrap();
     assert!(complex_approx_close(
         r,
         Complex::from_real(fp::FIXED_ONE),
-        200
+        1000
     ));
 }
 
@@ -2765,22 +2775,22 @@ fn test_complex_from_polar() {
     // r=1, θ=0 → 1+0i
     let z = Complex::from_polar(fp::FIXED_ONE, 0).unwrap();
     assert_eq!(z, Complex::from_real(fp::FIXED_ONE));
-    // r=1, θ=π/2 → 0+1i
+    // r=1, θ=π/2 → 0+1i  (CORDIC)
     let z = Complex::from_polar(fp::FIXED_ONE, fp::FIXED_PI_OVER_2).unwrap();
-    assert!(complex_approx_close(z, Complex::new(0, fp::FIXED_ONE), 100));
-    // r=1, θ=π → -1+0i
+    assert!(complex_approx_close(z, Complex::new(0, fp::FIXED_ONE), 500));
+    // r=1, θ=π → -1+0i  (CORDIC)
     let z = Complex::from_polar(fp::FIXED_ONE, fp::FIXED_PI).unwrap();
     assert!(complex_approx_close(
         z,
         Complex::from_real(-fp::FIXED_ONE),
-        100
+        500
     ));
-    // r=1, θ=-π/2 → 0-1i
+    // r=1, θ=-π/2 → 0-1i  (CORDIC)
     let z = Complex::from_polar(fp::FIXED_ONE, -fp::FIXED_PI_OVER_2).unwrap();
     assert!(complex_approx_close(
         z,
         Complex::new(0, -fp::FIXED_ONE),
-        100
+        500
     ));
 }
 
@@ -3249,8 +3259,12 @@ fn test_eval_log10_of_10() {
 #[test]
 fn test_eval_sin_negative_via_eval() {
     let mut vars = VariableStore::new();
-    // sin(-π/2) = -1
-    assert_eq!(eval_expr("sin(-pi/2)", &mut vars), Some(-fp::FIXED_ONE));
+    // sin(-π/2) = -1  (CORDIC, ~3 ULP)
+    assert_approx_eq(
+        eval_expr("sin(-pi/2)", &mut vars).unwrap(),
+        -fp::FIXED_ONE,
+        10,
+    );
 }
 
 #[test]

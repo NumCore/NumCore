@@ -2,6 +2,7 @@ use crate::math::complex::Complex;
 use crate::math::lexer::{LexResult, Token, MAX_TOKEN_COUNT};
 use crate::math::parser::{AstNode, ParseTree, MAX_NODE_COUNT};
 use crate::math::vars::VariableStore;
+use crate::math::AngleMode;
 use crate::math::MathMode;
 
 // ─── Calculator modes ─────────────────────────────────────────────────────────
@@ -50,6 +51,9 @@ pub struct CalcState {
     /// Currently active calculator mode.
     active_mode: CalculatorMode,
 
+    /// Current angle unit for trigonometric functions.
+    angle_mode: AngleMode,
+
     /// Reusable scratch buffer for the lexer output.
     pub lex_scratch: LexResult,
 
@@ -69,6 +73,7 @@ impl CalcState {
             result_scroll_offset: 0,
             variables: VariableStore::new(),
             active_mode: CalculatorMode::Standard,
+            angle_mode: AngleMode::Radians,
             lex_scratch: LexResult {
                 tokens: [Token::Number(0i64); MAX_TOKEN_COUNT],
                 token_count: 0,
@@ -220,6 +225,18 @@ impl CalcState {
             CalculatorMode::Standard => MathMode::Standard,
             CalculatorMode::Advanced => MathMode::Advanced,
         }
+    }
+
+    pub fn angle_mode(&self) -> AngleMode {
+        self.angle_mode
+    }
+
+    pub fn toggle_angle_mode(&mut self) {
+        self.angle_mode = match self.angle_mode {
+            AngleMode::Radians => AngleMode::Degrees,
+            AngleMode::Degrees => AngleMode::Radians,
+        };
+        self.clear_input();
     }
 }
 

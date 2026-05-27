@@ -29,23 +29,13 @@ fn initialise_all_hardware<U: Uart, D: Display>() {
 }
 
 fn print_welcome_banner<U: Uart>() {
-    U::transmit_bytes(b"\r\n");
-    U::transmit_bytes(b"===========================================\r\n");
-    U::transmit_bytes(b"  NumCore v0.4\r\n");
-    U::transmit_bytes(b"  LM3S811  Cortex-M3  (Rust)\r\n");
-    U::transmit_bytes(b"  Q31.32 fixed-point  |  PEMDAS\r\n");
-    U::transmit_bytes(b"===========================================\r\n");
-    U::transmit_bytes(b"  Ops : + - * / ^ %\r\n");
-    U::transmit_bytes(b"  Fns : sin cos tan asin acos atan\r\n");
-    U::transmit_bytes(b"        sinh cosh tanh asinh acosh atanh\r\n");
-    U::transmit_bytes(b"        sqrt abs exp log ln log2\r\n");
-    U::transmit_bytes(b"        floor ceil round deg rad\r\n");
-    U::transmit_bytes(b"        nthroot binomp poissonp chicdf sum int\r\n");
-    U::transmit_bytes(b"  Const: pi  e\r\n");
-    U::transmit_bytes(b"  Vars : Ans  A B C D E F G H I J K L M\r\n");
-    U::transmit_bytes(b"         N O P Q R S T U V W X Y Z\r\n");
-    U::transmit_bytes(b"  Cmd  : sto(value, var)\r\n");
-    U::transmit_bytes(b"===========================================\r\n\r\n");
+    U::transmit_bytes(b"\r\nNumCore v0.4  LM3S811  Q31.32 PEMDAS\r\n");
+    U::transmit_bytes(b"Ops: + - * / ^ %  |  sin cos tan asin acos atan\r\n");
+    U::transmit_bytes(b"  sinh cosh tanh asinh acosh atanh sqrt abs exp log ln\r\n");
+    U::transmit_bytes(b"  log2 floor ceil round deg rad nthroot lngamma sto(v,r)\r\n");
+    U::transmit_bytes(b"  binomp(n,k,p) poissonp(l,k) chicdf(x,k)\r\n");
+    U::transmit_bytes(b"  sum(expr,v,a,b) int(expr,v,a,b)\r\n");
+    U::transmit_bytes(b"Const: pi e  |  Vars: Ans A-Z\r\n\r\n");
 }
 
 // ─── ANSI escape sequence parser ─────────────────────────────────────────────
@@ -152,6 +142,18 @@ fn handle_event<U: Uart, D: Display>(event: CalcEvent, state: &mut CalcState) {
             U::transmit_bytes(b"\r\n> ");
             render_oled::<D>(state);
         }
+        CalcEvent::ToggleAngleMode => {
+            state.toggle_angle_mode();
+            let name = match state.angle_mode() {
+                crate::math::AngleMode::Radians => b"Rad",
+                crate::math::AngleMode::Degrees => b"Deg",
+            };
+            state.set_last_result(name);
+            U::transmit_bytes(b"\r\n");
+            U::transmit_bytes(name);
+            U::transmit_bytes(b"\r\n> ");
+            render_oled::<D>(state);
+        }
         CalcEvent::Ignored => {}
     }
 }
@@ -223,13 +225,13 @@ fn handle_expression_submission<U: Uart, D: Display>(state: &mut CalcState) {
                 &mut *lex_scratch,
                 &mut *parse_scratch,
                 state.math_mode(),
+                state.angle_mode(),
             )
         }
     };
 
     let mut result_line = [0u8; 48];
-    let mut display_copy = [0u8; 48];
-    let display_len = match result {
+    match result {
         Some(result) => {
             state.record_answer(result);
 
@@ -238,25 +240,16 @@ fn handle_expression_submission<U: Uart, D: Display>(state: &mut CalcState) {
             U::transmit_bytes(formatted);
             U::transmit_bytes(b"\r\n");
             state.set_last_result(formatted);
-            let len = state.last_result().len().min(48);
-            display_copy[..len].copy_from_slice(&state.last_result()[..len]);
-            len
         }
         None => {
-            U::transmit_bytes(
-                b"! error: invalid expression, domain error, or division by zero\r\n",
-            );
-            state.clear_last_result();
-            const ERROR: &[u8] = b"error";
-            let len = ERROR.len().min(48);
-            display_copy[..len].copy_from_slice(&ERROR[..len]);
-            len
+            U::transmit_bytes(b"! error\r\n");
+            state.set_last_result(b"error");
         }
     };
 
     state.clear_input();
     U::transmit_bytes(b"> ");
-    render_oled_result::<D>(&display_copy[..display_len]);
+    render_oled_result::<D>(state);
 }
 
 fn render_oled<D: Display>(state: &CalcState) {
@@ -276,8 +269,13 @@ fn render_oled<D: Display>(state: &CalcState) {
     D::render(&framebuffer);
 }
 
-fn render_oled_result<D: Display>(result_text: &[u8]) {
+fn render_oled_result<D: Display>(state: &CalcState) {
     let mut framebuffer = D::new_buffer();
-    formula::render_screen::<D>(&mut framebuffer, b"", 0, Some(result_text), 0);
+    let result = if state.has_result() {
+        Some(state.last_result())
+    } else {
+        None
+    };
+    formula::render_screen::<D>(&mut framebuffer, b"", 0, result, 0);
     D::render(&framebuffer);
 }

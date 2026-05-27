@@ -6,6 +6,9 @@
       <sourceFolder url="file://$MODULE_DIR$/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/test-suite/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/test-suite/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/hal-lm3s811/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/numcore-lm3s811/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/numcore/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
     <orderEntry type="inheritedJdk" />

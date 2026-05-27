@@ -32,14 +32,20 @@
 
 #![no_std]
 
-// ─── MathMode ────────────────────────────────────────────────────────────────
-// Defined at crate root so that `super::MathMode` resolves correctly in the
-// #[path]-included engine.rs and lexer.rs.
+// ─── MathMode / AngleMode ─────────────────────────────────────────────────────
+// Defined at crate root so that `super::MathMode` and `super::AngleMode`
+// resolve correctly in the #[path]-included evaluator.rs and engine.rs.
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum MathMode {
     Standard,
     Advanced,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum AngleMode {
+    Radians,
+    Degrees,
 }
 
 // ─── HAL stub ────────────────────────────────────────────────────────────────
@@ -93,5 +99,6 @@ pub mod math {
     pub use crate::lexer;
     pub use crate::parser;
     pub use crate::vars;
+    pub use crate::AngleMode;
     pub use crate::MathMode;
 }
