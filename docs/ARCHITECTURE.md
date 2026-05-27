@@ -318,7 +318,7 @@ The evaluator now works entirely with `Complex` values internally; `MathMode` on
 ```
 Flash (0x0000_0000, 64 KB):
   [0x0000]  Vector table (initial SP + Reset vector + exceptions)
-  [0x0040]  .text (code + rodata)  — 56 855 bytes used (87%)
+  [0x0040]  .text (code + rodata)  — 50 407 bytes used (77%)
 
 RAM (0x2000_0000, 8 KB):
   [0x2000_0000]  .data (initialised statics, 0 bytes)
@@ -328,7 +328,7 @@ RAM (0x2000_0000, 8 KB):
   [0x2000_2000]  Top of SRAM (initial SP)
 ```
 
-The largest single allocation is `CalcState` (~1.5 KB), dominated by the 64-node `ParseTree` arena (~1 KB). Peak stack usage (measured via canary watermark under the full test workload) is 2 624 bytes out of the 3 KB budget, with 448 bytes headroom. The deepest call chains involve complex transcendental evaluation (CORDIC + series expansions + formatting). The stack was increased from 2 KB to 3 KB (`hal-lm3s811/link.x`) after the complex number and cursor-editing features pushed utilization to 99% of the original budget.
+The largest single allocation is `CalcState` (~1.5 KB), dominated by the 64-node `ParseTree` arena (~1 KB). Peak stack usage (measured via canary watermark under the full test workload) is 1 056 bytes out of the 3 KB budget, with 2 016 bytes headroom. The stack was increased from 2 KB to 3 KB (`hal-lm3s811/link.x`) after the complex number and cursor-editing features pushed utilization to 99% of the original budget.
 
 ## Key design decisions
 

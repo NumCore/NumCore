@@ -225,12 +225,12 @@ Actual numbers from `cargo size` and stack canary measurement (release build):
 
 | Region               | Usage          | Budget | Usage |
 |----------------------|----------------|--------|-------|
-| Flash                | 56 855 bytes   | 64 KB  | 87%   |
+| Flash                | 50 407 bytes   | 64 KB  | 77%   |
 | .data                | 0 bytes        | —      | —     |
 | .bss (statics)       | 2 128 bytes    |  8 KB  | 26%   |
 | Stack (reserved)     | 3 072 bytes    |  8 KB  | 37%   |
-| Stack (actual max)   | 2 624 bytes    |  3 KB  | 85%   |
-| **Peak RAM**         | **4 752 bytes**| **8 KB** | **58%** |
+| Stack (actual max)   | 1 056 bytes    |  3 KB  | 34%   |
+| **Peak RAM**         | **3 184 bytes**| **8 KB** | **39%** |
 
 Stack is 3 KB as set in `hal-lm3s811/link.x` (increased from 2 KB after complex number and cursor-editing features pushed utilization to 99%). `.data` is 0 — no initialised statics. Actual max stack depth was measured empirically (see below).
 
@@ -267,9 +267,9 @@ To measure actual maximum stack depth during a representative workload:
    gdb -batch -nx \
      -ex "target remote :1234" \
      -ex "set print elements 0" \
-     -ex "x/512xw 0x20001800" \
-     target/thumbv7m-none-eabi/release/NumCore
+     -ex "x/768xw 0x20001400" \
+     target/thumbv7m-none-eabi/release/NumCore | grep -n deadbeef | tail -1
    ```
-   Look for the lowest address where `0xDEADBEEF` has been overwritten. The deepest SP = that address. Stack used = `0x20002000 − deepest_SP`.
+   Scan the full stack region (0x20001400 – 0x20002000). Find the last line containing `0xDEADBEEF`, then look one line further — that address is the deepest SP reached. Stack used = `0x20002000 − deepest_SP`.
 
 4. **Revert the canary** — remove the fill block and the `_stack_start`/`_stack_end` decls before committing (they are only needed for measurement).
