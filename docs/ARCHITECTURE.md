@@ -328,7 +328,7 @@ RAM (0x2000_0000, 8 KB):
   [0x2000_2000]  Top of SRAM (initial SP)
 ```
 
-The largest single allocation is `CalcState` (~1.5 KB), dominated by the 64-node `ParseTree` arena (~1 KB). Peak stack usage (measured via canary watermark under the full test workload) is 1 056 bytes out of the 3 KB budget, with 2 016 bytes headroom. The stack was increased from 2 KB to 3 KB (`hal-lm3s811/link.x`) after the complex number and cursor-editing features pushed utilization to 99% of the original budget.
+The largest single allocation is `CalcState` (~1.5 KB), dominated by the 64-node `ParseTree` arena (~1 KB). Peak stack usage (measured by instrumenting the evaluator to track minimum SP during the full test workload) is 3 064 bytes out of the 3 KB budget, with 8 bytes headroom. The stack was increased from 2 KB to 3 KB (`hal-lm3s811/link.x`) after the complex number and cursor-editing features pushed utilization to 99% of the original budget.
 
 ## Key design decisions
 
