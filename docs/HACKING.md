@@ -229,32 +229,33 @@ Actual numbers from `cargo size` and stack canary measurement (release build):
 | .data                | 0 bytes        | —      | —     |
 | .bss (statics)       | 2 128 bytes    |  8 KB  | 26%   |
 | Stack (reserved)     | 3 072 bytes    |  8 KB  | 37%   |
-| Stack (actual max)   | 1 056 bytes    |  3 KB  | 34%   |
-| **Peak RAM**         | **3 184 bytes**| **8 KB** | **39%** |
+| Stack (actual max)   | 3 064 bytes    |  3 KB  | 99%   |
+| **Peak RAM**         | **5 192 bytes**| **8 KB** | **63%** |
 
-Stack is 3 KB as set in `hal-lm3s811/link.x` (increased from 2 KB after complex number and cursor-editing features pushed utilization to 99%). `.data` is 0 — no initialised statics. Actual max stack depth was measured empirically (see below).
+Stack is 3 KB as set in `hal-lm3s811/link.x` (increased from 2 KB after complex number and cursor-editing features pushed utilization to 99%). `.data` is 0 — no initialised statics. Actual max stack depth was measured empirically by instrumenting the evaluator to track `min_sp` (see below).
 
 ### Measuring peak stack usage
 
-To measure actual maximum stack depth during a representative workload:
+Peak stack depth is measured by instrumenting the deepest recursive function (`evaluate_node` in `numcore/src/math/evaluator.rs`) to track the minimum SP seen:
 
-1. **Add a canary fill at boot** — in `numcore-lm3s811/src/boot.rs::Reset()`, after `copy_data_section_from_flash()`, insert:
+1. **Add a global SP watermark** to `numcore/src/math/mod.rs`:
    ```rust
-   {
-       let start = &_stack_end as *const u8 as usize;
-       let end = &_stack_start as *const u8 as usize;
+   #[no_mangle]
+   pub static mut MIN_SP: usize = 0x2000_2000;
+
+   pub fn track_sp() {
        let sp: usize;
-       core::arch::asm!("mov {0}, sp", out(reg) sp);
-       let mut p = start;
-       while p < sp && p < end {
-           ptr::write(p as *mut u32, 0xDEADBEEF);
-           p += 4;
-       }
+       unsafe { core::arch::asm!("mov {0}, sp", out(reg) sp); }
+       unsafe { if sp < MIN_SP { MIN_SP = sp; } }
    }
    ```
-   This fills from the bottom of the stack (`_stack_end`) upward to the current SP, avoiding clobbering the boot path's own frame. Requires `extern "C" { static _stack_start: u8; static _stack_end: u8; }`.
 
-2. **Build and run the workload**:
+2. **Call it from `evaluate_node`** (evaluator.rs, first line of function body):
+   ```rust
+   crate::math::track_sp();
+   ```
+
+3. **Build without stripping** (comment out `strip = "symbols"` in `Cargo.toml`), then run the workload:
    ```bash
    cargo build -p numcore-lm3s811 --release --target thumbv7m-none-eabi
    qemu-system-arm -M lm3s811evb -serial mon:stdio -display none \
@@ -262,14 +263,16 @@ To measure actual maximum stack depth during a representative workload:
      -gdb tcp::1234 < test_inputs.txt
    ```
 
-3. **Connect GDB and scan** (in another terminal):
+4. **Read the watermark via GDB** (in another terminal):
    ```bash
    gdb -batch -nx \
      -ex "target remote :1234" \
-     -ex "set print elements 0" \
-     -ex "x/768xw 0x20001400" \
-     target/thumbv7m-none-eabi/release/NumCore | grep -n deadbeef | tail -1
+     -ex "symbol-file target/thumbv7m-none-eabi/release/NumCore" \
+     -ex "x/gx &MIN_SP" \
+     target/thumbv7m-none-eabi/release/NumCore
    ```
-   Scan the full stack region (0x20001400 – 0x20002000). Find the last line containing `0xDEADBEEF`, then look one line further — that address is the deepest SP reached. Stack used = `0x20002000 − deepest_SP`.
+   Stack used = `0x20002000 − MIN_SP`.
 
-4. **Revert the canary** — remove the fill block and the `_stack_start`/`_stack_end` decls before committing (they are only needed for measurement).
+5. **Revert** all instrumentation changes and restore `strip = "symbols"` before committing.
+
+> **Note:** The older canary-fill technique (`write 0xDEADBEEF` at boot, then scan for overwrites) is unreliable because `sub sp, #N` stack-pointer adjustments (used for large local arrays like the 192-byte OLED framebuffer) can jump over canary words without overwriting them, leading to a severe underestimate of peak depth.
