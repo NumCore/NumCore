@@ -1,5 +1,9 @@
 # NumCore
 
+<p align="center">
+  <img src="demonstration.gif" alt="NumCore demonstration">
+</p>
+
 Bare-metal scientific calculator firmware for the **LM3S811** ARM Cortex-M3 microcontroller, written entirely in Rust with `#![no_std]` and `#![no_main]`. Features a complete fixed-point math engine, an interactive UART console, and an I2C-driven OLED display.
 
 The project is a **Cargo workspace** with four members:
