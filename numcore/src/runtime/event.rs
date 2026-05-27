@@ -42,6 +42,9 @@ pub enum CalcEvent {
     /// Toggle between Standard and Advanced calculator modes.
     ToggleMode,
 
+    /// Toggle between Radians and Degrees for trig functions.
+    ToggleAngleMode,
+
     /// A byte with no meaning in the current context (null, escape, etc.).
     /// The event loop discards these without taking any action.
     Ignored,
@@ -66,6 +69,7 @@ pub fn translate_input_byte_to_event(raw_byte: u8) -> CalcEvent {
     match raw_byte {
         b'\r' | b'\n' => CalcEvent::Submit,
         0x08 | 0x7F => CalcEvent::Backspace,
+        0x04 => CalcEvent::ToggleAngleMode,
         0x20..=0x7E => CalcEvent::DigitOrOperator(raw_byte),
         0x1B => CalcEvent::ToggleMode,
         _ => CalcEvent::Ignored,

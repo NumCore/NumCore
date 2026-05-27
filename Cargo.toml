@@ -6,6 +6,8 @@ members = ["numcore", "numcore-lm3s811", "hal-lm3s811", "test-suite"]
 opt-level = "z"
 lto = true
 panic = "abort"
+codegen-units = 1
+strip = "symbols"
 
 [profile.dev]
 panic = "abort"

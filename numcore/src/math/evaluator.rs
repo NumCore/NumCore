@@ -6,12 +6,22 @@ use super::parser::{
     ThreeArgMathFunction, TwoArgMathFunction, VariableRef,
 };
 use super::vars::VariableStore;
+use super::AngleMode;
 
-pub fn evaluate_tree(tree: &ParseTree, variables: &mut VariableStore) -> Option<Complex> {
-    evaluate_node(tree, tree.root_index, variables)
+pub fn evaluate_tree(
+    tree: &ParseTree,
+    variables: &mut VariableStore,
+    angle_mode: AngleMode,
+) -> Option<Complex> {
+    evaluate_node(tree, tree.root_index, variables, angle_mode)
 }
 
-fn evaluate_node(tree: &ParseTree, node_index: usize, vars: &mut VariableStore) -> Option<Complex> {
+fn evaluate_node(
+    tree: &ParseTree,
+    node_index: usize,
+    vars: &mut VariableStore,
+    angle_mode: AngleMode,
+) -> Option<Complex> {
     match tree.nodes[node_index] {
         AstNode::Literal(value) => Some(Complex::from_real(value)),
 
@@ -27,7 +37,7 @@ fn evaluate_node(tree: &ParseTree, node_index: usize, vars: &mut VariableStore) 
         },
 
         AstNode::UnaryNegation { operand_index } => {
-            let value = evaluate_node(tree, operand_index, vars)?;
+            let value = evaluate_node(tree, operand_index, vars, angle_mode)?;
             Some(value.neg())
         }
 
@@ -36,8 +46,8 @@ fn evaluate_node(tree: &ParseTree, node_index: usize, vars: &mut VariableStore) 
             left_child_index,
             right_child_index,
         } => {
-            let left = evaluate_node(tree, left_child_index, vars)?;
-            let right = evaluate_node(tree, right_child_index, vars)?;
+            let left = evaluate_node(tree, left_child_index, vars, angle_mode)?;
+            let right = evaluate_node(tree, right_child_index, vars, angle_mode)?;
             apply_binary_operator(operator, left, right)
         }
 
@@ -45,17 +55,17 @@ fn evaluate_node(tree: &ParseTree, node_index: usize, vars: &mut VariableStore) 
             function,
             argument_index,
         } => {
-            let arg = evaluate_node(tree, argument_index, vars)?;
-            apply_function(function, arg)
+            let arg = evaluate_node(tree, argument_index, vars, angle_mode)?;
+            apply_function(function, arg, angle_mode)
         }
 
         AstNode::ThreeArgFunction {
             function,
             arg_indices,
         } => {
-            let a0 = evaluate_node(tree, arg_indices[0], vars)?;
-            let a1 = evaluate_node(tree, arg_indices[1], vars)?;
-            let a2 = evaluate_node(tree, arg_indices[2], vars)?;
+            let a0 = evaluate_node(tree, arg_indices[0], vars, angle_mode)?;
+            let a1 = evaluate_node(tree, arg_indices[1], vars, angle_mode)?;
+            let a2 = evaluate_node(tree, arg_indices[2], vars, angle_mode)?;
             apply_three_arg_function(function, a0, a1, a2)
         }
 
@@ -63,8 +73,8 @@ fn evaluate_node(tree: &ParseTree, node_index: usize, vars: &mut VariableStore) 
             function,
             arg_indices,
         } => {
-            let a0 = evaluate_node(tree, arg_indices[0], vars)?;
-            let a1 = evaluate_node(tree, arg_indices[1], vars)?;
+            let a0 = evaluate_node(tree, arg_indices[0], vars, angle_mode)?;
+            let a1 = evaluate_node(tree, arg_indices[1], vars, angle_mode)?;
             apply_two_arg_function(function, a0, a1)
         }
 
@@ -72,7 +82,7 @@ fn evaluate_node(tree: &ParseTree, node_index: usize, vars: &mut VariableStore) 
             value_index,
             register,
         } => {
-            let value = evaluate_node(tree, value_index, vars)?;
+            let value = evaluate_node(tree, value_index, vars, angle_mode)?;
             vars.write_register(register, value);
             Some(value)
         }
@@ -84,9 +94,18 @@ fn evaluate_node(tree: &ParseTree, node_index: usize, vars: &mut VariableStore) 
             end_index,
             body_index,
         } => {
-            let start = evaluate_node(tree, start_index, vars)?;
-            let end = evaluate_node(tree, end_index, vars)?;
-            evaluate_loop_aggregate(operation, variable, start, end, body_index, tree, vars)
+            let start = evaluate_node(tree, start_index, vars, angle_mode)?;
+            let end = evaluate_node(tree, end_index, vars, angle_mode)?;
+            evaluate_loop_aggregate(
+                operation,
+                variable,
+                start,
+                end,
+                body_index,
+                tree,
+                vars,
+                angle_mode,
+            )
         }
     }
 }
@@ -128,7 +147,7 @@ fn apply_binary_operator(
     }
 }
 
-fn apply_function(function: MathFunction, arg: Complex) -> Option<Complex> {
+fn apply_function(function: MathFunction, arg: Complex, angle_mode: AngleMode) -> Option<Complex> {
     if !arg.is_real() {
         return match function {
             MathFunction::Sin => Complex::sin(arg),
@@ -162,12 +181,57 @@ fn apply_function(function: MathFunction, arg: Complex) -> Option<Complex> {
     }
     let x = arg.re;
     match function {
-        MathFunction::Sin => Some(Complex::from_real(fp::sin(x))),
-        MathFunction::Cos => Some(Complex::from_real(fp::cos(x))),
-        MathFunction::Tan => fp::tan(x).map(Complex::from_real),
-        MathFunction::Asin => fp::asin(x).map(Complex::from_real),
-        MathFunction::Acos => fp::acos(x).map(Complex::from_real),
-        MathFunction::Atan => Some(Complex::from_real(fp::atan(x))),
+        MathFunction::Sin => {
+            let rad = if angle_mode == AngleMode::Degrees {
+                fp::degrees_to_radians(x)?
+            } else {
+                x
+            };
+            Some(Complex::from_real(fp::sin(rad)))
+        }
+        MathFunction::Cos => {
+            let rad = if angle_mode == AngleMode::Degrees {
+                fp::degrees_to_radians(x)?
+            } else {
+                x
+            };
+            Some(Complex::from_real(fp::cos(rad)))
+        }
+        MathFunction::Tan => {
+            let rad = if angle_mode == AngleMode::Degrees {
+                fp::degrees_to_radians(x)?
+            } else {
+                x
+            };
+            fp::tan(rad).map(Complex::from_real)
+        }
+        MathFunction::Asin => {
+            let r = fp::asin(x)?;
+            let deg = if angle_mode == AngleMode::Degrees {
+                fp::radians_to_degrees(r)?
+            } else {
+                r
+            };
+            Some(Complex::from_real(deg))
+        }
+        MathFunction::Acos => {
+            let r = fp::acos(x)?;
+            let deg = if angle_mode == AngleMode::Degrees {
+                fp::radians_to_degrees(r)?
+            } else {
+                r
+            };
+            Some(Complex::from_real(deg))
+        }
+        MathFunction::Atan => {
+            let r = fp::atan(x);
+            let deg = if angle_mode == AngleMode::Degrees {
+                fp::radians_to_degrees(r)?
+            } else {
+                r
+            };
+            Some(Complex::from_real(deg))
+        }
         MathFunction::SinH => fp::sinh(x).map(Complex::from_real),
         MathFunction::CosH => fp::cosh(x).map(Complex::from_real),
         MathFunction::TanH => fp::tanh(x).map(Complex::from_real),
@@ -241,6 +305,7 @@ fn evaluate_loop_aggregate(
     body_index: usize,
     tree: &ParseTree,
     vars: &mut VariableStore,
+    angle_mode: AngleMode,
 ) -> Option<Complex> {
     let mut local_vars = *vars;
 
@@ -270,7 +335,7 @@ fn evaluate_loop_aggregate(
             let mut k = start_int;
             while k <= end_int {
                 local_vars.write_register(variable, Complex::from_real(fp::from_integer(k)));
-                let term = evaluate_node(tree, body_index, &mut local_vars)?;
+                let term = evaluate_node(tree, body_index, &mut local_vars, angle_mode)?;
                 accumulator = accumulator.add(term);
                 k += 1;
             }
@@ -288,10 +353,10 @@ fn evaluate_loop_aggregate(
             let h = fp::divide(range, fp::from_integer(n))?;
 
             local_vars.write_register(variable, start);
-            let f_start = evaluate_node(tree, body_index, &mut local_vars)?;
+            let f_start = evaluate_node(tree, body_index, &mut local_vars, angle_mode)?;
 
             local_vars.write_register(variable, end);
-            let f_end = evaluate_node(tree, body_index, &mut local_vars)?;
+            let f_end = evaluate_node(tree, body_index, &mut local_vars, angle_mode)?;
 
             let mut sum = f_start.add(f_end);
 
@@ -300,7 +365,7 @@ fn evaluate_loop_aggregate(
                 let x = start.re.checked_add(fp::multiply(i_fp, h)?)?;
 
                 local_vars.write_register(variable, Complex::from_real(x));
-                let f_x = evaluate_node(tree, body_index, &mut local_vars)?;
+                let f_x = evaluate_node(tree, body_index, &mut local_vars, angle_mode)?;
 
                 let coeff = if i % 2 == 1 { 4 } else { 2 };
 

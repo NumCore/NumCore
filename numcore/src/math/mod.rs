@@ -32,3 +32,9 @@ pub enum MathMode {
     Standard,
     Advanced,
 }
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum AngleMode {
+    Radians,
+    Degrees,
+}

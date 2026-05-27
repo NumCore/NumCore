@@ -145,7 +145,7 @@ pub fn to_integer_rounded(fp: i64) -> i64 {
 /// Result = (a × b) >> 32, computed in i128 to capture the full
 /// Q31.64 product.  Symmetric rounding is applied before truncation.
 /// If the Q31.32 result does not fit in i64, `None` is returned.
-#[inline(always)]
+#[inline]
 pub fn multiply(a: i64, b: i64) -> Option<i64> {
     let product = (a as i128) * (b as i128);
     let offset = 1i128 << (FRACTIONAL_BITS - 1);
@@ -176,7 +176,7 @@ pub fn multiply(a: i64, b: i64) -> Option<i64> {
 
 /// Divide two Q31.32 values. Returns None if divisor is zero.
 /// Result = (a << 32) / b, computed in i128 to prevent overflow.
-#[inline(always)]
+#[inline]
 pub fn divide(a: i64, b: i64) -> Option<i64> {
     if b == 0 {
         return None;
@@ -369,9 +369,6 @@ pub fn nthroot(x: i64, n: i64) -> Option<i64> {
 ///   3. Run CORDIC with i128 intermediates for all other angles.
 pub fn sin_cos(angle: i64) -> (i64, i64) {
     let a = reduce_angle_to_principal(angle);
-    if let Some(exact) = exact_sin_cos_lookup(a) {
-        return exact;
-    }
     cordic_sin_cos(a)
 }
 
@@ -581,78 +578,6 @@ fn cordic_sin_cos(angle: i64) -> (i64, i64) {
     let sin_out = if negate_sin { -sin_v } else { sin_v };
     let cos_out = if negate_cos { -cos_v } else { cos_v };
     (sin_out, cos_out)
-}
-
-/// Exact (sin, cos) table for multiples of 30° and 45°.
-/// Tolerance: ±512 Q31.32 units ≈ ±1.2×10⁻⁷ rad ≈ ±0.000007°.
-fn exact_sin_cos_lookup(a: i64) -> Option<(i64, i64)> {
-    let close = |x: i64, y: i64| (x - y).abs() < 512;
-
-    let p2 = FIXED_PI_OVER_2;
-    let p3 = 4_497_012_568_i64; // π/3  = 60°
-    let p4 = 3_373_259_426_i64; // π/4  = 45°
-    let p6 = 2_248_506_284_i64; // π/6  = 30°
-
-    let s0 = 0_i64;
-    let c0 = FIXED_ONE;
-    let s30 = FIXED_HALF;
-    let c30 = FIXED_SQRT3_OVER_2;
-    let s45 = FIXED_INV_SQRT2;
-    let c45 = FIXED_INV_SQRT2;
-    let s60 = FIXED_SQRT3_OVER_2;
-    let c60 = FIXED_HALF;
-    let s90 = FIXED_ONE;
-    let c90 = 0_i64;
-
-    if close(a, 0) {
-        return Some((s0, c0));
-    }
-    if close(a, p6) {
-        return Some((s30, c30));
-    }
-    if close(a, p4) {
-        return Some((s45, c45));
-    }
-    if close(a, p3) {
-        return Some((s60, c60));
-    }
-    if close(a, p2) {
-        return Some((s90, c90));
-    }
-    if close(a, p2 + p6) {
-        return Some((s60, -c60));
-    } // 120°
-    if close(a, p2 + p4) {
-        return Some((s45, -c45));
-    } // 135°
-    if close(a, p2 + p3) {
-        return Some((s30, -c30));
-    } // 150°
-    if close(a, FIXED_PI) {
-        return Some((s0, -c0));
-    } // 180°
-    if close(a, -(FIXED_PI - p6)) {
-        return Some((-s30, -c30));
-    } // 210°
-    if close(a, -(FIXED_PI - p4)) {
-        return Some((-s45, -c45));
-    } // 225°
-    if close(a, -(FIXED_PI - p3)) {
-        return Some((-s60, -c60));
-    } // 240°
-    if close(a, -p2) {
-        return Some((-s90, c90));
-    } // 270°
-    if close(a, -(p2 - p6)) {
-        return Some((-s60, c60));
-    } // 300°
-    if close(a, -(p2 - p4)) {
-        return Some((-s45, c45));
-    } // 315°
-    if close(a, -(p2 - p3)) {
-        return Some((-s30, c30));
-    } // 330°
-    None
 }
 
 // ─── Inverse trigonometry ─────────────────────────────────────────────────────
@@ -911,22 +836,13 @@ pub fn natural_log(x: i64) -> Option<i64> {
     let mut t_power = t;
     let mut result: i128 = 0;
     for n in 1i128..=20 {
-        let term = if t_power >= 0 {
-            (t_power + n / 2) / n
-        } else {
-            (t_power - n / 2) / n
-        };
+        let term = t_power / n;
         if n % 2 == 1 {
             result += term;
         } else {
             result -= term;
         }
-        let product = t_power * t;
-        t_power = if product >= 0 {
-            (product + (SCALE as i128) / 2) >> 32
-        } else {
-            (product - (SCALE as i128) / 2) >> 32
-        };
+        t_power = (t_power * t) >> 32;
     }
 
     Some(k * FIXED_LN2 + result as i64)
@@ -1025,6 +941,9 @@ pub fn format_fixed_point(value: i64, buffer: &mut [u8]) -> &[u8] {
     } else {
         (frac_decimal, integer_part)
     };
+
+    // If the value rounds to exactly zero, suppress the negative sign.
+    let is_negative = is_negative && !(integer_part == 0 && frac_decimal == 0);
 
     let mut pos = 0usize;
 

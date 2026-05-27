@@ -17,8 +17,8 @@ use super::fixed_point;
 use super::lexer::LexResult;
 use super::parser::ParseTree;
 use super::vars::VariableStore;
-use super::MathMode;
 use super::{evaluator, lexer, parser};
+use super::{AngleMode, MathMode};
 
 /// Evaluate a mathematical expression byte slice.
 ///
@@ -28,6 +28,8 @@ use super::{evaluator, lexer, parser};
 ///
 /// `mode` controls whether imaginary-unit tokens are accepted (Advanced) or
 /// rejected (Standard).
+/// `angle_mode` controls whether trig functions interpret values in radians
+/// or degrees.
 ///
 /// Returns `Some(result)` on success, `None` on any error.
 pub fn evaluate_expression(
@@ -36,10 +38,11 @@ pub fn evaluate_expression(
     lex_scratch: &mut LexResult,
     parse_scratch: &mut ParseTree,
     mode: MathMode,
+    angle_mode: AngleMode,
 ) -> Option<Complex> {
     lexer::tokenise_expression(expression, lex_scratch, mode)?;
     parser::parse_token_stream(lex_scratch, parse_scratch)?;
-    let result = evaluator::evaluate_tree(parse_scratch, variables)?;
+    let result = evaluator::evaluate_tree(parse_scratch, variables, angle_mode)?;
     if mode == MathMode::Standard && result.im != 0 {
         return None;
     }

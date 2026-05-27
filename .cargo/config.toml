@@ -3,4 +3,5 @@
 linker = "rust-lld"
 rustflags = [
     "-C", "link-arg=-Thal-lm3s811/link.x",
+    "-C", "link-arg=--gc-sections",
 ]

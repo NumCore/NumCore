@@ -533,33 +533,7 @@ fn parse_primary(cursor: &mut ParserCursor, tree: &mut ParseTree) -> Option<usiz
 
 /// Return true if the token represents a single-argument mathematical function.
 fn is_single_arg_function_token(token: Token) -> bool {
-    matches!(
-        token,
-        Token::FuncSin
-            | Token::FuncCos
-            | Token::FuncTan
-            | Token::FuncAsin
-            | Token::FuncAcos
-            | Token::FuncAtan
-            | Token::FuncSinH
-            | Token::FuncCosH
-            | Token::FuncTanH
-            | Token::FuncASinH
-            | Token::FuncACosH
-            | Token::FuncATanH
-            | Token::FuncSqrt
-            | Token::FuncAbs
-            | Token::FuncLog
-            | Token::FuncLn
-            | Token::FuncLog2
-            | Token::FuncExp
-            | Token::FuncFloor
-            | Token::FuncCeil
-            | Token::FuncRound
-            | Token::FuncDeg
-            | Token::FuncRad
-            | Token::FuncLnGamma
-    )
+    token_to_single_arg_function(token).is_some()
 }
 
 /// Return true if the token is a three-argument numeric function.
