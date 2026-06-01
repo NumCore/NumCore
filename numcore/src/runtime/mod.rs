@@ -232,8 +232,7 @@ fn handle_expression_submission<U: Uart, D: Display>(state: &mut CalcState) {
             state.record_answer(complex);
 
             U::transmit_bytes(b"= ");
-            let formatted =
-                engine::format_result(complex, state.math_mode(), &mut result_line);
+            let formatted = engine::format_result(complex, state.math_mode(), &mut result_line);
             U::transmit_bytes(formatted);
             U::transmit_bytes(b"\r\n");
             state.set_last_result(formatted);

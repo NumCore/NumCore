@@ -72,7 +72,12 @@ pub fn format_result(value: Complex, mode: MathMode, buffer: &mut [u8; 48]) -> &
 /// Format an overflow result as scientific notation (e.g. `1.23456E+99`).
 ///
 /// Writes into `buffer` (must be ≥ 48 bytes) and returns the filled slice.
-pub fn format_overflow(mantissa: i64, exponent: i32, negative: bool, buffer: &mut [u8; 48]) -> Option<&[u8]> {
+pub fn format_overflow(
+    mantissa: i64,
+    exponent: i32,
+    negative: bool,
+    buffer: &mut [u8; 48],
+) -> Option<&[u8]> {
     if exponent > 99 || exponent < -99 {
         return None;
     }

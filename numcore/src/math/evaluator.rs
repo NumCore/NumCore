@@ -22,7 +22,9 @@ pub enum EvalResult {
 static mut LAST_OVERFLOW_INFO: Option<(i64, bool)> = None;
 
 fn set_overflow_info(log10_est: i64, negative: bool) {
-    unsafe { LAST_OVERFLOW_INFO = Some((log10_est, negative)); }
+    unsafe {
+        LAST_OVERFLOW_INFO = Some((log10_est, negative));
+    }
 }
 
 fn take_overflow_info() -> Option<(i64, bool)> {
@@ -88,7 +90,11 @@ fn compute_overflow(log10_est: i64, negative: bool) -> EvalResult {
 /// log10(2) ≈ 0.30102999566 in Q31.32 = round(log10(2) × 2^32)
 const LOG10_2: i64 = 1_292_913_986;
 
-fn overflow_complex_hyp(result: Option<Complex>, component: i64, negative: bool) -> Option<Complex> {
+fn overflow_complex_hyp(
+    result: Option<Complex>,
+    component: i64,
+    negative: bool,
+) -> Option<Complex> {
     match result {
         Some(v) => Some(v),
         None => {
@@ -155,9 +161,17 @@ fn evaluate_node(
             right_child_index,
         } => {
             let left = evaluate_node(tree, left_child_index, vars, angle_mode);
-            let left_info = if left.is_none() { take_overflow_info() } else { None };
+            let left_info = if left.is_none() {
+                take_overflow_info()
+            } else {
+                None
+            };
             let right = evaluate_node(tree, right_child_index, vars, angle_mode);
-            let right_info = if right.is_none() { take_overflow_info() } else { None };
+            let right_info = if right.is_none() {
+                take_overflow_info()
+            } else {
+                None
+            };
 
             match (left, right) {
                 (Some(l), Some(r)) => apply_binary_operator(operator, l, r),
@@ -171,7 +185,10 @@ fn evaluate_node(
                         match (operator, left_val, right_val) {
                             (BinaryOperator::Divide, _, Some(r)) if r.re != 0 => {
                                 if let Some(d) = fp::log10(r.re.unsigned_abs() as i64) {
-                                    set_overflow_info(log10_est.wrapping_sub(d), negative != (r.re < 0));
+                                    set_overflow_info(
+                                        log10_est.wrapping_sub(d),
+                                        negative != (r.re < 0),
+                                    );
                                 } else {
                                     set_overflow_info(log10_est, negative);
                                 }
@@ -181,14 +198,20 @@ fn evaluate_node(
                             }
                             (BinaryOperator::Multiply, None, Some(r)) => {
                                 if let Some(m) = fp::log10(r.re.unsigned_abs() as i64) {
-                                    set_overflow_info(log10_est.wrapping_add(m), negative != (r.re < 0));
+                                    set_overflow_info(
+                                        log10_est.wrapping_add(m),
+                                        negative != (r.re < 0),
+                                    );
                                 } else {
                                     set_overflow_info(log10_est, negative);
                                 }
                             }
                             (BinaryOperator::Multiply, Some(l), None) => {
                                 if let Some(m) = fp::log10(l.re.unsigned_abs() as i64) {
-                                    set_overflow_info(log10_est.wrapping_add(m), negative != (l.re < 0));
+                                    set_overflow_info(
+                                        log10_est.wrapping_add(m),
+                                        negative != (l.re < 0),
+                                    );
                                 } else {
                                     set_overflow_info(log10_est, negative);
                                 }
@@ -289,7 +312,10 @@ fn apply_binary_operator(
             Some(v) => Some(v),
             None => {
                 if left.re != 0 && right.re != 0 {
-                    if let (Some(l), Some(r)) = (fp::log10(left.re.unsigned_abs() as i64), fp::log10(right.re.unsigned_abs() as i64)) {
+                    if let (Some(l), Some(r)) = (
+                        fp::log10(left.re.unsigned_abs() as i64),
+                        fp::log10(right.re.unsigned_abs() as i64),
+                    ) {
                         set_overflow_info(l.wrapping_add(r), (left.re < 0) != (right.re < 0));
                     }
                 }
@@ -300,7 +326,10 @@ fn apply_binary_operator(
             Some(v) => Some(v),
             None => {
                 if left.re != 0 && right.re != 0 {
-                    if let (Some(l), Some(r)) = (fp::log10(left.re.unsigned_abs() as i64), fp::log10(right.re.unsigned_abs() as i64)) {
+                    if let (Some(l), Some(r)) = (
+                        fp::log10(left.re.unsigned_abs() as i64),
+                        fp::log10(right.re.unsigned_abs() as i64),
+                    ) {
                         set_overflow_info(l.wrapping_sub(r), (left.re < 0) != (right.re < 0));
                     }
                 }
@@ -320,7 +349,8 @@ fn apply_binary_operator(
                     None => {
                         if left.re > 0 {
                             if let Some(log_left) = fp::log10(left.re) {
-                                let log_est = fp::multiply(right.re, log_left).unwrap_or(fp::FIXED_ONE * 40);
+                                let log_est =
+                                    fp::multiply(right.re, log_left).unwrap_or(fp::FIXED_ONE * 40);
                                 set_overflow_info(log_est, false);
                             }
                         }
@@ -335,7 +365,8 @@ fn apply_binary_operator(
                         Some(v) => Some(v),
                         None => {
                             if let Some(log) = fp::log10(left.re) {
-                                let log_est = fp::multiply(fp::from_integer(exp_int), log).unwrap_or(i64::MAX);
+                                let log_est = fp::multiply(fp::from_integer(exp_int), log)
+                                    .unwrap_or(i64::MAX);
                                 set_overflow_info(log_est, false);
                             }
                             None
@@ -452,48 +483,50 @@ fn apply_function(function: MathFunction, arg: Complex, angle_mode: AngleMode) -
             };
             fp::tan(rad).map(Complex::from_real)
         }
-        MathFunction::Asin => {
-            match fp::asin(x) {
-                Some(r) => {
-                    let deg = if angle_mode == AngleMode::Degrees {
-                        match fp::radians_to_degrees(r) {
-                            Some(v) => v,
-                            None => {
-                                if let Some(log) = approx_log10(r) {
-                                    set_overflow_info(log.wrapping_add(fp::FIXED_ONE + fp::FIXED_ONE * 3 / 4), r < 0);
-                                }
-                                return None;
+        MathFunction::Asin => match fp::asin(x) {
+            Some(r) => {
+                let deg = if angle_mode == AngleMode::Degrees {
+                    match fp::radians_to_degrees(r) {
+                        Some(v) => v,
+                        None => {
+                            if let Some(log) = approx_log10(r) {
+                                set_overflow_info(
+                                    log.wrapping_add(fp::FIXED_ONE + fp::FIXED_ONE * 3 / 4),
+                                    r < 0,
+                                );
                             }
+                            return None;
                         }
-                    } else {
-                        r
-                    };
-                    Some(Complex::from_real(deg))
-                }
-                None => return None,
+                    }
+                } else {
+                    r
+                };
+                Some(Complex::from_real(deg))
             }
-        }
-        MathFunction::Acos => {
-            match fp::acos(x) {
-                Some(r) => {
-                    let deg = if angle_mode == AngleMode::Degrees {
-                        match fp::radians_to_degrees(r) {
-                            Some(v) => v,
-                            None => {
-                                if let Some(log) = approx_log10(r) {
-                                    set_overflow_info(log.wrapping_add(fp::FIXED_ONE + fp::FIXED_ONE * 3 / 4), r < 0);
-                                }
-                                return None;
+            None => return None,
+        },
+        MathFunction::Acos => match fp::acos(x) {
+            Some(r) => {
+                let deg = if angle_mode == AngleMode::Degrees {
+                    match fp::radians_to_degrees(r) {
+                        Some(v) => v,
+                        None => {
+                            if let Some(log) = approx_log10(r) {
+                                set_overflow_info(
+                                    log.wrapping_add(fp::FIXED_ONE + fp::FIXED_ONE * 3 / 4),
+                                    r < 0,
+                                );
                             }
+                            return None;
                         }
-                    } else {
-                        r
-                    };
-                    Some(Complex::from_real(deg))
-                }
-                None => return None,
+                    }
+                } else {
+                    r
+                };
+                Some(Complex::from_real(deg))
             }
-        }
+            None => return None,
+        },
         MathFunction::Atan => {
             let r = fp::atan(x);
             let deg = if angle_mode == AngleMode::Degrees {
@@ -501,7 +534,10 @@ fn apply_function(function: MathFunction, arg: Complex, angle_mode: AngleMode) -
                     Some(v) => v,
                     None => {
                         if let Some(log) = approx_log10(r) {
-                            set_overflow_info(log.wrapping_add(fp::FIXED_ONE + fp::FIXED_ONE * 3 / 4), r < 0);
+                            set_overflow_info(
+                                log.wrapping_add(fp::FIXED_ONE + fp::FIXED_ONE * 3 / 4),
+                                r < 0,
+                            );
                         }
                         return None;
                     }
@@ -578,7 +614,10 @@ fn apply_function(function: MathFunction, arg: Complex, angle_mode: AngleMode) -
             Some(v) => Some(Complex::from_real(v)),
             None => {
                 if let Some(log) = approx_log10(x) {
-                    set_overflow_info(log.wrapping_add(fp::FIXED_ONE + fp::FIXED_ONE * 3 / 4), x < 0);
+                    set_overflow_info(
+                        log.wrapping_add(fp::FIXED_ONE + fp::FIXED_ONE * 3 / 4),
+                        x < 0,
+                    );
                 }
                 None
             }
@@ -606,7 +645,8 @@ fn apply_two_arg_function(
             Some(v) => Some(Complex::from_real(v)),
             None => {
                 if a0.re > 0 && a1.re != 0 {
-                    let log_est = fp::divide(approx_log10(a0.re).unwrap_or(fp::FIXED_ONE), a1.re).unwrap_or(0);
+                    let log_est = fp::divide(approx_log10(a0.re).unwrap_or(fp::FIXED_ONE), a1.re)
+                        .unwrap_or(0);
                     set_overflow_info(log_est, a0.re < 0);
                 }
                 None

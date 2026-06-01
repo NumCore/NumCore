@@ -2332,9 +2332,11 @@ fn test_integration_sinh() {
     // The error floor is set by natural_exp precision (≈1.7e-6 for this integral)
     // propagating through thousands of evaluations.  Tighter than 2e-6 is not
     // achievable without improving natural_exp itself.
-    assert!(diff < 10_000i64,
+    assert!(
+        diff < 10_000i64,
         "∫sinh error {:.2e} (>2e-6)",
-        diff as f64 / 4294967296.0);
+        diff as f64 / 4294967296.0
+    );
 }
 
 // ─── 33. Multiply saturation in evaluator ────────────────────────────────────
@@ -3688,14 +3690,30 @@ fn test_overflow_format() {
     assert!(engine::format_overflow(mantissa_precise, i32::MIN, false, &mut buf).is_none());
 }
 
-
-
 fn eval_overflow(expr: &str) -> Option<(i64, i32, bool)> {
     let mut vars = VariableStore::new();
-    let mut lex_scratch = lexer::LexResult { tokens: [lexer::Token::Number(0); lexer::MAX_TOKEN_COUNT], token_count: 0 };
-    let mut parse_scratch = parser::ParseTree { nodes: [parser::AstNode::Literal(0); parser::MAX_NODE_COUNT], node_count: 0, root_index: 0 };
-    match engine::evaluate_expression(expr.as_bytes(), &mut vars, &mut lex_scratch, &mut parse_scratch, MathMode::Standard, AngleMode::Radians) {
-        engine::EvalResult::Overflow { mantissa, exponent, negative } => Some((mantissa, exponent, negative)),
+    let mut lex_scratch = lexer::LexResult {
+        tokens: [lexer::Token::Number(0); lexer::MAX_TOKEN_COUNT],
+        token_count: 0,
+    };
+    let mut parse_scratch = parser::ParseTree {
+        nodes: [parser::AstNode::Literal(0); parser::MAX_NODE_COUNT],
+        node_count: 0,
+        root_index: 0,
+    };
+    match engine::evaluate_expression(
+        expr.as_bytes(),
+        &mut vars,
+        &mut lex_scratch,
+        &mut parse_scratch,
+        MathMode::Standard,
+        AngleMode::Radians,
+    ) {
+        engine::EvalResult::Overflow {
+            mantissa,
+            exponent,
+            negative,
+        } => Some((mantissa, exponent, negative)),
         _ => None,
     }
 }
@@ -3706,23 +3724,44 @@ fn test_overflow_binary_operations() {
     let sinh30 = eval_overflow("sinh(30)").expect("sinh(30) should overflow");
     let mant_f64 = |m: i64| m as f64 / 4294967296.0;
     let m_sinh = mant_f64(sinh30.0);
-    assert!(m_sinh > 5.0 && m_sinh < 6.0, "sinh(30) mantissa {} not in [5,6)", m_sinh);
+    assert!(
+        m_sinh > 5.0 && m_sinh < 6.0,
+        "sinh(30) mantissa {} not in [5,6)",
+        m_sinh
+    );
     assert_eq!(sinh30.1, 12, "sinh(30) exponent should be 12");
     assert!(!sinh30.2, "sinh(30) should be positive");
 
     // sinh(30)/2 ≈ 2.672e12 — mantissa should HALVE
     let sinh30_div2 = eval_overflow("sinh(30)/2").expect("sinh(30)/2 should overflow");
     let m_div2 = mant_f64(sinh30_div2.0);
-    assert!(m_div2 > 2.0 && m_div2 < 3.0, "sinh(30)/2 mantissa {} not in [2,3)", m_div2);
-    assert!(m_div2 < m_sinh - 2.0, "sinh(30)/2 mantissa {} should be much smaller than sinh(30) {}", m_div2, m_sinh);
+    assert!(
+        m_div2 > 2.0 && m_div2 < 3.0,
+        "sinh(30)/2 mantissa {} not in [2,3)",
+        m_div2
+    );
+    assert!(
+        m_div2 < m_sinh - 2.0,
+        "sinh(30)/2 mantissa {} should be much smaller than sinh(30) {}",
+        m_div2,
+        m_sinh
+    );
     assert_eq!(sinh30_div2.1, 12, "sinh(30)/2 exponent should be 12");
     assert!(!sinh30_div2.2, "sinh(30)/2 should be positive");
 
     // sinh(30)*2 ≈ 1.069e13 — exponent should increase
     let sinh30_mul2 = eval_overflow("sinh(30)*2").expect("sinh(30)*2 should overflow");
     let m_mul2 = mant_f64(sinh30_mul2.0);
-    assert!(m_mul2 > 1.0 && m_mul2 < 2.0, "sinh(30)*2 mantissa {} not in [1,2)", m_mul2);
-    assert_eq!(sinh30_mul2.1, 13, "sinh(30)*2 exponent should be 13, got {}", sinh30_mul2.1);
+    assert!(
+        m_mul2 > 1.0 && m_mul2 < 2.0,
+        "sinh(30)*2 mantissa {} not in [1,2)",
+        m_mul2
+    );
+    assert_eq!(
+        sinh30_mul2.1, 13,
+        "sinh(30)*2 exponent should be 13, got {}",
+        sinh30_mul2.1
+    );
     assert!(!sinh30_mul2.2, "sinh(30)*2 should be positive");
 
     // -sinh(30) ≈ -5.343e12 — should be negative
@@ -3733,42 +3772,92 @@ fn test_overflow_binary_operations() {
     // sinh(30)*3 — different factor
     let sinh30_mul3 = eval_overflow("sinh(30)*3").expect("sinh(30)*3 should overflow");
     let m_mul3 = mant_f64(sinh30_mul3.0);
-    assert!(m_mul3 > 1.0 && m_mul3 < 2.0, "sinh(30)*3 mantissa {} not in [1,2)", m_mul3);
-    assert_eq!(sinh30_mul3.1, 13, "sinh(30)*3 exponent should be 13, got {}", sinh30_mul3.1);
+    assert!(
+        m_mul3 > 1.0 && m_mul3 < 2.0,
+        "sinh(30)*3 mantissa {} not in [1,2)",
+        m_mul3
+    );
+    assert_eq!(
+        sinh30_mul3.1, 13,
+        "sinh(30)*3 exponent should be 13, got {}",
+        sinh30_mul3.1
+    );
 
     // sinh(30)/10 — reduces exponent
     let sinh30_div10 = eval_overflow("sinh(30)/10").expect("sinh(30)/10 should overflow");
     let m_div10 = mant_f64(sinh30_div10.0);
-    assert!(m_div10 > 5.0 && m_div10 < 6.0, "sinh(30)/10 mantissa {} not in [5,6)", m_div10);
-    assert_eq!(sinh30_div10.1, 11, "sinh(30)/10 exponent should be 11, got {}", sinh30_div10.1);
+    assert!(
+        m_div10 > 5.0 && m_div10 < 6.0,
+        "sinh(30)/10 mantissa {} not in [5,6)",
+        m_div10
+    );
+    assert_eq!(
+        sinh30_div10.1, 11,
+        "sinh(30)/10 exponent should be 11, got {}",
+        sinh30_div10.1
+    );
 
     // exp(100) * 100
     let exp100 = eval_overflow("exp(100)").expect("exp(100) should overflow");
-    assert_eq!(exp100.1, 43, "exp(100) exponent should be 43, got {}", exp100.1);
+    assert_eq!(
+        exp100.1, 43,
+        "exp(100) exponent should be 43, got {}",
+        exp100.1
+    );
     let exp100_mul100 = eval_overflow("exp(100)*100").expect("exp(100)*100 should overflow");
-    assert_eq!(exp100_mul100.1, 45, "exp(100)*100 exponent should be 45, got {}", exp100_mul100.1);
+    assert_eq!(
+        exp100_mul100.1, 45,
+        "exp(100)*100 exponent should be 45, got {}",
+        exp100_mul100.1
+    );
 
     // Power: sinh(30)^2 ≈ 2.85e25 — exponent should be ~25
     let sinh30_pow2 = eval_overflow("sinh(30)^2").expect("sinh(30)^2 should overflow");
-    assert_eq!(sinh30_pow2.1, 25, "sinh(30)^2 exponent should be 25, got {}", sinh30_pow2.1);
+    assert_eq!(
+        sinh30_pow2.1, 25,
+        "sinh(30)^2 exponent should be 25, got {}",
+        sinh30_pow2.1
+    );
     let m_pow2 = mant_f64(sinh30_pow2.0);
-    assert!(m_pow2 > 2.0 && m_pow2 < 4.0, "sinh(30)^2 mantissa {} not in [2,4)", m_pow2);
+    assert!(
+        m_pow2 > 2.0 && m_pow2 < 4.0,
+        "sinh(30)^2 mantissa {} not in [2,4)",
+        m_pow2
+    );
 
     // Power: sinh(30)^3 ≈ 1.52e38 — exponent should be ~38
     let sinh30_pow3 = eval_overflow("sinh(30)^3").expect("sinh(30)^3 should overflow");
-    assert_eq!(sinh30_pow3.1, 38, "sinh(30)^3 exponent should be 38, got {}", sinh30_pow3.1);
+    assert_eq!(
+        sinh30_pow3.1, 38,
+        "sinh(30)^3 exponent should be 38, got {}",
+        sinh30_pow3.1
+    );
 
     // constant / overflow → NOT overflow (result is ~0)
-    assert!(eval_overflow("5/sinh(30)").is_none(), "5/sinh(30) should NOT overflow");
+    assert!(
+        eval_overflow("5/sinh(30)").is_none(),
+        "5/sinh(30) should NOT overflow"
+    );
 
     // constant ^ overflow → NOT overflow (uncomputable)
-    assert!(eval_overflow("2^sinh(30)").is_none(), "2^sinh(30) should NOT overflow");
+    assert!(
+        eval_overflow("2^sinh(30)").is_none(),
+        "2^sinh(30) should NOT overflow"
+    );
 
     // Multiply in apply_binary_operator: 2^20 * 2^20 = 2^40 ≈ 1.1e12
     let mul_large = eval_overflow("1048576*1048576").expect("1048576^2 should overflow");
-    assert_eq!(mul_large.1, 12, "1048576*1048576 exponent should be 12, got {}", mul_large.1);
+    assert_eq!(
+        mul_large.1, 12,
+        "1048576*1048576 exponent should be 12, got {}",
+        mul_large.1
+    );
     let m_mul_large = mant_f64(mul_large.0);
-    assert!(m_mul_large > 1.0 && m_mul_large < 1.2, "1048576*1048576 mantissa {} not in [1,1.2)", m_mul_large);
+    assert!(
+        m_mul_large > 1.0 && m_mul_large < 1.2,
+        "1048576*1048576 mantissa {} not in [1,1.2)",
+        m_mul_large
+    );
 }
 
 #[test]
@@ -3782,6 +3871,9 @@ fn trace_sinh100() {
     let frac_ln10 = _fp::multiply(frac, _fp::FIXED_LN10).unwrap();
     let mantissa = _fp::natural_exp(frac_ln10).unwrap();
     let mantissa_f64 = mantissa as f64 / 4294967296.0;
-    assert!((mantissa_f64 - 1.34406).abs() < 0.0001,
-        "mantissa {} too far from 1.34406", mantissa_f64);
+    assert!(
+        (mantissa_f64 - 1.34406).abs() < 0.0001,
+        "mantissa {} too far from 1.34406",
+        mantissa_f64
+    );
 }
