@@ -29,3 +29,4 @@ E
 sqrt(-1)
 ln(0)
 a
+int(sinh(X),X,0,10)

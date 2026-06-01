@@ -191,13 +191,18 @@ pub fn multiply(a: i64, b: i64) -> Option<i64> {
     }
 }
 
-/// Divide two Q31.32 values. Returns None if divisor is zero.
-/// Result = (a << 32) / b, computed in i128 to prevent overflow.
+/// Divide two Q31.32 values. Returns None if divisor is zero or if the
+/// quotient exceeds the Q31.32 range (|result| > ~2.147 × 10⁹).
+/// Result = (a << 32) / b, computed in i128 to prevent intermediate overflow.
 pub fn divide(a: i64, b: i64) -> Option<i64> {
     if b == 0 {
         return None;
     }
-    Some((((a as i128) << FRACTIONAL_BITS) / (b as i128)) as i64)
+    let result = ((a as i128) << FRACTIONAL_BITS) / (b as i128);
+    if result > i64::MAX as i128 || result < i64::MIN as i128 {
+        return None;
+    }
+    Some(result as i64)
 }
 
 // ─── Power ────────────────────────────────────────────────────────────────────
@@ -329,10 +334,12 @@ fn rsqrt_clz_initial(x: i64) -> i64 {
 /// on the reciprocal square root, then one final Newton step refining
 /// √x directly.
 ///
+/// ```text
 ///     y_0     ← CLZ + 32-entry LUT (error < 2%)
 ///     y_{n+1} ← y_n · (3 − x·y_n²) / 2    (3 iterations)
 ///     s       ← x · y_3
 ///     s       ← (s + x / s) / 2            (final Newton refinement)
+/// ```
 ///
 /// Error < 1e-6 relative (~3.7e-8 worst observed), ~250 cycles.
 pub fn sqrt(x: i64) -> Option<i64> {
@@ -370,7 +377,9 @@ pub fn sqrt(x: i64) -> Option<i64> {
 ///
 /// Uses the iteration:
 ///
+/// ```text
 ///     x_{k+1} = ((n−1)·x_k + x / x_k^(n−1)) / n
+/// ```
 ///
 /// which converges quadratically to x^(1/n).  n must be ≥ 2 and a
 /// plain integer (not Q31.32).  x must be ≥ 0.

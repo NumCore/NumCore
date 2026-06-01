@@ -3,6 +3,7 @@ pub mod state;
 
 use crate::hal::{Display, Uart};
 use crate::math::engine;
+use crate::math::engine::EvalResult;
 use crate::ui::formula;
 use event::{translate_input_byte_to_event, CalcEvent};
 use state::CalcState;
@@ -227,16 +228,35 @@ fn handle_expression_submission<U: Uart, D: Display>(state: &mut CalcState) {
 
     let mut result_line = [0u8; 48];
     match result {
-        Some(result) => {
-            state.record_answer(result);
+        EvalResult::Value(complex) => {
+            state.record_answer(complex);
 
             U::transmit_bytes(b"= ");
-            let formatted = engine::format_result(result, state.math_mode(), &mut result_line);
+            let formatted =
+                engine::format_result(complex, state.math_mode(), &mut result_line);
             U::transmit_bytes(formatted);
             U::transmit_bytes(b"\r\n");
             state.set_last_result(formatted);
         }
-        None => {
+        EvalResult::Overflow {
+            mantissa,
+            exponent,
+            negative,
+        } => {
+            U::transmit_bytes(b"= ");
+            match engine::format_overflow(mantissa, exponent, negative, &mut result_line) {
+                Some(formatted) => {
+                    U::transmit_bytes(formatted);
+                    U::transmit_bytes(b"\r\n");
+                    state.set_last_result(formatted);
+                }
+                None => {
+                    U::transmit_bytes(b"! overflow\r\n");
+                    state.set_last_result(b"overflow");
+                }
+            }
+        }
+        EvalResult::DomainError => {
             U::transmit_bytes(b"! error\r\n");
             state.set_last_result(b"error");
         }
