@@ -19,3 +19,4 @@ qemu-system-arm -M lm3s811evb -serial mon:stdio -display none \
 ## License
 
 CERN-OHL-S-2.0
+GPL-3.0
