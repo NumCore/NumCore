@@ -1323,11 +1323,23 @@ fn test_ln_gamma_edge_cases() {
     // z = 2.0 -> 0.0
     assert_eq!(distributions::ln_gamma(fp::from_integer(2)), Some(0));
     // z = 3.0 -> ln(2)
-    assert_approx_eq(distributions::ln_gamma(fp::from_integer(3)).unwrap(), q(0.6931471805599453), 10);
+    assert_approx_eq(
+        distributions::ln_gamma(fp::from_integer(3)).unwrap(),
+        q(0.6931471805599453),
+        10,
+    );
     // z = 4.0 -> ln(6)
-    assert_approx_eq(distributions::ln_gamma(fp::from_integer(4)).unwrap(), q(1.791759469228055), 10);
+    assert_approx_eq(
+        distributions::ln_gamma(fp::from_integer(4)).unwrap(),
+        q(1.791759469228055),
+        10,
+    );
     // z = 5.0 -> ln(24)
-    assert_approx_eq(distributions::ln_gamma(fp::from_integer(5)).unwrap(), q(3.1780538303479458), 10);
+    assert_approx_eq(
+        distributions::ln_gamma(fp::from_integer(5)).unwrap(),
+        q(3.1780538303479458),
+        10,
+    );
     // Large z = 50.0
     let r50 = distributions::ln_gamma(fp::from_integer(50)).unwrap();
     assert!(r50 > 0);
@@ -2865,7 +2877,10 @@ fn test_complex_div_by_zero() {
 fn test_complex_div_overflow_protection() {
     let big = fp::from_integer(100_000_000);
     let result = Complex::new(big, big).div(Complex::new(big, fp::from_integer(1)));
-    assert!(result.is_some(), "Smith div should not overflow for 1e8-scale values");
+    assert!(
+        result.is_some(),
+        "Smith div should not overflow for 1e8-scale values"
+    );
 }
 
 #[test]
@@ -2897,8 +2912,8 @@ fn test_complex_div_large_imag_denominator() {
 
 #[test]
 fn test_complex_div_negative_denominator() {
-    let result = Complex::new(fp::FIXED_ONE, fp::FIXED_ONE)
-        .div(Complex::new(-fp::FIXED_ONE, fp::FIXED_ONE));
+    let result =
+        Complex::new(fp::FIXED_ONE, fp::FIXED_ONE).div(Complex::new(-fp::FIXED_ONE, fp::FIXED_ONE));
     assert!(result.is_some());
     let (re, im) = (result.unwrap().re, result.unwrap().im);
     assert_approx_eq(re, 0, 10);
@@ -2910,8 +2925,16 @@ fn test_complex_div_mixed_signs() {
     let a = Complex::new(fp::from_integer(1), -fp::from_integer(2));
     let b = Complex::new(-fp::from_integer(3), fp::from_integer(4));
     let result = a.div(b).unwrap();
-    assert_approx_eq(result.re, -fp::divide(fp::from_integer(11), fp::from_integer(25)).unwrap(), 100);
-    assert_approx_eq(result.im, fp::divide(fp::from_integer(2), fp::from_integer(25)).unwrap(), 100);
+    assert_approx_eq(
+        result.re,
+        -fp::divide(fp::from_integer(11), fp::from_integer(25)).unwrap(),
+        100,
+    );
+    assert_approx_eq(
+        result.im,
+        fp::divide(fp::from_integer(2), fp::from_integer(25)).unwrap(),
+        100,
+    );
 }
 
 #[test]
@@ -3478,15 +3501,27 @@ fn test_euler_identity_via_power() {
     let mut vars = VariableStore::new();
     // e^(i*pi) = -1 (imag part ~305 ULP from CORDIC sin/cos)
     let r = eval_complex("e^(i*pi)", &mut vars);
-    assert!(complex_approx_close(r.unwrap(), Complex::from_real(-fp::SCALE), 500));
+    assert!(complex_approx_close(
+        r.unwrap(),
+        Complex::from_real(-fp::SCALE),
+        500
+    ));
     // e^i = cos(1) + i*sin(1)
     let r = eval_complex("e^i", &mut vars);
     let cos1 = fp::cos(fp::from_integer(1));
     let sin1 = fp::sin(fp::from_integer(1));
-    assert!(complex_approx_close(r.unwrap(), Complex::new(cos1, sin1), 500));
+    assert!(complex_approx_close(
+        r.unwrap(),
+        Complex::new(cos1, sin1),
+        500
+    ));
     // exp(i*pi) via function call
     let r = eval_complex("exp(i*pi)", &mut vars);
-    assert!(complex_approx_close(r.unwrap(), Complex::from_real(-fp::SCALE), 500));
+    assert!(complex_approx_close(
+        r.unwrap(),
+        Complex::from_real(-fp::SCALE),
+        500
+    ));
     // i^i = real
     let r = eval_complex("i^i", &mut vars);
     assert!(r.unwrap().re > 0);
@@ -3501,11 +3536,20 @@ fn test_motivating_sqrt_integral() {
     let result = eval_expr("int(sqrt(X),X,0,1.4)", &mut vars).unwrap();
     // Exact: 2/3 * 1.4^1.5 ≈ 1.1043348928
     let exact = q(1.1043348928);
-    let error = if result > exact { result - exact } else { exact - result };
-    println!("int(sqrt(X),X,0,1.4) = {} (Q31.32: {})", fmt(result), result);
+    let error = if result > exact {
+        result - exact
+    } else {
+        exact - result
+    };
+    println!(
+        "int(sqrt(X),X,0,1.4) = {} (Q31.32: {})",
+        fmt(result),
+        result
+    );
     println!("Exact = {} (Q31.32: {})", fmt(exact), exact);
     println!("Error = {} Q31.32 ULP", error);
-    assert!(error < 100, "Error should be < 100 ULP (~2.3e-8) for sqrt(x) near singularity");
+    assert!(
+        error < 100,
+        "Error should be < 100 ULP (~2.3e-8) for sqrt(x) near singularity"
+    );
 }
-
-
