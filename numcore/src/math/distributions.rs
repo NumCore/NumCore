@@ -76,10 +76,10 @@ const LN_FACTORIAL_TABLE: [i64; 21] = [
 /// Uses Stirling's approximation for k > 20:
 ///   ln(k!) ≈ k·ln(k) − k + ½·ln(2πk) + 1/(12k) − 1/(360k³) + 1/(1260k⁵)
 ///
-/// Stirling error for k ≥ 21 is < 1 Q31.32 LSB (verified by Python).
+/// Higher-order correction terms are skipped if they would overflow;
+/// at k ≥ 21 the omitted terms are < 1e-10, well below 1e-6 requirement.
 /// Returns None if k is negative or has a fractional part.
 pub fn ln_factorial(k: i64) -> Option<i64> {
-    // k must be a non-negative integer in Q31.32 (fractional bits must be zero).
     if k < 0 {
         return None;
     }
@@ -89,53 +89,61 @@ pub fn ln_factorial(k: i64) -> Option<i64> {
 
     let k_int = fp::to_integer_truncated(k) as usize;
 
-    // Exact path for small k.
     if k_int <= 20 {
         return Some(LN_FACTORIAL_TABLE[k_int]);
     }
 
-    // Stirling path for k > 20.
-    // All operations use Q31.32 fixed-point arithmetic.
-    let k_q = k; // k is already Q31.32 integer
+    let k_q = k;
     let ln_k = fp::natural_log(k_q)?;
 
     // k·ln(k) − k
-    let term1 = fp::multiply(k_q, ln_k)? - k_q;
+    let mut result = fp::multiply(k_q, ln_k)? - k_q;
 
-    // ½·ln(2πk) = ½·(ln(2π) + ln(k))
-    // ln(2π) in Q31.32 = round(ln(2π) × 2^32) = 7_733_370_361
-    const LN_TWO_PI: i64 = 7_893_621_894; // ln(2π) ≈ 1.83787706641 — corrected
-    let ln_two_pi_k = LN_TWO_PI + ln_k;
-    let term2 = ln_two_pi_k / 2;
+    // ½·ln(2πk)
+    const LN_TWO_PI: i64 = 7_893_621_894;
+    result += (LN_TWO_PI + ln_k) / 2;
 
-    // 1/(12k) in Q31.32: divide(SCALE, 12×k)
-    // 12×k as Q31.32: multiply(from_integer(12), k) = 12 × k (still integer)
-    let twelve_k = fp::multiply(fp::from_integer(12), k_q)?;
-    let term3 = fp::divide(fp::FIXED_ONE, twelve_k)?;
+    // 1/(12k)
+    let term3 = fp::divide(fp::FIXED_ONE, fp::multiply(fp::from_integer(12), k_q)?)?;
+    result = result.checked_add(term3)?;
 
-    // 1/(360k³) — for k ≥ 21 this is < 3×10⁻⁸, negligible but included for accuracy
+    // Higher-order corrections are guarded against overflow of the
+    // power intermediate (k^p * SCALE).  For k ≥ 21 the omitted terms
+    // contribute < 1e-10 to the final result, so it is safe to skip them.
+
+    // k² = k × k (always safe for k ≤ 2^15 ≈ 32768; OK since i64 handles larger)
     let k_sq = fp::multiply(k_q, k_q)?;
-    let k_cu = fp::multiply(k_sq, k_q)?;
-    let term4 = fp::divide(fp::FIXED_ONE, fp::multiply(fp::from_integer(360), k_cu)?)?;
 
-    // 1/(1260k⁵)
-    let k_5th = fp::multiply(k_cu, k_sq)?;
-    let term5 = fp::divide(fp::FIXED_ONE, fp::multiply(fp::from_integer(1260), k_5th)?)?;
+    // -1/(360k³) — skip if k³ overflows i64 (k > ~1.3e6)
+    let term4 = fp::multiply(k_sq, k_q)
+        .and_then(|k_cu| {
+            let denom = fp::multiply(fp::from_integer(360), k_cu)?;
+            fp::divide(fp::FIXED_ONE, denom)
+        })
+        .unwrap_or(0);
+    result = result.checked_sub(term4)?;
 
-    Some(term1 + term2 + term3 - term4 + term5)
+    // +1/(1260k⁵) — skip if k⁵ overflows i64 (k > ~73)
+    let term5 = fp::multiply(k_sq, k_q)
+        .and_then(|k_cu| fp::multiply(k_cu, k_sq))
+        .and_then(|k_5th| {
+            let inv_k5 = fp::divide(fp::FIXED_ONE, k_5th)?;
+            let inv_1260 = fp::divide(fp::FIXED_ONE, fp::from_integer(1260))?;
+            fp::multiply(inv_1260, inv_k5)
+        })
+        .unwrap_or(0);
+    result = result.checked_add(term5)?;
+
+    Some(result)
 }
 
-// ─── ln(Γ(x)) for non-integer x ──────────────────────────────────────────────
+// ─── ln(Γ(x)) ────────────────────────────────────────────────────────────────
 //
-// The Lanczos approximation (g=7, 9 coefficients, Numerical Recipes).
-// Used only for non-integer arguments — the most common use is chiCDF with
-// half-integer a = k/2 where k is an odd integer.
-//
-// For half-integer arguments, we use the recurrence:
-//   ln(Γ(n+½)) = ln((2n)!) − n·ln(4) − ln(n!) + ½·ln(π)
-// which derives everything from ln_factorial — no Lanczos call at all.
-//
-// Lanczos is only called for genuinely non-half-integer z.
+// For x ≥ 5:  Stirling's series (asymptotic expansion).
+// For 0.5 ≤ x < 5:  recurrence ln Γ(x) = ln Γ(x+1) − ln(x) until domain ≥ 5.
+// For x < 0.5:  reflection formula ln Γ(x) = ln(π) − ln(sin(πx)) − ln(Γ(1−x)).
+// For integers: delegates to ln_factorial(x−1).
+// For half-integers: closed-form recurrence from the factorial table.
 
 /// ½·ln(π) in Q31.32.
 const HALF_LN_PI: i64 = 2_458_288_711;
@@ -143,32 +151,21 @@ const HALF_LN_PI: i64 = 2_458_288_711;
 /// ln(4) in Q31.32 = round(ln(4) × 2^32) = 5_954_088_944.
 const LN_4: i64 = 5_954_088_944;
 
-/// Lanczos g = 7.0 in Q31.32.
-const LANCZOS_G: i64 = fp::SCALE * 7;
-
 /// ½·ln(2π) in Q31.32.
 const LN_SQRT_TWO_PI: i64 = 3_946_810_947;
 
-/// Lanczos coefficients in Q31.32.
-const LANCZOS_COEFFS: [i64; 9] = [
-    4_294_967_296,
-    2_905_632_856_161,
-    -5_407_961_756_934,
-    3_312_808_901_239,
-    -758_555_774_233,
-    53_718_630_342,
-    -595_158_322,
-    42_883,
-    647,
-];
+/// Threshold for direct Stirling application: z ≥ 5 in Q31.32.
+const STIRLING_THRESHOLD: i64 = 5 * fp::SCALE;
 
-/// Compute ln(Γ(z)) for Q31.32 z > 0.
+/// Compute ln(Γ(z)) for Q31.32 z > 0 via Stirling's series with recurrence.
 ///
+/// For z ≥ 5: applies Stirling's asymptotic expansion directly.
+///   ln Γ(z) ≈ (z-½)·ln(z) − z + ½·ln(2π) + 1/(12z) − 1/(360z³) +
+///              1/(1260z⁵) − 1/(1680z⁷)
+/// For 0.5 ≤ z < 5: recurses ln Γ(z) = ln Γ(z+1) − ln(z) until z ≥ 5.
+/// For z < 0.5: reflection ln Γ(z) = ln(π) − ln(sin(πz)) − ln(Γ(1−z)).
 /// For positive integers: delegates to `ln_factorial(z−1)`.
-/// For half-integers (z = n + ½): uses the recurrence formula from the
-///   factorial table, avoiding Lanczos entirely.
-/// For all other z ≥ 0.5: uses the Lanczos approximation.
-/// For z < 0.5: uses the reflection formula ln(Γ(z)) = ln(π/sin(πz)) − ln(Γ(1−z)).
+/// For half-integers: uses the closed form ln((2n)!) − n·ln(4) − ln(n!) + ½·ln(π).
 ///
 /// Returns None for z ≤ 0.
 pub fn ln_gamma(z: i64) -> Option<i64> {
@@ -178,24 +175,20 @@ pub fn ln_gamma(z: i64) -> Option<i64> {
 
     // ── Integer z: use exact factorial table ─────────────────────────────────
     if z & (fp::SCALE - 1) == 0 {
-        // z is a positive integer: ln(Γ(z)) = ln((z-1)!)
         return ln_factorial(z - fp::FIXED_ONE);
     }
 
     // ── Half-integer z: use exact recurrence from factorial table ─────────────
-    // z is a half-integer if z - floor(z) == 0.5 in Q31.32 (= SCALE/2 = 2^31).
     let frac_part = z & (fp::SCALE - 1);
     if frac_part == fp::FIXED_HALF {
-        // z = n + 0.5 for some non-negative integer n.
-        let n = fp::to_integer_truncated(z) as usize; // n = floor(z)
-                                                      // ln(Γ(n+½)) = ln((2n)!) − n·ln(4) − ln(n!) + ½·ln(π)
+        let n = fp::to_integer_truncated(z) as usize;
         let ln_2n_fact = ln_factorial(fp::from_integer((2 * n) as i64))?;
         let ln_n_fact = if n == 0 {
             0
         } else {
             ln_factorial(fp::from_integer(n as i64))?
         };
-        let n_ln4 = (n as i64) * LN_4; // n × ln(4) in Q31.32 (integer × Q31.32)
+        let n_ln4 = (n as i64) * LN_4;
         return Some(ln_2n_fact - n_ln4 - ln_n_fact + HALF_LN_PI);
     }
 
@@ -209,47 +202,70 @@ pub fn ln_gamma(z: i64) -> Option<i64> {
         }
         let ln_pi = fp::natural_log(fp::FIXED_PI)?;
         let ln_sin = fp::natural_log(sin_pi_z)?;
-        let ln_gamma_comp = ln_gamma(one_minus_z)?;
-        return Some(ln_pi - ln_sin - ln_gamma_comp);
+        return Some(ln_pi - ln_sin - ln_gamma(one_minus_z)?);
     }
 
-    // ── General Lanczos path for z ≥ 0.5 ─────────────────────────────────────
+    // ── Recurrence until z ≥ 5, then apply Stirling's series ────────────────
     //
-    // Stack reduction vs the previous version:
-    //   - series_sum is i64, not i128 (each term fits in i64 after the divide)
-    //   - i128 is used only for the (ci << 32) / denominator step
-    //   - No recursion in this code path
+    // ln Γ(z) = ln Γ(z+1) − ln(z), applied repeatedly until z ≥ 5.
 
-    // x = z − 1 (Lanczos recurrence is 0-indexed)
-    let x = z - fp::FIXED_ONE;
+    let mut acc = 0i64;
+    let mut x = z;
 
-    // Build series: A(x) = c₀ + Σ cᵢ/(x+i) for i=1..8
-    let mut series_sum: i64 = LANCZOS_COEFFS[0];
-    for i in 1usize..9 {
-        // denominator = x + i in Q31.32
-        let denominator: i64 = x + fp::from_integer(i as i64);
-        if denominator == 0 {
-            return None;
-        }
-        // term = cᵢ / denominator in Q31.32
-        // Need i128 only for the (cᵢ << 32) step to avoid overflow.
-        let term = (((LANCZOS_COEFFS[i] as i128) << 32) / (denominator as i128)) as i64;
-        series_sum = series_sum.saturating_add(term);
+    while x < STIRLING_THRESHOLD {
+        acc = acc.checked_sub(fp::natural_log(x)?)?;
+        x = x + fp::FIXED_ONE;
     }
 
-    // Guard: series must be positive for ln to be valid.
-    if series_sum <= 0 {
-        return None;
-    }
-    let ln_series = fp::natural_log(series_sum)?;
+    // Stirling's series for ln Γ(x), x ≥ 5:
+    //   ln Γ(x) ≈ (x-½)·ln(x) - x + ½·ln(2π)
+    //              + 1/(12x) - 1/(360x³) + 1/(1260x⁵) - 1/(1680x⁷)
+    //
+    // Higher-order corrections are computed as (1/n) × (1/x^p) to avoid
+    // overflow of n × x^p for large x.
 
-    // t = x + g + 0.5
-    let t = x + LANCZOS_G + fp::FIXED_HALF;
-    let ln_t = fp::natural_log(t)?;
+    let ln_x = fp::natural_log(x)?;
+    let x_minus_half = x - fp::FIXED_HALF;
 
-    // ln(Γ(z)) = LN_SQRT_TWO_PI + (x+0.5)·ln(t) − t + ln(series)
-    let x_plus_half = x + fp::FIXED_HALF;
-    Some(LN_SQRT_TWO_PI + fp::multiply(x_plus_half, ln_t)? - t + ln_series)
+    let mut result = fp::multiply(x_minus_half, ln_x)?
+        .checked_sub(x)?
+        .checked_add(LN_SQRT_TWO_PI)?;
+
+    // Correction terms computed as (1/n) × (1/x^p) to avoid overflow of
+    // n × x^p for large x. Terms that overflow are skipped — they are
+    // negligible (<< 1e-10) at the point of overflow.
+
+    // 1/x in Q31.32
+    let inv_x = fp::divide(fp::FIXED_ONE, x)?;
+    // 1/x², 1/x³ (always safe since 0 < 1/x^p ≤ 1 for x ≥ 1)
+    let inv_x2 = fp::multiply(inv_x, inv_x)?;
+    let inv_x3 = fp::multiply(inv_x2, inv_x)?;
+
+    // +1/(12x) = (1/12) × (1/x)
+    let inv_12 = fp::divide(fp::FIXED_ONE, fp::from_integer(12))?;
+    result = result.checked_add(fp::multiply(inv_12, inv_x)?)?;
+
+    // -1/(360x³) = (1/360) × (1/x)³
+    let inv_360 = fp::divide(fp::FIXED_ONE, fp::from_integer(360))?;
+    let term5 = fp::multiply(inv_360, inv_x3)?;
+    result = result.checked_sub(term5)?;
+
+    // +1/(1260x⁵) — skip if 1/x⁵ overflows (x < 1, never here since x ≥ 5)
+    let inv_x5 = fp::multiply(inv_x3, inv_x2)?;
+    let inv_1260 = fp::divide(fp::FIXED_ONE, fp::from_integer(1260))?;
+    let term6 = fp::multiply(inv_1260, inv_x5)?;
+    result = result.checked_add(term6)?;
+
+    // -1/(1680x⁷) — skip if overflow (term is negligible for x > ~21)
+    let term7 = fp::multiply(inv_x5, inv_x2)
+        .and_then(|inv_x7| {
+            let inv_1680 = fp::divide(fp::FIXED_ONE, fp::from_integer(1680))?;
+            fp::multiply(inv_1680, inv_x7)
+        })
+        .unwrap_or(0);
+    result = result.checked_sub(term7)?;
+
+    result.checked_add(acc)
 }
 
 // ─── Binomial probability ─────────────────────────────────────────────────────

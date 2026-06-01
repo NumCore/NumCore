@@ -135,7 +135,8 @@ fn apply_binary_operator(
                 let theta_new = fp::multiply(theta, right.re)?;
                 return Complex::from_polar(r_new, theta_new);
             }
-            None
+            // General complex exponentiation: a^b = exp(b * ln(a))
+            Complex::exp(right.mul(Complex::ln(left)?)?)
         }
     }
 }
@@ -287,8 +288,186 @@ fn apply_three_arg_function(
     }
 }
 
-const SIMPSONS_INTERVALS: i64 = 100;
 const INTEGRATION_SNAP_THRESHOLD: i64 = 4295;
+
+// ─── Adaptive Simpson integration ──────────────────────────────────────────
+
+const ADAPTIVE_TOL: i64 = 43;       // τ ≈ 1e-8 in Q31.32 (43 ULP)
+const ADAPTIVE_MAX_DEPTH: u32 = 20;
+const ADAPTIVE_MAX_EVALS: u32 = 2000;
+const ADAPTIVE_MAX_STACK: usize = 24;
+
+#[derive(Clone, Copy)]
+struct AdSimpTask {
+    a: i64,
+    b: i64,
+    fa_re: i64,
+    fb_re: i64,
+    tol: i64,
+    depth: u32,
+}
+
+fn simpson_step(h: i64, fa: i64, fm: i64, fb: i64) -> Option<i64> {
+    let ws = (fa as i128) + 4 * (fm as i128) + (fb as i128);
+    let prod = (h as i128) * ws;
+    let result = prod / (6 * fp::SCALE as i128);
+    if result > i64::MAX as i128 || result < i64::MIN as i128 {
+        return None;
+    }
+    Some(result as i64)
+}
+
+fn adaptive_simpson_integrate(
+    variable: u8,
+    start: Complex,
+    end: Complex,
+    body_index: usize,
+    tree: &ParseTree,
+    vars: &mut VariableStore,
+    angle_mode: AngleMode,
+) -> Option<Complex> {
+    if start.im != 0 || end.im != 0 {
+        return None;
+    }
+
+    let (a, b, negate) = if start.re <= end.re {
+        (start.re, end.re, false)
+    } else {
+        (end.re, start.re, true)
+    };
+
+    vars.write_register(variable, Complex::from_real(a));
+    let fa = evaluate_node(tree, body_index, vars, angle_mode)?;
+    if !fa.is_real() {
+        return None;
+    }
+
+    vars.write_register(variable, Complex::from_real(b));
+    let fb = evaluate_node(tree, body_index, vars, angle_mode)?;
+    if !fb.is_real() {
+        return None;
+    }
+
+    if a == b {
+        return Some(Complex::zero());
+    }
+
+    let mut stack: [AdSimpTask; ADAPTIVE_MAX_STACK] = [AdSimpTask {
+        a: 0, b: 0, fa_re: 0, fb_re: 0, tol: 0, depth: 0,
+    }; ADAPTIVE_MAX_STACK];
+    let mut stack_len: u32 = 1;
+    let mut result: i64 = 0;
+    let mut total_evals: u32 = 2;
+
+    stack[0] = AdSimpTask {
+        a,
+        b,
+        fa_re: fa.re,
+        fb_re: fb.re,
+        tol: ADAPTIVE_TOL,
+        depth: 0,
+    };
+
+    while stack_len > 0 {
+        stack_len -= 1;
+        let task = stack[stack_len as usize];
+
+        if task.depth >= ADAPTIVE_MAX_DEPTH || total_evals >= ADAPTIVE_MAX_EVALS {
+            let h = task.b.wrapping_sub(task.a);
+            let m = task.a + (h >> 1);
+            vars.write_register(variable, Complex::from_real(m));
+            let fm = evaluate_node(tree, body_index, vars, angle_mode)?;
+            if !fm.is_real() {
+                return None;
+            }
+            total_evals += 1;
+            let s = simpson_step(h, task.fa_re, fm.re, task.fb_re)?;
+            result = result.saturating_add(s);
+            continue;
+        }
+
+        let h = task.b.checked_sub(task.a)?;
+        let m = task.a + (h >> 1);
+
+        vars.write_register(variable, Complex::from_real(m));
+        let fm = evaluate_node(tree, body_index, vars, angle_mode)?;
+        if !fm.is_real() {
+            return None;
+        }
+        total_evals += 1;
+
+        let s_ab = simpson_step(h, task.fa_re, fm.re, task.fb_re)?;
+
+        let am_mid = task.a + ((m - task.a) >> 1);
+        vars.write_register(variable, Complex::from_real(am_mid));
+        let fl = evaluate_node(tree, body_index, vars, angle_mode)?;
+        if !fl.is_real() {
+            return None;
+        }
+        total_evals += 1;
+
+        let mb_mid = m + ((task.b - m) >> 1);
+        vars.write_register(variable, Complex::from_real(mb_mid));
+        let fr = evaluate_node(tree, body_index, vars, angle_mode)?;
+        if !fr.is_real() {
+            return None;
+        }
+        total_evals += 1;
+
+        let s_am = simpson_step(m - task.a, task.fa_re, fl.re, fm.re)?;
+        let s_mb = simpson_step(task.b - m, fm.re, fr.re, task.fb_re)?;
+
+        let error = (s_am as i128).wrapping_add(s_mb as i128).wrapping_sub(s_ab as i128);
+        let error_abs = if error < 0 {
+            error.wrapping_neg() as u128
+        } else {
+            error as u128
+        };
+        let threshold = 15u128 * (task.tol as u128);
+
+        if error_abs < threshold {
+            result = result.saturating_add(s_am.saturating_add(s_mb));
+        } else {
+            let child_tol = (task.tol >> 1).max(1);
+            let new_len = stack_len + 2;
+            if (new_len as usize) < stack.len() {
+                let idx = stack_len as usize;
+                stack[idx] = AdSimpTask {
+                    a: m,
+                    b: task.b,
+                    fa_re: fm.re,
+                    fb_re: task.fb_re,
+                    tol: child_tol,
+                    depth: task.depth + 1,
+                };
+                stack[idx + 1] = AdSimpTask {
+                    a: task.a,
+                    b: m,
+                    fa_re: task.fa_re,
+                    fb_re: fm.re,
+                    tol: child_tol,
+                    depth: task.depth + 1,
+                };
+                stack_len = new_len;
+            } else {
+                result = result.saturating_add(s_am.saturating_add(s_mb));
+            }
+        }
+    }
+
+    let final_result = if negate {
+        result.wrapping_neg()
+    } else {
+        result
+    };
+
+    let nearest = fp::round(final_result);
+    if (final_result - nearest).abs() < INTEGRATION_SNAP_THRESHOLD {
+        Some(Complex::from_real(nearest))
+    } else {
+        Some(Complex::from_real(final_result))
+    }
+}
 
 fn evaluate_loop_aggregate(
     operation: LoopOperation,
@@ -335,48 +514,15 @@ fn evaluate_loop_aggregate(
             Some(accumulator)
         }
 
-        LoopOperation::Integration => {
-            if start.im != 0 || end.im != 0 {
-                return None;
-            }
-
-            let n = SIMPSONS_INTERVALS;
-
-            let range = end.re.checked_sub(start.re)?;
-            let h = fp::divide(range, fp::from_integer(n))?;
-
-            vars.write_register(variable, start);
-            let f_start = evaluate_node(tree, body_index, vars, angle_mode)?;
-
-            vars.write_register(variable, end);
-            let f_end = evaluate_node(tree, body_index, vars, angle_mode)?;
-
-            let mut sum = f_start.add(f_end);
-
-            for i in 1..n {
-                let i_fp = fp::from_integer(i);
-                let x = start.re.checked_add(fp::multiply(i_fp, h)?)?;
-
-                vars.write_register(variable, Complex::from_real(x));
-                let f_x = evaluate_node(tree, body_index, vars, angle_mode)?;
-
-                let coeff = if i % 2 == 1 { 4 } else { 2 };
-
-                let term = Complex::from_real(fp::from_integer(coeff)).mul(f_x)?;
-                sum = sum.add(term);
-            }
-
-            let h_times_sum = Complex::from_real(h).mul(sum)?;
-            let result = h_times_sum.div(Complex::from_real(fp::from_integer(3)))?;
-
-            let nearest = fp::round(result.re);
-
-            if (result.re - nearest).abs() < INTEGRATION_SNAP_THRESHOLD {
-                Some(Complex::new(nearest, result.im))
-            } else {
-                Some(result)
-            }
-        }
+        LoopOperation::Integration => adaptive_simpson_integrate(
+            variable,
+            start,
+            end,
+            body_index,
+            tree,
+            vars,
+            angle_mode,
+        ),
     })();
 
     if let Some(val) = saved {
