@@ -57,20 +57,39 @@ impl Complex {
     }
 
     pub fn div(self, other: Self) -> Option<Self> {
-        let c2 = fp::multiply(other.re, other.re)?;
-        let d2 = fp::multiply(other.im, other.im)?;
-        let den = c2.checked_add(d2)?;
-        if den == 0 {
+        let a = self.re;
+        let b = self.im;
+        let c = other.re;
+        let d = other.im;
+
+        if c == 0 && d == 0 {
             return None;
         }
-        let ac = fp::multiply(self.re, other.re)?;
-        let bd = fp::multiply(self.im, other.im)?;
-        let num_re = ac.checked_add(bd)?;
-        let bc = fp::multiply(self.im, other.re)?;
-        let ad = fp::multiply(self.re, other.im)?;
-        let num_im = bc.checked_sub(ad)?;
-        let re = fp::divide(num_re, den)?;
-        let im = fp::divide(num_im, den)?;
+
+        let (re, im) = if c.unsigned_abs() >= d.unsigned_abs() {
+            let r = fp::divide(d, c)?;
+            let den = c.checked_add(fp::multiply(d, r)?)?;
+            if den == 0 {
+                return None;
+            }
+            let num_re = a.checked_add(fp::multiply(b, r)?)?;
+            let num_im = b.checked_sub(fp::multiply(a, r)?)?;
+            let re = fp::divide(num_re, den)?;
+            let im = fp::divide(num_im, den)?;
+            (re, im)
+        } else {
+            let r = fp::divide(c, d)?;
+            let den = fp::multiply(c, r)?.checked_add(d)?;
+            if den == 0 {
+                return None;
+            }
+            let num_re = fp::multiply(a, r)?.checked_add(b)?;
+            let num_im = fp::multiply(b, r)?.checked_sub(a)?;
+            let re = fp::divide(num_re, den)?;
+            let im = fp::divide(num_im, den)?;
+            (re, im)
+        };
+
         Some(Self { re, im })
     }
 
