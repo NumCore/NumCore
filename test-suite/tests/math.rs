@@ -1494,15 +1494,23 @@ fn eval_expr_with_mode(expr: &str, vars: &mut VariableStore, angle_mode: AngleMo
         node_count: 0,
         root_index: 0,
     };
-    engine::evaluate_expression(
+    match engine::evaluate_expression(
         expr.as_bytes(),
         vars,
         &mut lex_scratch,
         &mut parse_scratch,
         MathMode::Standard,
         angle_mode,
-    )
-    .and_then(|c| if c.im != 0 { None } else { Some(c.re) })
+    ) {
+        engine::EvalResult::Value(c) => {
+            if c.im != 0 {
+                None
+            } else {
+                Some(c.re)
+            }
+        }
+        _ => None,
+    }
 }
 
 fn eval_expr(expr: &str, vars: &mut VariableStore) -> Option<i64> {
@@ -1523,14 +1531,17 @@ fn eval_complex_with_mode(
         node_count: 0,
         root_index: 0,
     };
-    engine::evaluate_expression(
+    match engine::evaluate_expression(
         expr.as_bytes(),
         vars,
         &mut lex_scratch,
         &mut parse_scratch,
         MathMode::Advanced,
         angle_mode,
-    )
+    ) {
+        engine::EvalResult::Value(c) => Some(c),
+        _ => None,
+    }
 }
 
 fn eval_complex(expr: &str, vars: &mut VariableStore) -> Option<Complex> {
@@ -2308,7 +2319,25 @@ fn test_complex_expression() {
     assert_approx_eq(result, fp::from_integer(15), 10);
 }
 
-// ─── 32. Multiply saturation in evaluator ────────────────────────────────────
+// ─── 32. ∫_0^10 sinh(X) dX ≈ cosh(10) - 1 ≈ 11012.23292 ───────────────────
+
+#[test]
+fn test_integration_sinh() {
+    let mut vars = VariableStore::new();
+    // The analytical result using the library's own cosh
+    let analytical = eval_expr("cosh(10)-1", &mut vars).unwrap();
+    // The Simpson integration
+    let result = eval_expr("int(sinh(X),X,0,10)", &mut vars).unwrap();
+    let diff = (result - analytical).abs();
+    // The error floor is set by natural_exp precision (≈1.7e-6 for this integral)
+    // propagating through thousands of evaluations.  Tighter than 2e-6 is not
+    // achievable without improving natural_exp itself.
+    assert!(diff < 10_000i64,
+        "∫sinh error {:.2e} (>2e-6)",
+        diff as f64 / 4294967296.0);
+}
+
+// ─── 33. Multiply saturation in evaluator ────────────────────────────────────
 
 #[test]
 fn test_evaluator_saturating_add() {
@@ -2408,7 +2437,7 @@ fn test_complex_standard_mode_rejects_i() {
         MathMode::Standard,
         AngleMode::Radians,
     );
-    assert_eq!(r, None);
+    assert!(matches!(r, engine::EvalResult::DomainError));
 }
 
 #[test]
@@ -3552,4 +3581,207 @@ fn test_motivating_sqrt_integral() {
         error < 100,
         "Error should be < 100 ULP (~2.3e-8) for sqrt(x) near singularity"
     );
+}
+
+// ─── Overflow display tests ───────────────────────────────────────────────────
+
+fn check_result(expr: &str, expected_kind: &str) {
+    let mut vars = VariableStore::new();
+    let mut lex_scratch = lexer::LexResult {
+        tokens: [lexer::Token::Number(0); lexer::MAX_TOKEN_COUNT],
+        token_count: 0,
+    };
+    let mut parse_scratch = parser::ParseTree {
+        nodes: [parser::AstNode::Literal(0); parser::MAX_NODE_COUNT],
+        node_count: 0,
+        root_index: 0,
+    };
+    let r = engine::evaluate_expression(
+        expr.as_bytes(),
+        &mut vars,
+        &mut lex_scratch,
+        &mut parse_scratch,
+        MathMode::Standard,
+        AngleMode::Radians,
+    );
+    let kind = match r {
+        engine::EvalResult::Value(_) => "Value",
+        engine::EvalResult::Overflow { .. } => "Overflow",
+        engine::EvalResult::DomainError => "Domain",
+    };
+    assert_eq!(
+        kind, expected_kind,
+        "expr `{}`: expected {}, got {}",
+        expr, expected_kind, kind
+    );
+    if let engine::EvalResult::Overflow {
+        mantissa,
+        exponent,
+        negative,
+    } = r
+    {
+        let mut buf = [0u8; 48];
+        if let Some(s) = engine::format_overflow(mantissa, exponent, negative, &mut buf) {
+            let formatted = core::str::from_utf8(s).unwrap();
+            assert!(
+                formatted.contains('E'),
+                "overflow display should contain 'E': {}",
+                formatted
+            );
+        }
+        let mant_val = mantissa >> 32;
+        assert!(
+            mant_val >= 1 && mant_val <= 9,
+            "mantissa should be in [1,10), got {}",
+            mant_val
+        );
+    }
+}
+
+#[test]
+fn test_overflow_domain_cases() {
+    check_result("exp(25)", "Overflow");
+    check_result("sinh(30)", "Overflow");
+    check_result("cosh(30)", "Overflow");
+    check_result("1000000000*1000000000", "Overflow");
+    check_result("100^10", "Overflow");
+    check_result("exp(100)", "Overflow");
+    check_result("sqrt(-1)", "Domain");
+    check_result("asin(2)", "Domain");
+    check_result("ln(0)", "Domain");
+    check_result("2+2", "Value");
+    check_result("exp(10)", "Value");
+}
+
+#[test]
+fn test_overflow_format() {
+    let mut buf = [0u8; 48];
+    // mantissa=Q31.32(1.5), exponent=99
+    let mantissa: i64 = (1.5 * 4294967296.0) as i64;
+    let s = engine::format_overflow(mantissa, 99, false, &mut buf).unwrap();
+    let formatted = core::str::from_utf8(s).unwrap();
+    assert_eq!(formatted, "1.5E99", "got: {}", formatted);
+
+    // negative small: -1.0E-5
+    let mantissa_one: i64 = 4294967296;
+    let s = engine::format_overflow(mantissa_one, -5, true, &mut buf).unwrap();
+    let formatted = core::str::from_utf8(s).unwrap();
+    assert_eq!(formatted, "-1E-5", "got: {}", formatted);
+
+    // Exponent |100| > 99 → None (cannot format)
+    let mantissa: i64 = (1.5 * 4294967296.0) as i64;
+    assert!(engine::format_overflow(mantissa, 100, false, &mut buf).is_none());
+
+    // Exponent |-100| > 99 → None
+    assert!(engine::format_overflow(mantissa, -100, false, &mut buf).is_none());
+
+    // Zero exponent
+    let s = engine::format_overflow(mantissa_one, 0, false, &mut buf).unwrap();
+    let formatted = core::str::from_utf8(s).unwrap();
+    assert_eq!(formatted, "1E0", "got: {}", formatted);
+
+    // Exponent i32::MAX > 99 → None
+    let mantissa_precise: i64 = (1.000001 * 4294967296.0) as i64;
+    assert!(engine::format_overflow(mantissa_precise, i32::MAX, false, &mut buf).is_none());
+
+    // Exponent i32::MIN < -99 → None
+    assert!(engine::format_overflow(mantissa_precise, i32::MIN, false, &mut buf).is_none());
+}
+
+
+
+fn eval_overflow(expr: &str) -> Option<(i64, i32, bool)> {
+    let mut vars = VariableStore::new();
+    let mut lex_scratch = lexer::LexResult { tokens: [lexer::Token::Number(0); lexer::MAX_TOKEN_COUNT], token_count: 0 };
+    let mut parse_scratch = parser::ParseTree { nodes: [parser::AstNode::Literal(0); parser::MAX_NODE_COUNT], node_count: 0, root_index: 0 };
+    match engine::evaluate_expression(expr.as_bytes(), &mut vars, &mut lex_scratch, &mut parse_scratch, MathMode::Standard, AngleMode::Radians) {
+        engine::EvalResult::Overflow { mantissa, exponent, negative } => Some((mantissa, exponent, negative)),
+        _ => None,
+    }
+}
+
+#[test]
+fn test_overflow_binary_operations() {
+    // sinh(30) ≈ 5.343e12
+    let sinh30 = eval_overflow("sinh(30)").expect("sinh(30) should overflow");
+    let mant_f64 = |m: i64| m as f64 / 4294967296.0;
+    let m_sinh = mant_f64(sinh30.0);
+    assert!(m_sinh > 5.0 && m_sinh < 6.0, "sinh(30) mantissa {} not in [5,6)", m_sinh);
+    assert_eq!(sinh30.1, 12, "sinh(30) exponent should be 12");
+    assert!(!sinh30.2, "sinh(30) should be positive");
+
+    // sinh(30)/2 ≈ 2.672e12 — mantissa should HALVE
+    let sinh30_div2 = eval_overflow("sinh(30)/2").expect("sinh(30)/2 should overflow");
+    let m_div2 = mant_f64(sinh30_div2.0);
+    assert!(m_div2 > 2.0 && m_div2 < 3.0, "sinh(30)/2 mantissa {} not in [2,3)", m_div2);
+    assert!(m_div2 < m_sinh - 2.0, "sinh(30)/2 mantissa {} should be much smaller than sinh(30) {}", m_div2, m_sinh);
+    assert_eq!(sinh30_div2.1, 12, "sinh(30)/2 exponent should be 12");
+    assert!(!sinh30_div2.2, "sinh(30)/2 should be positive");
+
+    // sinh(30)*2 ≈ 1.069e13 — exponent should increase
+    let sinh30_mul2 = eval_overflow("sinh(30)*2").expect("sinh(30)*2 should overflow");
+    let m_mul2 = mant_f64(sinh30_mul2.0);
+    assert!(m_mul2 > 1.0 && m_mul2 < 2.0, "sinh(30)*2 mantissa {} not in [1,2)", m_mul2);
+    assert_eq!(sinh30_mul2.1, 13, "sinh(30)*2 exponent should be 13, got {}", sinh30_mul2.1);
+    assert!(!sinh30_mul2.2, "sinh(30)*2 should be positive");
+
+    // -sinh(30) ≈ -5.343e12 — should be negative
+    let neg_sinh30 = eval_overflow("-sinh(30)").expect("-sinh(30) should overflow");
+    assert_eq!(neg_sinh30.1, 12, "-sinh(30) exponent should be 12");
+    assert!(neg_sinh30.2, "-sinh(30) should be negative");
+
+    // sinh(30)*3 — different factor
+    let sinh30_mul3 = eval_overflow("sinh(30)*3").expect("sinh(30)*3 should overflow");
+    let m_mul3 = mant_f64(sinh30_mul3.0);
+    assert!(m_mul3 > 1.0 && m_mul3 < 2.0, "sinh(30)*3 mantissa {} not in [1,2)", m_mul3);
+    assert_eq!(sinh30_mul3.1, 13, "sinh(30)*3 exponent should be 13, got {}", sinh30_mul3.1);
+
+    // sinh(30)/10 — reduces exponent
+    let sinh30_div10 = eval_overflow("sinh(30)/10").expect("sinh(30)/10 should overflow");
+    let m_div10 = mant_f64(sinh30_div10.0);
+    assert!(m_div10 > 5.0 && m_div10 < 6.0, "sinh(30)/10 mantissa {} not in [5,6)", m_div10);
+    assert_eq!(sinh30_div10.1, 11, "sinh(30)/10 exponent should be 11, got {}", sinh30_div10.1);
+
+    // exp(100) * 100
+    let exp100 = eval_overflow("exp(100)").expect("exp(100) should overflow");
+    assert_eq!(exp100.1, 43, "exp(100) exponent should be 43, got {}", exp100.1);
+    let exp100_mul100 = eval_overflow("exp(100)*100").expect("exp(100)*100 should overflow");
+    assert_eq!(exp100_mul100.1, 45, "exp(100)*100 exponent should be 45, got {}", exp100_mul100.1);
+
+    // Power: sinh(30)^2 ≈ 2.85e25 — exponent should be ~25
+    let sinh30_pow2 = eval_overflow("sinh(30)^2").expect("sinh(30)^2 should overflow");
+    assert_eq!(sinh30_pow2.1, 25, "sinh(30)^2 exponent should be 25, got {}", sinh30_pow2.1);
+    let m_pow2 = mant_f64(sinh30_pow2.0);
+    assert!(m_pow2 > 2.0 && m_pow2 < 4.0, "sinh(30)^2 mantissa {} not in [2,4)", m_pow2);
+
+    // Power: sinh(30)^3 ≈ 1.52e38 — exponent should be ~38
+    let sinh30_pow3 = eval_overflow("sinh(30)^3").expect("sinh(30)^3 should overflow");
+    assert_eq!(sinh30_pow3.1, 38, "sinh(30)^3 exponent should be 38, got {}", sinh30_pow3.1);
+
+    // constant / overflow → NOT overflow (result is ~0)
+    assert!(eval_overflow("5/sinh(30)").is_none(), "5/sinh(30) should NOT overflow");
+
+    // constant ^ overflow → NOT overflow (uncomputable)
+    assert!(eval_overflow("2^sinh(30)").is_none(), "2^sinh(30) should NOT overflow");
+
+    // Multiply in apply_binary_operator: 2^20 * 2^20 = 2^40 ≈ 1.1e12
+    let mul_large = eval_overflow("1048576*1048576").expect("1048576^2 should overflow");
+    assert_eq!(mul_large.1, 12, "1048576*1048576 exponent should be 12, got {}", mul_large.1);
+    let m_mul_large = mant_f64(mul_large.0);
+    assert!(m_mul_large > 1.0 && m_mul_large < 1.2, "1048576*1048576 mantissa {} not in [1,1.2)", m_mul_large);
+}
+
+#[test]
+fn trace_sinh100() {
+    use crate::fp as _fp;
+    let x = _fp::from_integer(100);
+    let log10_exp = _fp::divide(x, _fp::FIXED_LN10).unwrap();
+    let log10_sinh = log10_exp - 1_292_913_986i64;
+    assert!(log10_sinh >> 32 == 43);
+    let frac = log10_sinh - (43 << 32);
+    let frac_ln10 = _fp::multiply(frac, _fp::FIXED_LN10).unwrap();
+    let mantissa = _fp::natural_exp(frac_ln10).unwrap();
+    let mantissa_f64 = mantissa as f64 / 4294967296.0;
+    assert!((mantissa_f64 - 1.34406).abs() < 0.0001,
+        "mantissa {} too far from 1.34406", mantissa_f64);
 }
