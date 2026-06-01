@@ -127,16 +127,16 @@ const CORDIC_ATAN_TABLE: [i64; 22] = [
 //
 // Remez-optimised for [0, 1]; max error < 1.6e-10 after Q31.32 quantisation.
 
-const ATAN_P0: i64 = SCALE;                     //  1.0000000000
-const ATAN_P2: i64 = 8_660_121_455;             //  2.0163416525
-const ATAN_P4: i64 = 5_210_237_323;             //  1.2131029095
-const ATAN_P6: i64 = 928_627_796;               //  0.2162130075
-const ATAN_P8: i64 = 22_578_749;                //  0.0052570247
+const ATAN_P0: i64 = SCALE; //  1.0000000000
+const ATAN_P2: i64 = 8_660_121_455; //  2.0163416525
+const ATAN_P4: i64 = 5_210_237_323; //  1.2131029095
+const ATAN_P6: i64 = 928_627_796; //  0.2162130075
+const ATAN_P8: i64 = 22_578_749; //  0.0052570247
 
-const ATAN_Q2: i64 = 10_091_777_336;            //  2.3496750128
-const ATAN_Q4: i64 = 7_715_167_325;             //  1.7963273742
-const ATAN_Q6: i64 = 2_095_582_640;             //  0.4879158549
-const ATAN_Q8: i64 = 142_430_693;               //  0.0331622299
+const ATAN_Q2: i64 = 10_091_777_336; //  2.3496750128
+const ATAN_Q4: i64 = 7_715_167_325; //  1.7963273742
+const ATAN_Q6: i64 = 2_095_582_640; //  0.4879158549
+const ATAN_Q8: i64 = 142_430_693; //  0.0331622299
 
 // ─── Core arithmetic ──────────────────────────────────────────────────────────
 
@@ -715,20 +715,28 @@ pub fn atan(x: i64) -> i64 {
     // Horner's method:  P(t) = (((p8·t + p6)·t + p4)·t + p2)·t + p0
     let p = multiply(
         multiply(
-            multiply(
-                multiply(ATAN_P8, t).unwrap() + ATAN_P6, t,
-            ).unwrap() + ATAN_P4, t,
-        ).unwrap() + ATAN_P2, t,
-    ).unwrap() + ATAN_P0;
+            multiply(multiply(ATAN_P8, t).unwrap() + ATAN_P6, t).unwrap() + ATAN_P4,
+            t,
+        )
+        .unwrap()
+            + ATAN_P2,
+        t,
+    )
+    .unwrap()
+        + ATAN_P0;
 
     // Q(t) = (((q8·t + q6)·t + q4)·t + q2)·t + 1
     let q = multiply(
         multiply(
-            multiply(
-                multiply(ATAN_Q8, t).unwrap() + ATAN_Q6, t,
-            ).unwrap() + ATAN_Q4, t,
-        ).unwrap() + ATAN_Q2, t,
-    ).unwrap() + FIXED_ONE;
+            multiply(multiply(ATAN_Q8, t).unwrap() + ATAN_Q6, t).unwrap() + ATAN_Q4,
+            t,
+        )
+        .unwrap()
+            + ATAN_Q2,
+        t,
+    )
+    .unwrap()
+        + FIXED_ONE;
 
     // atan(r) = r · P / Q
     let frac = divide(p, q).unwrap();
@@ -738,7 +746,11 @@ pub fn atan(x: i64) -> i64 {
         angle = FIXED_PI_OVER_2 - angle;
     }
 
-    if negative { -angle } else { angle }
+    if negative {
+        -angle
+    } else {
+        angle
+    }
 }
 
 /// Four-quadrant arctangent atan2(y, x) in Q31.32 radians.
@@ -834,26 +846,26 @@ const MAX_POS_EXP_ARG: i64 = (MAX_EXP_SHIFT + 1) * FIXED_LN2 - 1;
 const EXP_C0: i64 = 4294967296; //  1.0000000000
 const EXP_C1: i64 = 4294967340; //  1.0000000102
 const EXP_C2: i64 = 2147482330; //  0.4999996930
-const EXP_C3: i64 = 715843011;  //  0.1666701890
-const EXP_C4: i64 = 178872053;  //  0.0416468953
-const EXP_C5: i64 = 36048604;   //  0.0083932197
-const EXP_C6: i64 = 5538864;    //  0.0012896172
-const EXP_C7: i64 = 1209186;    //  0.0002815356
+const EXP_C3: i64 = 715843011; //  0.1666701890
+const EXP_C4: i64 = 178872053; //  0.0416468953
+const EXP_C5: i64 = 36048604; //  0.0083932197
+const EXP_C6: i64 = 5538864; //  0.0012896172
+const EXP_C7: i64 = 1209186; //  0.0002815356
 
 /// Degree-10 minimax polynomial for ln(1+t) on t ∈ [√½−1, √2−1].
 /// Computed as t × p(t) where p(t) ≈ ln(1+t)/t (degree 9).
 /// Forces exact zero at t=0 (ln(1) = 0).
 /// Max error ~1.62×10⁻⁹ (< 10⁻⁶).
-const LOG_C0: i64 = 0;           //  0.0000000000
-const LOG_C1: i64 = 4294967293;  //  0.9999999994
+const LOG_C0: i64 = 0; //  0.0000000000
+const LOG_C1: i64 = 4294967293; //  0.9999999994
 const LOG_C2: i64 = -2147483154; // -0.4999998850
-const LOG_C3: i64 = 1431656281;  //  0.3333334535
+const LOG_C3: i64 = 1431656281; //  0.3333334535
 const LOG_C4: i64 = -1073809646; // -0.2500157909
-const LOG_C5: i64 = 859033808;   //  0.2000093944
-const LOG_C6: i64 = -713324035;  // -0.1660836941
-const LOG_C7: i64 = 609870329;   //  0.1419965013
-const LOG_C8: i64 = -569771710;  // -0.1326603139
-const LOG_C9: i64 = 550039721;   //  0.1280661024
+const LOG_C5: i64 = 859033808; //  0.2000093944
+const LOG_C6: i64 = -713324035; // -0.1660836941
+const LOG_C7: i64 = 609870329; //  0.1419965013
+const LOG_C8: i64 = -569771710; // -0.1326603139
+const LOG_C9: i64 = 550039721; //  0.1280661024
 const LOG_C10: i64 = -320025997; // -0.0745118588
 
 /// e^x for Q31.32 x.

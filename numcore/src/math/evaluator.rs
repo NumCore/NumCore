@@ -292,7 +292,7 @@ const INTEGRATION_SNAP_THRESHOLD: i64 = 4295;
 
 // ─── Adaptive Simpson integration ──────────────────────────────────────────
 
-const ADAPTIVE_TOL: i64 = 43;       // τ ≈ 1e-8 in Q31.32 (43 ULP)
+const ADAPTIVE_TOL: i64 = 43; // τ ≈ 1e-8 in Q31.32 (43 ULP)
 const ADAPTIVE_MAX_DEPTH: u32 = 20;
 const ADAPTIVE_MAX_EVALS: u32 = 2000;
 const ADAPTIVE_MAX_STACK: usize = 24;
@@ -353,7 +353,12 @@ fn adaptive_simpson_integrate(
     }
 
     let mut stack: [AdSimpTask; ADAPTIVE_MAX_STACK] = [AdSimpTask {
-        a: 0, b: 0, fa_re: 0, fb_re: 0, tol: 0, depth: 0,
+        a: 0,
+        b: 0,
+        fa_re: 0,
+        fb_re: 0,
+        tol: 0,
+        depth: 0,
     }; ADAPTIVE_MAX_STACK];
     let mut stack_len: u32 = 1;
     let mut result: i64 = 0;
@@ -417,7 +422,9 @@ fn adaptive_simpson_integrate(
         let s_am = simpson_step(m - task.a, task.fa_re, fl.re, fm.re)?;
         let s_mb = simpson_step(task.b - m, fm.re, fr.re, task.fb_re)?;
 
-        let error = (s_am as i128).wrapping_add(s_mb as i128).wrapping_sub(s_ab as i128);
+        let error = (s_am as i128)
+            .wrapping_add(s_mb as i128)
+            .wrapping_sub(s_ab as i128);
         let error_abs = if error < 0 {
             error.wrapping_neg() as u128
         } else {
@@ -514,15 +521,9 @@ fn evaluate_loop_aggregate(
             Some(accumulator)
         }
 
-        LoopOperation::Integration => adaptive_simpson_integrate(
-            variable,
-            start,
-            end,
-            body_index,
-            tree,
-            vars,
-            angle_mode,
-        ),
+        LoopOperation::Integration => {
+            adaptive_simpson_integrate(variable, start, end, body_index, tree, vars, angle_mode)
+        }
     })();
 
     if let Some(val) = saved {
