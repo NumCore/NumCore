@@ -1,61 +1,23 @@
-//! # Lexer (Math Engine — Layer 6)
-//!
-//! Converts an expression byte slice into a flat array of typed `Token` values.
-//!
-//! ## Full token set
-//!   Numbers    — integer and decimal literals  (e.g. 42, 3.14)
-//!   Operators  — +  -  *  /  ^  %
-//!   Grouping   — (  )
-//!   Functions  — sin cos tan asin acos atan sqrt abs log ln log2 exp
-//!                floor ceil round deg rad sto
-//!   Constants  — pi  e
-//!   Variables  — Ans  A B C D E F G H I J K L M N O P Q R S T U V W X Y Z
-//!
-//! ## Lexing rules
-//!   - Whitespace is discarded between tokens
-//!   - Identifiers are case-sensitive (sin only, not SIN or Sin)
-//!   - A minus sign following an operator, opening paren, or at the
-//!     start of the expression is classified as UnaryMinus, not Minus,
-//!     so the parser can build a unary-negation node correctly
-//!   - Decimal numbers are parsed and immediately converted to Q31.32
-
 use super::fixed_point;
 use super::MathMode;
 
-/// Maximum tokens from one expression. A 64-char expression can yield at most
-/// ~32 operator/operand pairs; 128 gives generous headroom.
-pub const MAX_TOKEN_COUNT: usize = 32;
-// Sized for the LM3S811's 8 KB SRAM. A 64-char expression yields at most
-// ~20 tokens in practice; 32 gives headroom without blowing the stack.
+pub const MAX_TOKEN_COUNT: usize = 64;
 
-// ─── Token ────────────────────────────────────────────────────────────────────
-
-/// A single lexical unit in a calculator expression.
-///
-/// All numeric values are stored as Q31.32 fixed-point (i32).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Token {
-    // ── Literals ──
-    /// A numeric literal already converted to Q31.32.
     Number(i64),
-
-    // ── Binary operators (in precedence order, low → high) ──
-    Plus,    // +
-    Minus,   // −  (binary subtraction)
-    Star,    // ×
-    Slash,   // ÷
-    Percent, // %  (modulo)
-    Caret,   // ^  (exponentiation, right-associative)
-    Comma,   // ,  (argument separator in multi-arg functions)
-
-    // ── Unary operator ──
-    UnaryMinus, // −  (negation, prefix)
-
-    // ── Grouping ──
-    LeftParen,  // (
-    RightParen, // )
-
-    // ── Named functions (all take one argument in parens) ──
+    Plus,
+    Minus,
+    Star,
+    Slash,
+    Percent,
+    Caret,
+    Comma,
+    UnaryMinus,
+    LeftParen,
+    RightParen,
+    LeftBracket,
+    RightBracket,
     FuncSinH,
     FuncCosH,
     FuncTanH,
@@ -70,70 +32,57 @@ pub enum Token {
     FuncAtan,
     FuncSqrt,
     FuncAbs,
-    FuncLog, // log10
-    FuncLn,  // natural log
+    FuncLog,
+    FuncLn,
     FuncLog2,
-    FuncExp, // e^x
+    FuncExp,
     FuncFloor,
     FuncCeil,
     FuncRound,
-    FuncDeg, // radians → degrees
-    FuncRad, // degrees → radians
-
-    // ── Multi-argument functions ──
-    // These take the form: name(expr, var, start, end) or name(n, k, p)
-    FuncSum,      // sum(expr, var, start, end) — Σ
-    FuncInt,      // int(expr, var, a, b)       — ∫ via Simpson's rule
-    FuncBinomP,   // binomP(n, k, p)
-    FuncPoissonP, // poissonP(lambda, k)
-    FuncChiCDF,   // chiCDF(x, k)
-    FuncNthRoot,  // nthRoot(x, n)
-    FuncSto,      // sto(value, var) — store value into a register
-    FuncLnGamma,  // lnGamma(x)
-
-    // ── Named constants ──
-    ConstPi, // π
-    ConstE,  // e (Euler's number)
-    ConstI,  // i (imaginary unit, √−1)
-
-    // ── Variables ──
-    VarAns,          // Ans
-    VarRegister(u8), // A–Z (stores the letter byte)
+    FuncDeg,
+    FuncRad,
+    FuncSum,
+    FuncInt,
+    FuncDet,
+    FuncTranspose,
+    FuncIdentity,
+    FuncInv,
+    FuncCofactor,
+    FuncAdjugate,
+    FuncBinomP,
+    FuncPoissonP,
+    FuncChiCDF,
+    FuncNthRoot,
+    FuncSto,
+    FuncLnGamma,
+    ConstPi,
+    ConstE,
+    ConstI,
+    VarAns,
+    VarRegister(u8),
+    MatRegister(u8),
 }
 
-// ─── LexResult ────────────────────────────────────────────────────────────────
-
-/// Output of a successful lex pass: a fixed-size token array plus a count.
 pub struct LexResult {
     pub tokens: [Token; MAX_TOKEN_COUNT],
     pub token_count: usize,
 }
 
-// ─── Public API ───────────────────────────────────────────────────────────────
-
-/// Tokenise an expression byte slice, writing tokens into the provided scratch buffer.
-///
-/// Resets `result` before use so stale tokens from prior calls are never visible.
-/// Returns `None` if any unrecognised character or malformed number is found.
-/// Whitespace is discarded. Identifiers are case-sensitive.
 pub fn tokenise_expression(
     expression: &[u8],
     mut result: &mut LexResult,
     mode: MathMode,
 ) -> Option<()> {
-    // Reset scratch buffer — must clear token_count so old tokens are invisible.
     result.token_count = 0;
 
     let mut cursor = 0usize;
 
     while cursor < expression.len() {
-        // Skip whitespace.
         if expression[cursor] == b' ' {
             cursor += 1;
             continue;
         }
 
-        // ── Number literal ────────────────────────────────────────────────────
         if expression[cursor].is_ascii_digit()
             || (expression[cursor] == b'.'
                 && cursor + 1 < expression.len()
@@ -145,14 +94,6 @@ pub fn tokenise_expression(
             continue;
         }
 
-        // ── Imaginary unit suffix (Advanced mode only) ───────────────────────
-        // In Advanced mode, a letter 'i' immediately after a number literal
-        // is NOT an identifier — it is the imaginary unit. The number was
-        // already emitted as Token::Number above. We emit Token::ConstI as a
-        // second token so the parser can apply implicit multiplication.
-        // We only emit ConstI when 'i' is at an identifier boundary (followed
-        // by non-alphanumeric or end-of-input) so real identifiers like "int"
-        // are not split.
         if mode == MathMode::Advanced
             && cursor < expression.len()
             && expression[cursor] == b'i'
@@ -163,7 +104,6 @@ pub fn tokenise_expression(
             continue;
         }
 
-        // ── Single-character tokens ───────────────────────────────────────────
         let single = match expression[cursor] {
             b'(' => Some(Token::LeftParen),
             b')' => Some(Token::RightParen),
@@ -173,6 +113,8 @@ pub fn tokenise_expression(
             b'%' => Some(Token::Percent),
             b'^' => Some(Token::Caret),
             b',' => Some(Token::Comma),
+            b'[' if mode == MathMode::Matrix => Some(Token::LeftBracket),
+            b']' if mode == MathMode::Matrix => Some(Token::RightBracket),
             _ => None,
         };
         if let Some(token) = single {
@@ -181,7 +123,6 @@ pub fn tokenise_expression(
             continue;
         }
 
-        // ── Minus: binary subtraction or unary negation ───────────────────────
         if expression[cursor] == b'-' {
             let token = if is_unary_position(&result) {
                 Token::UnaryMinus
@@ -193,29 +134,21 @@ pub fn tokenise_expression(
             continue;
         }
 
-        // ── Identifier: function name, constant, or variable ─────────────────
         if expression[cursor].is_ascii_alphabetic() {
-            let (token, consumed) = parse_identifier(&expression[cursor..])?;
+            let Some((token, consumed)) = parse_identifier(&expression[cursor..], mode) else {
+                return None;
+            };
             append_token(&mut result, token)?;
             cursor += consumed;
             continue;
         }
 
-        // Unrecognised character — reject the expression.
         return None;
     }
 
     Some(())
 }
 
-// ─── Internal helpers ─────────────────────────────────────────────────────────
-
-/// Return true if the current position expects a unary (prefix) operator.
-///
-/// A minus is unary when it appears:
-///   - At the very start of the expression (no prior tokens)
-///   - After another operator (+, −, *, /, ^, %, unary−)
-///   - After an opening parenthesis or comma (argument separator)
 fn is_unary_position(result: &LexResult) -> bool {
     if result.token_count == 0 {
         return true;
@@ -230,14 +163,11 @@ fn is_unary_position(result: &LexResult) -> bool {
             | Token::Caret
             | Token::UnaryMinus
             | Token::LeftParen
+            | Token::LeftBracket
             | Token::Comma
     )
 }
 
-/// Parse a decimal or integer literal from the start of `slice`.
-///
-/// Converts the parsed value directly to Q31.32 fixed-point.
-/// Returns (fixed_point_value, bytes_consumed) or None on parse failure.
 fn parse_number_literal(slice: &[u8]) -> Option<(i64, usize)> {
     let mut cursor = 0usize;
     let mut integer_part: i128 = 0;
@@ -245,7 +175,6 @@ fn parse_number_literal(slice: &[u8]) -> Option<(i64, usize)> {
     let mut frac_divisor: i128 = 1;
     let mut has_frac = false;
 
-    // Integer digits before the decimal point.
     while cursor < slice.len() && slice[cursor].is_ascii_digit() {
         integer_part = integer_part
             .checked_mul(10)?
@@ -253,7 +182,6 @@ fn parse_number_literal(slice: &[u8]) -> Option<(i64, usize)> {
         cursor += 1;
     }
 
-    // Optional decimal point and fractional digits.
     if cursor < slice.len() && slice[cursor] == b'.' {
         cursor += 1;
         has_frac = true;
@@ -266,8 +194,6 @@ fn parse_number_literal(slice: &[u8]) -> Option<(i64, usize)> {
         }
     }
 
-    // Convert to Q31.32.
-    // integer_part × SCALE + frac_part × SCALE / frac_divisor
     let scaled_integer = integer_part * (fixed_point::SCALE as i128);
     let scaled_frac = if has_frac {
         (frac_part * (fixed_point::SCALE as i128)) / frac_divisor
@@ -276,7 +202,6 @@ fn parse_number_literal(slice: &[u8]) -> Option<(i64, usize)> {
     };
 
     let total = scaled_integer.checked_add(scaled_frac)?;
-    // Ensure it fits in i64.
     if total > i64::MAX as i128 || total < i64::MIN as i128 {
         return None;
     }
@@ -284,15 +209,7 @@ fn parse_number_literal(slice: &[u8]) -> Option<(i64, usize)> {
     Some((total as i64, cursor))
 }
 
-/// Parse an identifier (function name, constant, or variable) from `slice`.
-///
-/// Identifiers are case-sensitive. Function names and constants (`sin`, `pi`,
-/// `e`, `ans`, `sto`) are always lowercase. Single uppercase letters A–Z
-/// are variable registers. Single lowercase letters are unrecognised.
-/// Returns (Token, bytes_consumed) or None if unrecognised.
-fn parse_identifier(slice: &[u8]) -> Option<(Token, usize)> {
-    // Identifiers start with a letter and may continue with letters or digits.
-    // This allows names like "log2", "log10" to lex correctly as a single token.
+fn parse_identifier(slice: &[u8], mode: MathMode) -> Option<(Token, usize)> {
     let mut len = 0usize;
     if len < slice.len() && slice[len].is_ascii_alphabetic() {
         len += 1;
@@ -304,55 +221,84 @@ fn parse_identifier(slice: &[u8]) -> Option<(Token, usize)> {
         return None;
     }
 
-    if len > 8 {
+    if len > 12 {
         return None;
-    } // Longest identifier: "poissonp" = 8 chars
+    }
     let ident = &slice[..len];
 
-    let token = match ident {
-        b"log2" => Token::FuncLog2, // Must be before "log" to avoid prefix match
-        b"sinh" => Token::FuncSinH,
-        b"cosh" => Token::FuncCosH,
-        b"tanh" => Token::FuncTanH,
-        b"asinh" => Token::FuncASinH,
-        b"acosh" => Token::FuncACosH,
-        b"atanh" => Token::FuncATanH,
-        b"sin" => Token::FuncSin,
-        b"cos" => Token::FuncCos,
-        b"tan" => Token::FuncTan,
-        b"asin" => Token::FuncAsin,
-        b"acos" => Token::FuncAcos,
-        b"atan" => Token::FuncAtan,
-        b"sqrt" => Token::FuncSqrt,
-        b"nthroot" => Token::FuncNthRoot,
-        b"sto" => Token::FuncSto,
-        b"abs" => Token::FuncAbs,
-        b"log" => Token::FuncLog,
-        b"ln" => Token::FuncLn,
-        b"exp" => Token::FuncExp,
-        b"floor" => Token::FuncFloor,
-        b"ceil" => Token::FuncCeil,
-        b"round" => Token::FuncRound,
-        b"deg" => Token::FuncDeg,
-        b"rad" => Token::FuncRad,
-        b"sum" => Token::FuncSum,
-        b"int" => Token::FuncInt,
-        b"binomp" => Token::FuncBinomP,
-        b"poissonp" => Token::FuncPoissonP,
-        b"chicdf" => Token::FuncChiCDF,
-        b"lngamma" => Token::FuncLnGamma,
-        b"pi" => Token::ConstPi,
-        b"ans" => Token::VarAns,
-        b"e" => Token::ConstE,
-        // Single uppercase letter = variable register A–Z.
-        _ if len == 1 && ident[0] >= b'A' && ident[0] <= b'Z' => Token::VarRegister(ident[0]),
-        _ => return None, // Unrecognised identifier
+    let token: Token;
+    // Match multi-char identifiers first, then single-char.
+    match ident {
+        b"log2" => token = Token::FuncLog2,
+        b"sinh" => token = Token::FuncSinH,
+        b"cosh" => token = Token::FuncCosH,
+        b"tanh" => token = Token::FuncTanH,
+        b"asinh" => token = Token::FuncASinH,
+        b"acosh" => token = Token::FuncACosH,
+        b"atanh" => token = Token::FuncATanH,
+        b"sin" => token = Token::FuncSin,
+        b"cos" => token = Token::FuncCos,
+        b"tan" => token = Token::FuncTan,
+        b"asin" => token = Token::FuncAsin,
+        b"acos" => token = Token::FuncAcos,
+        b"atan" => token = Token::FuncAtan,
+        b"sqrt" => token = Token::FuncSqrt,
+        b"nthroot" => token = Token::FuncNthRoot,
+        b"sto" => token = Token::FuncSto,
+        b"abs" => token = Token::FuncAbs,
+        b"log" => token = Token::FuncLog,
+        b"ln" => token = Token::FuncLn,
+        b"exp" => token = Token::FuncExp,
+        b"floor" => token = Token::FuncFloor,
+        b"ceil" => token = Token::FuncCeil,
+        b"round" => token = Token::FuncRound,
+        b"deg" => token = Token::FuncDeg,
+        b"rad" => token = Token::FuncRad,
+        b"sum" => token = Token::FuncSum,
+        b"int" => token = Token::FuncInt,
+        b"binomp" => token = Token::FuncBinomP,
+        b"poissonp" => token = Token::FuncPoissonP,
+        b"chicdf" => token = Token::FuncChiCDF,
+        b"lngamma" => token = Token::FuncLnGamma,
+        b"pi" => token = Token::ConstPi,
+        b"ans" | b"Ans" => token = Token::VarAns,
+        b"e" => token = Token::ConstE,
+        _ => {
+            if ident.len() == 4 && ident[0..3].eq_ignore_ascii_case(b"mat") {
+                let letter = ident[3].to_ascii_uppercase();
+                if letter >= b'A' && letter <= b'C' {
+                    token = Token::MatRegister(letter);
+                } else {
+                    return None;
+                }
+            } else if ident.len() == 1 && ident[0] >= b'A' && ident[0] <= b'Z' {
+                token = Token::VarRegister(ident[0]);
+            } else if mode == MathMode::Matrix {
+                // Matrix-mode-specific function identifiers
+                if ident.eq_ignore_ascii_case(b"det") {
+                    token = Token::FuncDet;
+                } else if ident.eq_ignore_ascii_case(b"transpose") {
+                    token = Token::FuncTranspose;
+                } else if ident.eq_ignore_ascii_case(b"identity") {
+                    token = Token::FuncIdentity;
+                } else if ident.eq_ignore_ascii_case(b"inv") || ident.eq_ignore_ascii_case(b"inverse") {
+                    token = Token::FuncInv;
+                } else if ident.eq_ignore_ascii_case(b"cofactor") {
+                    token = Token::FuncCofactor;
+                } else if ident.eq_ignore_ascii_case(b"adj") || ident.eq_ignore_ascii_case(b"adjugate") {
+                    token = Token::FuncAdjugate;
+                } else {
+                    return None;
+                }
+            } else {
+                return None;
+            }
+        }
     };
 
     Some((token, len))
 }
 
-/// Append a token to the result, returning None if capacity is exceeded.
 fn append_token(result: &mut LexResult, token: Token) -> Option<()> {
     if result.token_count >= MAX_TOKEN_COUNT {
         return None;
