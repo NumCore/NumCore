@@ -1,5 +1,9 @@
 name: CI
-on: [push, pull_request, workflow_dispatch]
+on:
+  pull_request:
+  push:
+    branches: [main]
+
 permissions:
   contents: read
 
@@ -9,6 +13,7 @@ env:
 
 jobs:
   test:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -55,24 +60,54 @@ jobs:
           path: /tmp/qemu-output.log
 
   deploy:
-    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
     needs: [test]
+    runs-on: ubuntu-latest
     permissions:
       contents: write
 
-    environment:
-      name: production
-      url: https://github.com/faris0x/NumCore/releases
-
     steps:
-      - name: Waiting for reviewer approval
-        run: |
-          echo "All checks passed. QEMU output uploaded."
-          echo "Review: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-      - uses: softprops/action-gh-release@v2
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
         with:
-          tag_name: v${{ github.run_number }}
-          name: "NumCore v${{ github.run_number }}"
+          toolchain: stable
+          target: ${{ env.RUST_TARGET }}
+          override: true
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build firmware (release)
+        run: cargo build -p numcore-lm3s811 --release --target ${{ env.RUST_TARGET }} --verbose
+
+      - name: Extract version
+        run: |
+          VERSION="v$(grep '^version' numcore-lm3s811/Cargo.toml | head -1 | cut -d'"' -f2)"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Get PR body from merge commit
+        id: pr_body
+        run: |
+          PR_NUM=$(echo "${{ github.event.head_commit.message }}" | grep -oP 'Merge pull request #\K\d+' || true)
+          if [ -n "$PR_NUM" ]; then
+            BODY=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/pulls/$PR_NUM" | jq -r '.body // ""')
+            echo "body<<EOF" >> $GITHUB_ENV
+            echo "$BODY" >> $GITHUB_ENV
+            echo "EOF" >> $GITHUB_ENV
+          else
+            echo "body=Automated release" >> $GITHUB_ENV
+          fi
+
+      - name: Create draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.VERSION }}
+          name: "NumCore ${{ env.VERSION }}"
+          body: ${{ env.PR_BODY }}
+          files: target/${{ env.RUST_TARGET }}/release/NumCore
           draft: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
