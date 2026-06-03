@@ -30,8 +30,9 @@ fn initialise_all_hardware<U: Uart, D: Display>() {
 }
 
 fn print_welcome_banner<U: Uart>() {
-    U::transmit_bytes(b"\r\nNumCore v0.5  LM3S811  Q31.32 PEMDAS\r\n");
-    U::transmit_bytes(b"Modes: Standard | Advanced | Matrix  (Esc cycles)\r\n");
+    U::transmit_bytes(b"\r\nNumCore v0.6  LM3S811  Q31.32 PEMDAS\r\n");
+    U::transmit_bytes(b"Modes: Standard | Advanced | Matrix | Scientific  (Esc cycles)\r\n");
+    U::transmit_bytes(b"Scientific: use 1.5E+10 for scientific notation\r\n");
     U::transmit_bytes(b"Scalar/Complex: + - * / ^ %  |  sin cos tan asin acos atan\r\n");
     U::transmit_bytes(b"  sinh cosh tanh asinh acosh atanh sqrt abs exp log ln\r\n");
     U::transmit_bytes(b"  log2 floor ceil round deg rad nthroot lngamma sto(v,r)\r\n");
@@ -184,12 +185,14 @@ fn handle_event<U: Uart, D: Display>(event: CalcEvent, state: &mut CalcState) {
             let new_mode = match state.active_mode() {
                 CM::Standard => CM::Advanced,
                 CM::Advanced => CM::Matrix,
-                CM::Matrix => CM::Standard,
+                CM::Matrix => CM::Scientific,
+                CM::Scientific => CM::Standard,
             };
             let name: &[u8] = match new_mode {
                 CM::Standard => b"Standard",
                 CM::Advanced => b"Advanced",
                 CM::Matrix => b"Matrix",
+                CM::Scientific => b"Scientific",
             };
             state.switch_mode(new_mode);
             state.set_last_result(name);
@@ -265,6 +268,44 @@ fn handle_expression_submission<U: Uart, D: Display>(state: &mut CalcState) {
         return;
     }
 
+    // Check for debug commands (mode switching without Esc for QEMU).
+    #[cfg(debug_assertions)]
+    if expr_slice.len() >= 5 && &expr_slice[..5] == b"!mode" {
+        let mut start = 5;
+        while start < expr_slice.len() && expr_slice[start] == b' ' {
+            start += 1;
+        }
+        let mode_name = &expr_slice[start..];
+        use state::CalculatorMode as CM;
+        let new_mode = if mode_name.eq_ignore_ascii_case(b"standard") {
+            CM::Standard
+        } else if mode_name.eq_ignore_ascii_case(b"advanced") {
+            CM::Advanced
+        } else if mode_name.eq_ignore_ascii_case(b"matrix") {
+            CM::Matrix
+        } else if mode_name.eq_ignore_ascii_case(b"scientific") {
+            CM::Scientific
+        } else {
+            U::transmit_bytes(b"!mode {Standard|Advanced|Matrix|Scientific}\r\n> ");
+            state.clear_input();
+            render_oled::<D>(state);
+            return;
+        };
+        let name: &[u8] = match new_mode {
+            CM::Standard => b"Standard",
+            CM::Advanced => b"Advanced",
+            CM::Matrix => b"Matrix",
+            CM::Scientific => b"Scientific",
+        };
+        state.switch_mode(new_mode);
+        state.set_last_result(name);
+        U::transmit_bytes(name);
+        U::transmit_bytes(b"\r\n> ");
+        state.clear_input();
+        render_oled::<D>(state);
+        return;
+    }
+
     // Stack guard: refuse evaluation if stack pointer is too close to .bss.
     // This prevents silent corruption from stack overflow into static RAM.
     const BSS_END: usize = 0x2000_13E0;
@@ -310,6 +351,17 @@ fn handle_expression_submission<U: Uart, D: Display>(state: &mut CalcState) {
                     state.set_last_result(s);
                     if let Some(c) = mat.to_complex() {
                         state.variables.write_ans(c);
+                    }
+                }
+                MatrixKind::Scientific => {
+                    if mat.data[1] > 99 || mat.data[1] < -99 {
+                        U::transmit_bytes(b"! overflow\r\n");
+                        state.set_last_result(b"overflow");
+                    } else {
+                        let s = engine::format_result(&mat, state.math_mode(), &mut result_line);
+                        U::transmit_bytes(s);
+                        U::transmit_bytes(b"\r\n");
+                        state.set_last_result(s);
                     }
                 }
                 MatrixKind::Mat => {

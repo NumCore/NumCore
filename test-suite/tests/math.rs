@@ -21,14 +21,16 @@
 //!     is exact (±0 ULP), CORDIC trig ≤ 1000 ULP, Taylor-series
 //!     functions ≤ 10 ULP, log/exp chains ≤ 20 ULP.
 
+use numcore_math::math::compiler;
 use numcore_math::math::complex::Complex;
 use numcore_math::math::distributions;
 use numcore_math::math::engine;
 use numcore_math::math::fixed_point as fp;
 use numcore_math::math::lexer;
 use numcore_math::math::matrix::{Matrix, MatrixKind};
-use numcore_math::math::parser;
 use numcore_math::math::vars::VariableStore;
+use numcore_math::math::vm;
+
 use numcore_math::math::AngleMode;
 use numcore_math::math::MathMode;
 
@@ -1490,13 +1492,7 @@ fn eval_expr_with_mode(expr: &str, vars: &mut VariableStore, angle_mode: AngleMo
         tokens: [lexer::Token::Number(0); lexer::MAX_TOKEN_COUNT],
         token_count: 0,
     };
-    let mut parse_scratch = parser::ParseTree {
-        nodes: [parser::AstNode::Literal(0); parser::MAX_NODE_COUNT],
-        node_count: 0,
-        root_index: 0,
-        mat_cache: [None; parser::MATRIX_CACHE_SIZE],
-        mat_cache_count: 0,
-    };
+    let mut parse_scratch = compiler::Bytecode::new();
     match engine::evaluate_expression(
         expr.as_bytes(),
         vars,
@@ -1533,13 +1529,7 @@ fn eval_complex_with_mode(
         tokens: [lexer::Token::Number(0); lexer::MAX_TOKEN_COUNT],
         token_count: 0,
     };
-    let mut parse_scratch = parser::ParseTree {
-        nodes: [parser::AstNode::Literal(0); parser::MAX_NODE_COUNT],
-        node_count: 0,
-        root_index: 0,
-        mat_cache: [None; parser::MATRIX_CACHE_SIZE],
-        mat_cache_count: 0,
-    };
+    let mut parse_scratch = compiler::Bytecode::new();
     match engine::evaluate_expression(
         expr.as_bytes(),
         vars,
@@ -1946,15 +1936,9 @@ fn test_parser_simple() {
         token_count: 0,
     };
     lexer::tokenise_expression(b"2+3", &mut lex, MathMode::Standard).unwrap();
-    let mut tree = parser::ParseTree {
-        nodes: [parser::AstNode::Literal(0); parser::MAX_NODE_COUNT],
-        node_count: 0,
-        root_index: 0,
-        mat_cache: [None; parser::MATRIX_CACHE_SIZE],
-        mat_cache_count: 0,
-    };
-    assert!(parser::parse_token_stream(&lex, &mut tree).is_some());
-    assert!(tree.node_count > 0);
+    let mut tree = compiler::Bytecode::new();
+    assert!(compiler::compile(&lex, &mut tree).is_some());
+    assert!(tree.len > 0);
 }
 
 #[test]
@@ -1964,14 +1948,8 @@ fn test_parser_mismatched_parens() {
         token_count: 0,
     };
     lexer::tokenise_expression(b"(2+3", &mut lex, MathMode::Standard).unwrap();
-    let mut tree = parser::ParseTree {
-        nodes: [parser::AstNode::Literal(0); parser::MAX_NODE_COUNT],
-        node_count: 0,
-        root_index: 0,
-        mat_cache: [None; parser::MATRIX_CACHE_SIZE],
-        mat_cache_count: 0,
-    };
-    assert!(parser::parse_token_stream(&lex, &mut tree).is_none());
+    let mut tree = compiler::Bytecode::new();
+    assert!(compiler::compile(&lex, &mut tree).is_none());
 }
 
 #[test]
@@ -2100,6 +2078,284 @@ fn test_large_expression() {
 //
 // These tests replicate the exact inputs from test_inputs.txt so the
 // host-side suite covers everything the QEMU smoke tests do (and more).
+
+#[test]
+fn test_scientific_arithmetic() {
+    let mut vars = VariableStore::new();
+
+    fn eval_sci(expr: &str, vars: &mut VariableStore) -> Option<(i64, i64)> {
+        let mut lex = lexer::LexResult {
+            tokens: [lexer::Token::Number(0); lexer::MAX_TOKEN_COUNT],
+            token_count: 0,
+        };
+        let mut bc = compiler::Bytecode::new();
+        lexer::tokenise_expression(expr.as_bytes(), &mut lex, MathMode::Scientific)?;
+        compiler::compile(&lex, &mut bc)?;
+        match vm::execute(&bc, vars, AngleMode::Radians, MathMode::Scientific) {
+            engine::EvalResult::Matrix(ref m) => {
+                if let Some(sci) = m.to_scientific() {
+                    Some(sci)
+                } else if m.kind == MatrixKind::Scalar {
+                    // Convert scalar back to scientific representation
+                    let v = m.data[0];
+                    if v == 0 {
+                        Some((0, 0))
+                    } else {
+                        numcore_math::math::matrix::normalize_scientific(v, 0)
+                    }
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    // ── Basic literal parsing ──
+    let r = eval_sci("1E0", &mut vars).expect("1E0");
+    assert_eq!(r.0, fp::SCALE, "1E0 mantissa");
+    assert_eq!(r.1, 0, "1E0 exponent");
+
+    let r = eval_sci("1E+0", &mut vars).expect("1E+0");
+    assert_eq!(r.0, fp::SCALE, "1E+0 mantissa");
+    assert_eq!(r.1, 0, "1E+0 exponent");
+
+    let r = eval_sci("1E-0", &mut vars).expect("1E-0");
+    assert_eq!(r.0, fp::SCALE, "1E-0 mantissa");
+    assert_eq!(r.1, 0, "1E-0 exponent");
+
+    let r = eval_sci("1E10", &mut vars).expect("1E10");
+    assert_eq!(r.0, fp::SCALE, "1E10 mantissa");
+    assert_eq!(r.1, 10, "1E10 exponent");
+
+    let r = eval_sci("1E-5", &mut vars).expect("1E-5");
+    assert_eq!(r.0, fp::SCALE, "1E-5 mantissa");
+    assert_eq!(r.1, -5, "1E-5 exponent");
+
+    let r = eval_sci("1E+99", &mut vars).expect("1E+99");
+    assert_eq!(r.0, fp::SCALE, "1E+99 mantissa");
+    assert_eq!(r.1, 99, "1E+99 exponent");
+
+    // ── Hard exponent limit: |99| ──
+    let mut lex = lexer::LexResult {
+        tokens: [lexer::Token::Number(0); lexer::MAX_TOKEN_COUNT],
+        token_count: 0,
+    };
+    let mut bc = compiler::Bytecode::new();
+    lexer::tokenise_expression(b"1E100", &mut lex, MathMode::Scientific).unwrap();
+    compiler::compile(&lex, &mut bc).unwrap();
+    let r1 = vm::execute(&bc, &mut vars, AngleMode::Radians, MathMode::Scientific);
+    assert!(
+        matches!(r1, engine::EvalResult::Matrix(ref m) if (m.data[1] > 99 || m.data[1] < -99))
+            || matches!(r1, engine::EvalResult::Overflow { .. }),
+        "1E100 should overflow, got {:?}",
+        r1
+    );
+
+    let mut bc = compiler::Bytecode::new();
+    lexer::tokenise_expression(b"1E-100", &mut lex, MathMode::Scientific).unwrap();
+    compiler::compile(&lex, &mut bc).unwrap();
+    let r1 = vm::execute(&bc, &mut vars, AngleMode::Radians, MathMode::Scientific);
+    assert!(
+        matches!(r1, engine::EvalResult::Matrix(ref m) if (m.data[1] > 99 || m.data[1] < -99))
+            || matches!(r1, engine::EvalResult::Overflow { .. }),
+        "1E100 should overflow, got {:?}",
+        r1
+    );
+
+    let mut bc = compiler::Bytecode::new();
+    lexer::tokenise_expression(b"1E-100", &mut lex, MathMode::Scientific).unwrap();
+    compiler::compile(&lex, &mut bc).unwrap();
+    let r2 = vm::execute(&bc, &mut vars, AngleMode::Radians, MathMode::Scientific);
+    assert!(
+        matches!(r2, engine::EvalResult::Matrix(ref m) if (m.data[1] > 99 || m.data[1] < -99))
+            || matches!(r2, engine::EvalResult::Overflow { .. }),
+        "1E-100 should overflow, got {:?}",
+        r2
+    );
+
+    // ── Fractional mantissa ──
+    let r = eval_sci("1.5E0", &mut vars).expect("1.5E0");
+    assert!(
+        r.0 >= fp::SCALE + fp::SCALE / 2 - 1 && r.0 <= fp::SCALE + fp::SCALE / 2 + 1,
+        "1.5E0 mantissa={} should be ~1.5*SCALE",
+        r.0
+    );
+    assert_eq!(r.1, 0, "1.5E0 exponent");
+
+    let r = eval_sci("2.5E3", &mut vars).expect("2.5E3");
+    assert!(
+        r.0 >= 2 * fp::SCALE + fp::SCALE / 2 - 1 && r.0 <= 2 * fp::SCALE + fp::SCALE / 2 + 1,
+        "2.5E3 mantissa={} should be ~2.5*SCALE",
+        r.0
+    );
+    assert_eq!(r.1, 3, "2.5E3 exponent");
+
+    // ── Multiplication ──
+    let r = eval_sci("1E10*2", &mut vars).expect("1E10*2");
+    assert_eq!(r.0, 2 * fp::SCALE, "1E10*2 mantissa");
+    assert_eq!(r.1, 10, "1E10*2 exponent");
+
+    let r = eval_sci("2E10*3", &mut vars).expect("2E10*3");
+    assert_eq!(r.0, 6 * fp::SCALE, "2E10*3 mantissa");
+    assert_eq!(r.1, 10, "2E10*3 exponent");
+
+    let r = eval_sci("2E10*5", &mut vars).expect("2E10*5");
+    assert!(
+        r.0 >= fp::SCALE && r.0 < 2 * fp::SCALE,
+        "2E10*5 mantissa={} should be ~1.0",
+        r.0
+    );
+    assert_eq!(r.1, 11, "2E10*5 exponent"); // 2E10*5 = 10E10 = 1E11
+
+    // ── Division ──
+    let r = eval_sci("1E10/2", &mut vars).expect("1E10/2");
+    assert!(
+        r.0 >= 4 * fp::SCALE && r.0 <= 6 * fp::SCALE,
+        "1E10/2 mantissa={}",
+        r.0
+    );
+    assert_eq!(r.1, 9, "1E10/2 exponent");
+
+    let r = eval_sci("2E10/2", &mut vars).expect("2E10/2");
+    assert_eq!(r.0, fp::SCALE, "2E10/2 mantissa");
+    assert_eq!(r.1, 10, "2E10/2 exponent");
+
+    let r = eval_sci("1E10/4", &mut vars).expect("1E10/4");
+    assert!(
+        r.0 >= 2 * fp::SCALE && r.0 <= 3 * fp::SCALE,
+        "1E10/4 mantissa={}",
+        r.0
+    );
+    assert_eq!(r.1, 9, "1E10/4 exponent"); // 1E10/4 = 0.25E10 = 2.5E9
+
+    // ── Scalar * Scientific ── (left scalar, right sci)
+    let r = eval_sci("3*1E10", &mut vars).expect("3*1E10");
+    assert_eq!(r.0, 3 * fp::SCALE, "3*1E10 mantissa");
+    assert_eq!(r.1, 10, "3*1E10 exponent");
+
+    let r = eval_sci("2*2.5E4", &mut vars).expect("2*2.5E4");
+    assert_eq!(r.0, 5 * fp::SCALE, "2*2.5E4 mantissa (5)");
+    assert_eq!(r.1, 4, "2*2.5E4 exponent"); // 2*2.5E4 = 5E4
+
+    // ── Addition/Subtraction ──
+    let r = eval_sci("1E10+2E10", &mut vars).expect("1E10+2E10");
+    assert_eq!(r.0, 3 * fp::SCALE, "1E10+2E10 mantissa");
+    assert_eq!(r.1, 10, "1E10+2E10 exponent");
+
+    let r = eval_sci("1E10+1E8", &mut vars).expect("1E10+1E8");
+    // 1E10 + 1E8 = 1.01E10; mantissa should be ~1.01*SCALE
+    assert!(
+        r.0 > fp::SCALE && r.0 < fp::SCALE + fp::SCALE / 50,
+        "1E10+1E8 mantissa={} should be ~1.01*SCALE",
+        r.0
+    );
+    assert_eq!(r.1, 10, "1E10+1E8 exponent");
+
+    let r = eval_sci("5E10-2E10", &mut vars).expect("5E10-2E10");
+    assert_eq!(r.0, 3 * fp::SCALE, "5E10-2E10 mantissa");
+    assert_eq!(r.1, 10, "5E10-2E10 exponent");
+
+    // 5E10-5E10 = 0 → scalar, not Scientific
+    let mut lex = lexer::LexResult {
+        tokens: [lexer::Token::Number(0); lexer::MAX_TOKEN_COUNT],
+        token_count: 0,
+    };
+    let mut bc = compiler::Bytecode::new();
+    lexer::tokenise_expression(b"5E10-5E10", &mut lex, MathMode::Scientific).unwrap();
+    compiler::compile(&lex, &mut bc).unwrap();
+    match vm::execute(&bc, &mut vars, AngleMode::Radians, MathMode::Scientific) {
+        engine::EvalResult::Matrix(ref m) => {
+            assert_eq!(m.kind, MatrixKind::Scalar, "5E10-5E10 should be Scalar 0");
+            assert_eq!(m.data[0], 0, "5E10-5E10 value should be 0");
+        }
+        _ => panic!("5E10-5E10 should be Matrix(Scalar(0))"),
+    }
+
+    // ── Power ──
+    let r = eval_sci("1E2^3", &mut vars).expect("1E2^3");
+    assert_eq!(r.0, fp::SCALE, "1E2^3 mantissa");
+    assert_eq!(r.1, 6, "1E2^3 exponent"); // (10^2)^3 = 10^6
+
+    // ── Negative exponent ──
+    let r = eval_sci("1E-3", &mut vars).expect("1E-3");
+    assert_eq!(r.0, fp::SCALE, "1E-3 mantissa");
+    assert_eq!(r.1, -3, "1E-3 exponent");
+
+    // ── Smallest value ──
+    let r = eval_sci("1E-99", &mut vars).expect("1E-99");
+    assert_eq!(r.0, fp::SCALE, "1E-99 mantissa");
+    assert_eq!(r.1, -99, "1E-99 exponent");
+
+    // ── Zero mantissa ──
+    let mut lex = lexer::LexResult {
+        tokens: [lexer::Token::Number(0); lexer::MAX_TOKEN_COUNT],
+        token_count: 0,
+    };
+    let mut bc = compiler::Bytecode::new();
+    lexer::tokenise_expression(b"0E10", &mut lex, MathMode::Scientific).unwrap();
+    compiler::compile(&lex, &mut bc).unwrap();
+    match vm::execute(&bc, &mut vars, AngleMode::Radians, MathMode::Scientific) {
+        engine::EvalResult::Matrix(ref m) => {
+            assert_eq!(m.kind, MatrixKind::Scalar, "0E10 should be Scalar 0");
+            assert_eq!(m.data[0], 0, "0E10 value should be 0");
+        }
+        _ => panic!("0E10 should be Matrix(Scalar(0))"),
+    }
+
+    // ── ConstructSci overflow ──
+    let mut lex = lexer::LexResult {
+        tokens: [lexer::Token::Number(0); lexer::MAX_TOKEN_COUNT],
+        token_count: 0,
+    };
+    let mut bc = compiler::Bytecode::new();
+    lexer::tokenise_expression(b"9E100", &mut lex, MathMode::Scientific).unwrap();
+    compiler::compile(&lex, &mut bc).unwrap();
+    let r1 = vm::execute(&bc, &mut vars, AngleMode::Radians, MathMode::Scientific);
+    assert!(
+        matches!(r1, engine::EvalResult::Matrix(ref m) if (m.data[1] > 99 || m.data[1] < -99))
+            || matches!(r1, engine::EvalResult::Overflow { .. }),
+        "9E100 should overflow, got {:?}",
+        r1
+    );
+
+    // ── Scientific overflow via arithmetic ──
+    let mut bc = compiler::Bytecode::new();
+    lexer::tokenise_expression(b"9E99*10", &mut lex, MathMode::Scientific).unwrap();
+    compiler::compile(&lex, &mut bc).unwrap();
+    let r2 = vm::execute(&bc, &mut vars, AngleMode::Radians, MathMode::Scientific);
+    assert!(
+        matches!(r2, engine::EvalResult::Matrix(ref m) if (m.data[1] > 99 || m.data[1] < -99))
+            || matches!(r2, engine::EvalResult::Overflow { .. }),
+        "9E99*10 should overflow, got {:?}",
+        r2
+    );
+
+    // ── Rejection in non-Scientific modes ──
+    // "1E10" in Standard mode: lexer cannot parse "E10" as a valid identifier
+    let mut lex = lexer::LexResult {
+        tokens: [lexer::Token::Number(0); lexer::MAX_TOKEN_COUNT],
+        token_count: 0,
+    };
+    assert!(
+        lexer::tokenise_expression(b"1E10", &mut lex, MathMode::Standard).is_none(),
+        "Standard mode should reject '1E10' (E10 is not a valid identifier)"
+    );
+
+    // ── Round-trip through format ──
+    let m = Matrix::scientific(fp::SCALE, 10).unwrap();
+    let mut buf = [0u8; 48];
+    let s = engine::format_result(&m, MathMode::Scientific, &mut buf);
+    assert_eq!(s, b"1E+10", "format_scientific(1, 10)");
+
+    let m = Matrix::scientific(5 * fp::SCALE, 9).unwrap();
+    let s = engine::format_result(&m, MathMode::Scientific, &mut buf);
+    assert_eq!(s, b"5E+9", "format_scientific(5, 9)");
+
+    let m = Matrix::scientific(fp::SCALE, -5).unwrap();
+    let s = engine::format_result(&m, MathMode::Scientific, &mut buf);
+    assert_eq!(s, b"1E-5", "format_scientific(1, -5)");
+}
 
 #[test]
 fn test_qemu_smoke_parity() {
@@ -2435,13 +2691,7 @@ fn test_complex_standard_mode_rejects_i() {
         tokens: [lexer::Token::Number(0); lexer::MAX_TOKEN_COUNT],
         token_count: 0,
     };
-    let mut parse_scratch = parser::ParseTree {
-        nodes: [parser::AstNode::Literal(0); parser::MAX_NODE_COUNT],
-        node_count: 0,
-        root_index: 0,
-        mat_cache: [None; parser::MATRIX_CACHE_SIZE],
-        mat_cache_count: 0,
-    };
+    let mut parse_scratch = compiler::Bytecode::new();
     let r = engine::evaluate_expression(
         b"i",
         &mut vars,
@@ -3612,13 +3862,7 @@ fn check_result(expr: &str, expected_kind: &str) {
         tokens: [lexer::Token::Number(0); lexer::MAX_TOKEN_COUNT],
         token_count: 0,
     };
-    let mut parse_scratch = parser::ParseTree {
-        nodes: [parser::AstNode::Literal(0); parser::MAX_NODE_COUNT],
-        node_count: 0,
-        root_index: 0,
-        mat_cache: [None; parser::MATRIX_CACHE_SIZE],
-        mat_cache_count: 0,
-    };
+    let mut parse_scratch = compiler::Bytecode::new();
     let r = engine::evaluate_expression(
         expr.as_bytes(),
         &mut vars,
@@ -3717,13 +3961,7 @@ fn eval_overflow(expr: &str) -> Option<(i64, i32, bool)> {
         tokens: [lexer::Token::Number(0); lexer::MAX_TOKEN_COUNT],
         token_count: 0,
     };
-    let mut parse_scratch = parser::ParseTree {
-        nodes: [parser::AstNode::Literal(0); parser::MAX_NODE_COUNT],
-        node_count: 0,
-        root_index: 0,
-        mat_cache: [None; parser::MATRIX_CACHE_SIZE],
-        mat_cache_count: 0,
-    };
+    let mut parse_scratch = compiler::Bytecode::new();
     match engine::evaluate_expression(
         expr.as_bytes(),
         &mut vars,
@@ -3908,13 +4146,7 @@ fn eval_matrix(expr: &str, vars: &mut VariableStore) -> Option<Matrix> {
         tokens: [lexer::Token::Number(0); lexer::MAX_TOKEN_COUNT],
         token_count: 0,
     };
-    let mut parse_scratch = parser::ParseTree {
-        nodes: [parser::AstNode::Literal(0); parser::MAX_NODE_COUNT],
-        node_count: 0,
-        root_index: 0,
-        mat_cache: [None; parser::MATRIX_CACHE_SIZE],
-        mat_cache_count: 0,
-    };
+    let mut parse_scratch = compiler::Bytecode::new();
     match engine::evaluate_expression(
         expr.as_bytes(),
         vars,
@@ -3965,13 +4197,7 @@ fn test_matrix_literal_rejected_in_standard_mode() {
         tokens: [lexer::Token::Number(0); lexer::MAX_TOKEN_COUNT],
         token_count: 0,
     };
-    let mut parse_scratch = parser::ParseTree {
-        nodes: [parser::AstNode::Literal(0); parser::MAX_NODE_COUNT],
-        node_count: 0,
-        root_index: 0,
-        mat_cache: [None; parser::MATRIX_CACHE_SIZE],
-        mat_cache_count: 0,
-    };
+    let mut parse_scratch = compiler::Bytecode::new();
     let r = engine::evaluate_expression(
         b"[(1,2)(3,4)]",
         &mut vars,
@@ -3990,7 +4216,7 @@ fn test_matrix_add() {
     let b = eval_matrix("[(5,6)(7,8)]", &mut vars).unwrap();
     let c = a.elementwise_add(&b).unwrap();
     let six = fp::SCALE * 6;
-    let ten = fp::SCALE * 10;
+    let _ten = fp::SCALE * 10;
     let twelve = fp::SCALE * 12;
     assert_eq!(c.cell(0, 0), six);
     assert_eq!(c.cell(1, 1), twelve);
@@ -4146,13 +4372,7 @@ fn test_matrix_mode_guards_in_standard() {
         tokens: [lexer::Token::Number(0); lexer::MAX_TOKEN_COUNT],
         token_count: 0,
     };
-    let mut parse_scratch = parser::ParseTree {
-        nodes: [parser::AstNode::Literal(0); parser::MAX_NODE_COUNT],
-        node_count: 0,
-        root_index: 0,
-        mat_cache: [None; parser::MATRIX_CACHE_SIZE],
-        mat_cache_count: 0,
-    };
+    let mut parse_scratch = compiler::Bytecode::new();
     // A scalar 5 in Matrix mode should still work
     let r = engine::evaluate_expression(
         b"5",
@@ -4221,13 +4441,7 @@ fn test_matregister_identifiers() {
         tokens: [lexer::Token::Number(0); lexer::MAX_TOKEN_COUNT],
         token_count: 0,
     };
-    let mut parse_scratch = parser::ParseTree {
-        nodes: [parser::AstNode::Literal(0); parser::MAX_NODE_COUNT],
-        node_count: 0,
-        root_index: 0,
-        mat_cache: [None; parser::MATRIX_CACHE_SIZE],
-        mat_cache_count: 0,
-    };
+    let mut parse_scratch = compiler::Bytecode::new();
     let r2 = engine::evaluate_expression(
         b"mata",
         &mut vars,

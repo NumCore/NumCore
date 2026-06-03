@@ -6,6 +6,7 @@ pub const MAX_TOKEN_COUNT: usize = 64;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Token {
     Number(i64),
+    Exponent(i64),
     Plus,
     Minus,
     Star,
@@ -91,6 +92,43 @@ pub fn tokenise_expression(
             let (fp_value, consumed) = parse_number_literal(&expression[cursor..])?;
             append_token(&mut result, Token::Number(fp_value))?;
             cursor += consumed;
+
+            // In Scientific mode, check for 'E' exponential suffix
+            if mode == MathMode::Scientific
+                && cursor < expression.len()
+                && expression[cursor] == b'E'
+            {
+                let mut e_cursor = cursor + 1;
+                let sign = if e_cursor < expression.len() && expression[e_cursor] == b'+' {
+                    e_cursor += 1;
+                    1i64
+                } else if e_cursor < expression.len() && expression[e_cursor] == b'-' {
+                    e_cursor += 1;
+                    -1i64
+                } else {
+                    1i64
+                };
+                let exp_start = e_cursor;
+                while e_cursor < expression.len() && expression[e_cursor].is_ascii_digit() {
+                    e_cursor += 1;
+                }
+                if e_cursor > exp_start {
+                    // Reject fractional or multi-digit exponents immediately
+                    // followed by a letter (e.g. "2E1.2" or "2E10A").
+                    let bad_follow = expression
+                        .get(e_cursor)
+                        .map_or(false, |&b| b == b'.' || b.is_ascii_alphanumeric());
+                    if !bad_follow {
+                        let mut exp_val: i64 = 0;
+                        for &b in &expression[exp_start..e_cursor] {
+                            exp_val = exp_val.checked_mul(10)?;
+                            exp_val = exp_val.checked_add((b - b'0') as i64)?;
+                        }
+                        append_token(&mut result, Token::Exponent(sign * exp_val))?;
+                        cursor = e_cursor;
+                    }
+                }
+            }
             continue;
         }
 

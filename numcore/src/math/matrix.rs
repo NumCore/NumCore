@@ -9,6 +9,7 @@ pub enum MatrixKind {
     Scalar,
     Complex,
     Mat,
+    Scientific,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -41,6 +42,45 @@ impl Matrix {
             rows: 1,
             cols: 2,
             kind: MatrixKind::Complex,
+        }
+    }
+
+    pub fn scientific(mantissa: i64, exponent: i64) -> Option<Self> {
+        if exponent > 99 || exponent < -99 {
+            return None;
+        }
+        let mut data = [0i64; MAX_MATRIX_CELLS];
+        data[0] = mantissa;
+        data[1] = exponent;
+        Some(Self {
+            data,
+            rows: 1,
+            cols: 2,
+            kind: MatrixKind::Scientific,
+        })
+    }
+
+    pub fn to_scientific(&self) -> Option<(i64, i64)> {
+        match self.kind {
+            MatrixKind::Scientific => Some((self.data[0], self.data[1])),
+            _ => None,
+        }
+    }
+
+    pub fn to_scientific_value(&self) -> Option<(i64, i64)> {
+        match self.kind {
+            MatrixKind::Scientific => self.to_scientific(),
+            MatrixKind::Scalar => {
+                let v = self.data[0];
+                if v == 0 {
+                    return Some((0, 0));
+                }
+                normalize_scientific(v, 0)
+            }
+            MatrixKind::Complex if self.data[1] == 0 => {
+                Matrix::scalar(self.data[0]).to_scientific_value()
+            }
+            _ => None,
         }
     }
 
@@ -90,10 +130,12 @@ impl Matrix {
         match self.kind {
             MatrixKind::Scalar => Some(Complex::from_real(self.data[0])),
             MatrixKind::Complex => Some(Complex::new(self.data[0], self.data[1])),
+            MatrixKind::Scientific => None,
             MatrixKind::Mat => None,
         }
     }
 
+    /// Whether this is a square matrix (Mat kind, rows == cols).
     pub fn is_square(&self) -> bool {
         self.kind == MatrixKind::Mat && self.rows == self.cols
     }
@@ -404,8 +446,33 @@ impl Matrix {
     }
 }
 
+// ─── Scientific notation constants and normalizer ────────────────────────
+
+pub const SCI_MANTISSA_MIN: i64 = 4_294_967_296;
+pub const SCI_MANTISSA_MAX: i64 = 42_949_672_959;
+
+pub fn normalize_scientific(mantissa: i64, _exponent: i64) -> Option<(i64, i64)> {
+    if mantissa == 0 {
+        return Some((0, 0));
+    }
+    let mut m = mantissa;
+    let mut e = _exponent;
+    while m < SCI_MANTISSA_MIN {
+        m = super::fixed_point::multiply(m, super::fixed_point::from_integer(10))?;
+        e -= 1;
+    }
+    while m > SCI_MANTISSA_MAX {
+        m = super::fixed_point::divide(m, super::fixed_point::from_integer(10))?;
+        e += 1;
+    }
+    if e > 99 || e < -99 {
+        return None;
+    }
+    Some((m, e))
+}
+
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
 
     #[test]
