@@ -39,6 +39,12 @@ pub enum CalcEvent {
     /// Move the cursor one position to the right.
     CursorRight,
 
+    /// Move the cursor up (input cursor or matrix vertical scroll).
+    CursorUp,
+
+    /// Move the cursor down (matrix vertical scroll).
+    CursorDown,
+
     /// Toggle between Standard and Advanced calculator modes.
     ToggleMode,
 
