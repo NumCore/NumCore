@@ -104,6 +104,15 @@ jobs:
             echo "body=Automated release" >> $GITHUB_ENV
           fi
 
+      - name: Create and push tag
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git tag -a "$VERSION" -m "Release $VERSION"
+          git push origin "$VERSION"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Create draft release
         uses: softprops/action-gh-release@v2
         with:
