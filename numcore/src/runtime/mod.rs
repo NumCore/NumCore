@@ -30,7 +30,7 @@ fn initialise_all_hardware<U: Uart, D: Display>() {
 }
 
 fn print_welcome_banner<U: Uart>() {
-    U::transmit_bytes(b"\r\nNumCore v0.4  LM3S811  Q31.32 PEMDAS\r\n");
+    U::transmit_bytes(b"\r\nNumCore v0.5  LM3S811  Q31.32 PEMDAS\r\n");
     U::transmit_bytes(b"Modes: Standard | Advanced | Matrix  (Esc cycles)\r\n");
     U::transmit_bytes(b"Scalar/Complex: + - * / ^ %  |  sin cos tan asin acos atan\r\n");
     U::transmit_bytes(b"  sinh cosh tanh asinh acosh atanh sqrt abs exp log ln\r\n");
