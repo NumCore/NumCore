@@ -82,10 +82,13 @@ jobs:
       - name: Build firmware (release)
         run: cargo build -p numcore-lm3s811 --release --target ${{ env.RUST_TARGET }} --verbose
 
-      - name: Extract version
+      - name: Extract version and name artifact
         run: |
           VERSION="v$(grep '^version' numcore-lm3s811/Cargo.toml | head -1 | cut -d'"' -f2)"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
+          ARTIFACT_NAME="numcore-lm3s811_$VERSION"
+          echo "ARTIFACT_NAME=$ARTIFACT_NAME" >> $GITHUB_ENV
+          cp target/${{ env.RUST_TARGET }}/release/NumCore "$ARTIFACT_NAME"
 
       - name: Get PR body from merge commit
         id: pr_body
@@ -107,7 +110,7 @@ jobs:
           tag_name: ${{ env.VERSION }}
           name: "NumCore ${{ env.VERSION }}"
           body: ${{ env.PR_BODY }}
-          files: target/${{ env.RUST_TARGET }}/release/NumCore
+          files: ${{ env.ARTIFACT_NAME }}
           draft: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
