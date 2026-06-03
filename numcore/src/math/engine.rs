@@ -1,12 +1,38 @@
+//! # Math Engine — Public API (Layer 6)
+//!
+//! The single entry point for all mathematical computation. Orchestrates the
+//! full three-stage pipeline using caller-provided scratch buffers so that
+//! no large structures are ever stack-allocated:
+//!
+//!   expression bytes
+//!       → lexer::tokenise_expression(expr, &mut lex_scratch)
+//!       → parser::parse_token_stream(&lex_result, &mut parse_scratch)
+//!       → evaluator::evaluate_tree(&parse_tree, &variables)
+//!
+//! The runtime calls only `evaluate_expression()` and `format_result()`.
+//! All other math modules are internal implementation details.
+
+use super::complex::Complex;
 use super::fixed_point;
 use super::lexer::LexResult;
-use super::matrix::{Matrix, MatrixKind};
 use super::parser::ParseTree;
 use super::vars::VariableStore;
 use super::{evaluator, lexer, parser};
 use super::{AngleMode, MathMode};
 pub use evaluator::EvalResult;
 
+/// Evaluate a mathematical expression byte slice.
+///
+/// `lex_scratch` and `parse_scratch` are reusable buffers owned by `CalcState`.
+/// They are reset and overwritten on each call — the caller must not rely on
+/// their contents after this function returns.
+///
+/// `mode` controls whether imaginary-unit tokens are accepted (Advanced) or
+/// rejected (Standard).
+/// `angle_mode` controls whether trig functions interpret values in radians
+/// or degrees.
+///
+/// Returns the result of evaluation.
 pub fn evaluate_expression(
     expression: &[u8],
     variables: &mut VariableStore,
@@ -21,95 +47,31 @@ pub fn evaluate_expression(
     if parser::parse_token_stream(lex_scratch, parse_scratch).is_none() {
         return EvalResult::DomainError;
     }
-    evaluator::evaluate_tree(parse_scratch, variables, angle_mode, mode)
+    let result = evaluator::evaluate_tree(parse_scratch, variables, angle_mode);
+    if let EvalResult::Value(complex) = result {
+        if mode == MathMode::Standard && complex.im != 0 {
+            return EvalResult::DomainError;
+        }
+    }
+    result
 }
 
-pub fn format_result<'a>(mat: &Matrix, mode: MathMode, buffer: &'a mut [u8; 48]) -> &'a [u8] {
-    match (mat.kind, mode) {
-        (MatrixKind::Complex, MathMode::Standard) => {
-            fixed_point::format_fixed_point(mat.data[0], buffer)
-        }
-        (MatrixKind::Complex, _) => format_complex(mat.data[0], mat.data[1], buffer),
-        (MatrixKind::Scalar, _) => fixed_point::format_fixed_point(mat.data[0], buffer),
-        (MatrixKind::Mat, _) => {
-            let s = match mat.rows {
-                1 => b"1x1" as &[u8],
-                _ => b"Mat" as &[u8],
-            };
-            let len = s.len().min(48);
-            buffer[..len].copy_from_slice(s);
-            &buffer[..len]
-        }
+/// Format a numeric result into a human-readable byte slice.
+///
+/// In Standard mode, only the real part is shown.
+/// In Advanced mode, complex values are formatted as `a+bi`.
+///
+/// Writes into `buffer` (must be ≥ 48 bytes) and returns the filled slice.
+pub fn format_result(value: Complex, mode: MathMode, buffer: &mut [u8; 48]) -> &[u8] {
+    match mode {
+        MathMode::Standard => fixed_point::format_fixed_point(value.re, buffer),
+        MathMode::Advanced => format_complex(value, buffer),
     }
 }
 
-pub fn format_result_uart<'a>(mat: &Matrix, buffer: &'a mut [u8; 192]) -> &'a [u8] {
-    match mat.kind {
-        MatrixKind::Scalar => {
-            let mut tmp = [0u8; 48];
-            let s = fixed_point::format_fixed_point(mat.data[0], &mut tmp);
-            let len = s.len().min(192);
-            buffer[..len].copy_from_slice(s);
-            &buffer[..len]
-        }
-        MatrixKind::Complex => {
-            let mut tmp = [0u8; 48];
-            let s = format_complex(mat.data[0], mat.data[1], &mut tmp);
-            let len = s.len().min(192);
-            buffer[..len].copy_from_slice(s);
-            &buffer[..len]
-        }
-        MatrixKind::Mat => {
-            let mut pos = 0usize;
-            for r in 0..mat.rows as usize {
-                if r == 0 {
-                    if pos < 192 {
-                        let s = b"[ ";
-                        for &b in s {
-                            buffer[pos] = b;
-                            pos += 1;
-                        }
-                    }
-                } else {
-                    if pos < 192 {
-                        let s = b"\r\n  [ ";
-                        for &b in s {
-                            buffer[pos] = b;
-                            pos += 1;
-                        }
-                    }
-                }
-                for c in 0..mat.cols as usize {
-                    if c > 0 {
-                        if pos < 192 {
-                            buffer[pos] = b' ';
-                            pos += 1;
-                        }
-                    }
-                    let val = mat.data[r * mat.cols as usize + c];
-                    let mut tmp = [0u8; 24];
-                    let s = fixed_point::format_fixed_point(val, &mut tmp);
-                    for &b in s {
-                        if pos < 192 {
-                            buffer[pos] = b;
-                            pos += 1;
-                        }
-                    }
-                }
-                if pos < 192 {
-                    buffer[pos] = b' ';
-                    pos += 1;
-                }
-                if pos < 192 {
-                    buffer[pos] = b']';
-                    pos += 1;
-                }
-            }
-            &buffer[..pos]
-        }
-    }
-}
-
+/// Format an overflow result as scientific notation (e.g. `1.23456E+99`).
+///
+/// Writes into `buffer` (must be ≥ 48 bytes) and returns the filled slice.
 pub fn format_overflow(
     mantissa: i64,
     exponent: i32,
@@ -162,35 +124,38 @@ pub fn format_overflow(
     Some(&buffer[..pos])
 }
 
-fn format_complex(re: i64, im: i64, buffer: &mut [u8; 48]) -> &[u8] {
-    if im == 0 {
-        return fixed_point::format_fixed_point(re, buffer);
+fn format_complex(value: Complex, buffer: &mut [u8; 48]) -> &[u8] {
+    if value.im == 0 {
+        return fixed_point::format_fixed_point(value.re, buffer);
     }
 
     let mut pos = 0usize;
 
-    if re != 0 {
-        let real_str = fixed_point::format_fixed_point(re, buffer);
+    // Format real part
+    if value.re != 0 {
+        let real_str = fixed_point::format_fixed_point(value.re, buffer);
         let real_len = real_str.len();
         pos = real_len;
     }
 
+    // Format imaginary part
     let mut tmp = [0u8; 24];
-    let abs_im = if im < 0 { -im } else { im };
+    let abs_im = if value.im < 0 { -value.im } else { value.im };
     let im_str = fixed_point::format_fixed_point(abs_im, &mut tmp);
 
     if pos > 0 {
-        if im > 0 {
+        if value.im > 0 {
             buffer[pos] = b'+';
         } else {
             buffer[pos] = b'-';
         }
         pos += 1;
-    } else if im < 0 {
+    } else if value.im < 0 {
         buffer[pos] = b'-';
         pos += 1;
     }
 
+    // Write magnitude of imaginary part (omit '1' before 'i')
     let im_is_one = abs_im == fixed_point::FIXED_ONE;
     if !im_is_one {
         for &b in im_str {

@@ -26,7 +26,6 @@ use numcore_math::math::distributions;
 use numcore_math::math::engine;
 use numcore_math::math::fixed_point as fp;
 use numcore_math::math::lexer;
-use numcore_math::math::matrix::{Matrix, MatrixKind};
 use numcore_math::math::parser;
 use numcore_math::math::vars::VariableStore;
 use numcore_math::math::AngleMode;
@@ -1494,9 +1493,6 @@ fn eval_expr_with_mode(expr: &str, vars: &mut VariableStore, angle_mode: AngleMo
         nodes: [parser::AstNode::Literal(0); parser::MAX_NODE_COUNT],
         node_count: 0,
         root_index: 0,
-        mat_cache: [None; parser::MATRIX_CACHE_SIZE],
-        mat_cache_count: 0,
-        
     };
     match engine::evaluate_expression(
         expr.as_bytes(),
@@ -1506,15 +1502,11 @@ fn eval_expr_with_mode(expr: &str, vars: &mut VariableStore, angle_mode: AngleMo
         MathMode::Standard,
         angle_mode,
     ) {
-        engine::EvalResult::Matrix(ref m) => {
-            if let Some(c) = m.to_complex() {
-                if c.im != 0 {
-                    None
-                } else {
-                    Some(c.re)
-                }
-            } else {
+        engine::EvalResult::Value(c) => {
+            if c.im != 0 {
                 None
+            } else {
+                Some(c.re)
             }
         }
         _ => None,
@@ -1538,9 +1530,6 @@ fn eval_complex_with_mode(
         nodes: [parser::AstNode::Literal(0); parser::MAX_NODE_COUNT],
         node_count: 0,
         root_index: 0,
-        mat_cache: [None; parser::MATRIX_CACHE_SIZE],
-        mat_cache_count: 0,
-        
     };
     match engine::evaluate_expression(
         expr.as_bytes(),
@@ -1550,7 +1539,7 @@ fn eval_complex_with_mode(
         MathMode::Advanced,
         angle_mode,
     ) {
-        engine::EvalResult::Matrix(ref m) => m.to_complex(),
+        engine::EvalResult::Value(c) => Some(c),
         _ => None,
     }
 }
@@ -1799,11 +1788,15 @@ fn test_eval_integration_non_trivial() {
 #[test]
 fn test_engine_format_result() {
     let mut buf = [0u8; 48];
-    let r = engine::format_result(&Matrix::scalar(0), MathMode::Standard, &mut buf);
+    let r = engine::format_result(Complex::from_real(0), MathMode::Standard, &mut buf);
     assert_eq!(core::str::from_utf8(r).unwrap(), "0");
-    let r = engine::format_result(&Matrix::scalar(SCALE), MathMode::Standard, &mut buf);
+    let r = engine::format_result(Complex::from_real(SCALE), MathMode::Standard, &mut buf);
     assert_eq!(core::str::from_utf8(r).unwrap(), "1");
-    let r = engine::format_result(&Matrix::scalar(fp::FIXED_PI), MathMode::Standard, &mut buf);
+    let r = engine::format_result(
+        Complex::from_real(fp::FIXED_PI),
+        MathMode::Standard,
+        &mut buf,
+    );
     assert_eq!(core::str::from_utf8(r).unwrap(), "3.141593");
 }
 
@@ -1952,9 +1945,6 @@ fn test_parser_simple() {
         nodes: [parser::AstNode::Literal(0); parser::MAX_NODE_COUNT],
         node_count: 0,
         root_index: 0,
-        mat_cache: [None; parser::MATRIX_CACHE_SIZE],
-        mat_cache_count: 0,
-        
     };
     assert!(parser::parse_token_stream(&lex, &mut tree).is_some());
     assert!(tree.node_count > 0);
@@ -1971,9 +1961,6 @@ fn test_parser_mismatched_parens() {
         nodes: [parser::AstNode::Literal(0); parser::MAX_NODE_COUNT],
         node_count: 0,
         root_index: 0,
-        mat_cache: [None; parser::MATRIX_CACHE_SIZE],
-        mat_cache_count: 0,
-        
     };
     assert!(parser::parse_token_stream(&lex, &mut tree).is_none());
 }
@@ -2443,9 +2430,6 @@ fn test_complex_standard_mode_rejects_i() {
         nodes: [parser::AstNode::Literal(0); parser::MAX_NODE_COUNT],
         node_count: 0,
         root_index: 0,
-        mat_cache: [None; parser::MATRIX_CACHE_SIZE],
-        mat_cache_count: 0,
-        
     };
     let r = engine::evaluate_expression(
         b"i",
@@ -2462,7 +2446,7 @@ fn test_complex_standard_mode_rejects_i() {
 fn test_complex_format_standard() {
     let mut buf = [0u8; 48];
     let r = engine::format_result(
-        &Matrix::complex(fp::from_integer(3), fp::from_integer(4)),
+        Complex::new(fp::from_integer(3), fp::from_integer(4)),
         MathMode::Standard,
         &mut buf,
     );
@@ -2472,7 +2456,11 @@ fn test_complex_format_standard() {
 #[test]
 fn test_complex_format_advanced_real() {
     let mut buf = [0u8; 48];
-    let r = engine::format_result(&Matrix::scalar(fp::FIXED_PI), MathMode::Advanced, &mut buf);
+    let r = engine::format_result(
+        Complex::from_real(fp::FIXED_PI),
+        MathMode::Advanced,
+        &mut buf,
+    );
     assert_eq!(core::str::from_utf8(r).unwrap(), "3.141593");
 }
 
@@ -2480,7 +2468,7 @@ fn test_complex_format_advanced_real() {
 fn test_complex_format_advanced_3_plus_4i() {
     let mut buf = [0u8; 48];
     let r = engine::format_result(
-        &Matrix::complex(fp::from_integer(3), fp::from_integer(4)),
+        Complex::new(fp::from_integer(3), fp::from_integer(4)),
         MathMode::Advanced,
         &mut buf,
     );
@@ -2491,7 +2479,7 @@ fn test_complex_format_advanced_3_plus_4i() {
 fn test_complex_format_advanced_negative_im() {
     let mut buf = [0u8; 48];
     let r = engine::format_result(
-        &Matrix::complex(fp::from_integer(3), -fp::from_integer(4)),
+        Complex::new(fp::from_integer(3), -fp::from_integer(4)),
         MathMode::Advanced,
         &mut buf,
     );
@@ -2501,11 +2489,7 @@ fn test_complex_format_advanced_negative_im() {
 #[test]
 fn test_complex_format_advanced_pure_imaginary() {
     let mut buf = [0u8; 48];
-    let r = engine::format_result(
-        &Matrix::complex(0, fp::FIXED_ONE),
-        MathMode::Advanced,
-        &mut buf,
-    );
+    let r = engine::format_result(Complex::new(0, fp::FIXED_ONE), MathMode::Advanced, &mut buf);
     assert_eq!(core::str::from_utf8(r).unwrap(), "i");
 }
 
@@ -2513,7 +2497,7 @@ fn test_complex_format_advanced_pure_imaginary() {
 fn test_complex_format_advanced_negative_pure_imaginary() {
     let mut buf = [0u8; 48];
     let r = engine::format_result(
-        &Matrix::complex(0, -fp::FIXED_ONE),
+        Complex::new(0, -fp::FIXED_ONE),
         MathMode::Advanced,
         &mut buf,
     );
@@ -2524,7 +2508,7 @@ fn test_complex_format_advanced_negative_pure_imaginary() {
 fn test_complex_format_advanced_2i() {
     let mut buf = [0u8; 48];
     let r = engine::format_result(
-        &Matrix::complex(0, fp::from_integer(2)),
+        Complex::new(0, fp::from_integer(2)),
         MathMode::Advanced,
         &mut buf,
     );
@@ -2535,7 +2519,7 @@ fn test_complex_format_advanced_2i() {
 fn test_complex_format_advanced_neg_2i() {
     let mut buf = [0u8; 48];
     let r = engine::format_result(
-        &Matrix::complex(0, -fp::from_integer(2)),
+        Complex::new(0, -fp::from_integer(2)),
         MathMode::Advanced,
         &mut buf,
     );
@@ -3232,7 +3216,7 @@ fn test_complex_sto_with_complex() {
 fn test_format_result_advanced_zero() {
     let mode = MathMode::Advanced;
     let mut buf = [0u8; 48];
-    let s = engine::format_result(&Matrix::scalar(0), mode, &mut buf);
+    let s = engine::format_result(Complex::zero(), mode, &mut buf);
     assert_eq!(core::str::from_utf8(s).unwrap(), "0");
 }
 
@@ -3240,11 +3224,7 @@ fn test_format_result_advanced_zero() {
 fn test_format_result_advanced_one_plus_i() {
     let mode = MathMode::Advanced;
     let mut buf = [0u8; 48];
-    let s = engine::format_result(
-        &Matrix::complex(fp::FIXED_ONE, fp::FIXED_ONE),
-        mode,
-        &mut buf,
-    );
+    let s = engine::format_result(Complex::new(fp::FIXED_ONE, fp::FIXED_ONE), mode, &mut buf);
     assert_eq!(core::str::from_utf8(s).unwrap(), "1+i");
 }
 
@@ -3252,11 +3232,7 @@ fn test_format_result_advanced_one_plus_i() {
 fn test_format_result_advanced_one_minus_i() {
     let mode = MathMode::Advanced;
     let mut buf = [0u8; 48];
-    let s = engine::format_result(
-        &Matrix::complex(fp::FIXED_ONE, -fp::FIXED_ONE),
-        mode,
-        &mut buf,
-    );
+    let s = engine::format_result(Complex::new(fp::FIXED_ONE, -fp::FIXED_ONE), mode, &mut buf);
     assert_eq!(core::str::from_utf8(s).unwrap(), "1-i");
 }
 
@@ -3264,8 +3240,8 @@ fn test_format_result_advanced_one_minus_i() {
 fn test_format_result_advanced_pure_imaginary_fractional() {
     let mode = MathMode::Advanced;
     let mut buf = [0u8; 48];
-    let val = Matrix::complex(0, fp::FIXED_HALF);
-    let s = engine::format_result(&val, mode, &mut buf);
+    let val = Complex::new(0, fp::FIXED_HALF);
+    let s = engine::format_result(val, mode, &mut buf);
     // Should show "0.5i" (pure imaginary with fractional coef)
     let fmt = core::str::from_utf8(s).unwrap();
     assert!(fmt.contains('i'));
@@ -3275,8 +3251,8 @@ fn test_format_result_advanced_pure_imaginary_fractional() {
 fn test_format_result_advanced_negative_pure_imaginary_fractional() {
     let mode = MathMode::Advanced;
     let mut buf = [0u8; 48];
-    let val = Matrix::complex(0, -fp::FIXED_HALF);
-    let s = engine::format_result(&val, mode, &mut buf);
+    let val = Complex::new(0, -fp::FIXED_HALF);
+    let s = engine::format_result(val, mode, &mut buf);
     let fmt = core::str::from_utf8(s).unwrap();
     assert!(fmt.starts_with('-'));
     assert!(fmt.contains('i'));
@@ -3286,7 +3262,7 @@ fn test_format_result_advanced_negative_pure_imaginary_fractional() {
 fn test_format_result_advanced_real_only() {
     let mode = MathMode::Advanced;
     let mut buf = [0u8; 48];
-    let s = engine::format_result(&Matrix::scalar(fp::from_integer(42)), mode, &mut buf);
+    let s = engine::format_result(Complex::from_real(fp::from_integer(42)), mode, &mut buf);
     assert_eq!(core::str::from_utf8(s).unwrap(), "42");
 }
 
@@ -3295,7 +3271,7 @@ fn test_format_result_standard_strips_imaginary() {
     let mode = MathMode::Standard;
     let mut buf = [0u8; 48];
     let s = engine::format_result(
-        &Matrix::complex(fp::from_integer(3), fp::from_integer(4)),
+        Complex::new(fp::from_integer(3), fp::from_integer(4)),
         mode,
         &mut buf,
     );
@@ -3621,9 +3597,6 @@ fn check_result(expr: &str, expected_kind: &str) {
         nodes: [parser::AstNode::Literal(0); parser::MAX_NODE_COUNT],
         node_count: 0,
         root_index: 0,
-        mat_cache: [None; parser::MATRIX_CACHE_SIZE],
-        mat_cache_count: 0,
-        
     };
     let r = engine::evaluate_expression(
         expr.as_bytes(),
@@ -3634,7 +3607,7 @@ fn check_result(expr: &str, expected_kind: &str) {
         AngleMode::Radians,
     );
     let kind = match r {
-        engine::EvalResult::Matrix(_) => "Value",
+        engine::EvalResult::Value(_) => "Value",
         engine::EvalResult::Overflow { .. } => "Overflow",
         engine::EvalResult::DomainError => "Domain",
     };
@@ -3727,9 +3700,6 @@ fn eval_overflow(expr: &str) -> Option<(i64, i32, bool)> {
         nodes: [parser::AstNode::Literal(0); parser::MAX_NODE_COUNT],
         node_count: 0,
         root_index: 0,
-        mat_cache: [None; parser::MATRIX_CACHE_SIZE],
-        mat_cache_count: 0,
-        
     };
     match engine::evaluate_expression(
         expr.as_bytes(),
@@ -3906,382 +3876,4 @@ fn trace_sinh100() {
         "mantissa {} too far from 1.34406",
         mantissa_f64
     );
-}
-
-// ─── 21. Matrix Operations ─────────────────────────────────────────────────────
-
-fn eval_matrix(expr: &str, vars: &mut VariableStore) -> Option<Matrix> {
-    let mut lex_scratch = lexer::LexResult {
-        tokens: [lexer::Token::Number(0); lexer::MAX_TOKEN_COUNT],
-        token_count: 0,
-    };
-    let mut parse_scratch = parser::ParseTree {
-        nodes: [parser::AstNode::Literal(0); parser::MAX_NODE_COUNT],
-        node_count: 0,
-        root_index: 0,
-        mat_cache: [None; parser::MATRIX_CACHE_SIZE],
-        mat_cache_count: 0,
-        
-    };
-    match engine::evaluate_expression(
-        expr.as_bytes(),
-        vars,
-        &mut lex_scratch,
-        &mut parse_scratch,
-        MathMode::Matrix,
-        AngleMode::Radians,
-    ) {
-        engine::EvalResult::Matrix(ref m) => Some(*m),
-        _ => None,
-    }
-}
-
-#[test]
-fn test_matrix_literal_2x2() {
-    let mut vars = VariableStore::new();
-    let m = eval_matrix("[(1,2)(3,4)]", &mut vars).unwrap();
-    assert_eq!(m.rows, 2);
-    assert_eq!(m.cols, 2);
-    assert_eq!(m.kind, MatrixKind::Mat);
-    assert_eq!(m.cell(0, 0), fp::SCALE); // 1 in Q31.32
-    assert_eq!(m.cell(0, 1), fp::SCALE * 2);
-    assert_eq!(m.cell(1, 0), fp::SCALE * 3);
-    assert_eq!(m.cell(1, 1), fp::SCALE * 4);
-}
-
-#[test]
-fn test_matrix_literal_1x3() {
-    let mut vars = VariableStore::new();
-    let m = eval_matrix("[(1,2,3)]", &mut vars).unwrap();
-    assert_eq!(m.rows, 1);
-    assert_eq!(m.cols, 3);
-    assert_eq!(m.kind, MatrixKind::Mat);
-}
-
-#[test]
-fn test_matrix_literal_3x1() {
-    let mut vars = VariableStore::new();
-    let m = eval_matrix("[(1)(2)(3)]", &mut vars).unwrap();
-    assert_eq!(m.rows, 3);
-    assert_eq!(m.cols, 1);
-}
-
-#[test]
-fn test_matrix_literal_rejected_in_standard_mode() {
-    let mut vars = VariableStore::new();
-    let mut lex_scratch = lexer::LexResult {
-        tokens: [lexer::Token::Number(0); lexer::MAX_TOKEN_COUNT],
-        token_count: 0,
-    };
-    let mut parse_scratch = parser::ParseTree {
-        nodes: [parser::AstNode::Literal(0); parser::MAX_NODE_COUNT],
-        node_count: 0,
-        root_index: 0,
-        mat_cache: [None; parser::MATRIX_CACHE_SIZE],
-        mat_cache_count: 0,
-        
-    };
-    let r = engine::evaluate_expression(
-        b"[(1,2)(3,4)]",
-        &mut vars,
-        &mut lex_scratch,
-        &mut parse_scratch,
-        MathMode::Standard,
-        AngleMode::Radians,
-    );
-    assert!(matches!(r, engine::EvalResult::DomainError));
-}
-
-#[test]
-fn test_matrix_add() {
-    let mut vars = VariableStore::new();
-    let a = eval_matrix("[(1,2)(3,4)]", &mut vars).unwrap();
-    let b = eval_matrix("[(5,6)(7,8)]", &mut vars).unwrap();
-    let c = a.elementwise_add(&b).unwrap();
-    let six = fp::SCALE * 6;
-    let ten = fp::SCALE * 10;
-    let twelve = fp::SCALE * 12;
-    assert_eq!(c.cell(0, 0), six);
-    assert_eq!(c.cell(1, 1), twelve);
-    // Also test via expression
-    {
-        let mut vars2 = VariableStore::new();
-        vars2.write_matrix_reg(b'A', a);
-        vars2.write_matrix_reg(b'B', b);
-        let r = eval_matrix("MatA+MatB", &mut vars2).unwrap();
-        assert_eq!(r.cell(0, 0), six);
-        assert_eq!(r.cell(1, 1), twelve);
-    }
-}
-
-#[test]
-fn test_matrix_sub() {
-    let mut vars = VariableStore::new();
-    let a = eval_matrix("[(5,6)(7,8)]", &mut vars).unwrap();
-    let b = eval_matrix("[(1,2)(3,4)]", &mut vars).unwrap();
-    let c = a.elementwise_sub(&b).unwrap();
-    let four = fp::SCALE * 4;
-    assert_eq!(c.cell(0, 0), four);
-    assert_eq!(c.cell(1, 1), four);
-}
-
-#[test]
-fn test_matrix_mul_2x2() {
-    let mut vars = VariableStore::new();
-    // identity * identity = identity
-    let id = Matrix::identity(2).unwrap();
-    vars.write_matrix_reg(b'A', id);
-    vars.write_matrix_reg(b'B', id);
-    let r = eval_matrix("MatA*MatB", &mut vars).unwrap();
-    assert_eq!(r.rows, 2);
-    assert_eq!(r.cols, 2);
-    assert_eq!(r.cell(0, 0), fp::SCALE);
-    assert_eq!(r.cell(1, 1), fp::SCALE);
-}
-
-#[test]
-fn test_matrix_mul_dim_mismatch() {
-    let mut vars = VariableStore::new();
-    let a = Matrix::mat_from_slice(&[1, 2, 3, 4, 5, 6], 2, 3).unwrap();
-    let b = Matrix::mat_from_slice(&[1, 2, 3, 4], 2, 2).unwrap();
-    vars.write_matrix_reg(b'A', a);
-    vars.write_matrix_reg(b'B', b);
-    let r = eval_matrix("MatA*MatB", &mut vars);
-    assert!(r.is_none());
-}
-
-#[test]
-fn test_det_2x2() {
-    let mut vars = VariableStore::new();
-    let id = Matrix::identity(2).unwrap();
-    vars.write_matrix_reg(b'A', id);
-    let r = eval_matrix("det(MatA)", &mut vars).unwrap();
-    assert_eq!(r.kind, MatrixKind::Scalar);
-    assert_eq!(r.data[0], fp::SCALE);
-}
-
-#[test]
-fn test_det_3x3() {
-    let mut vars = VariableStore::new();
-    let id = Matrix::identity(3).unwrap();
-    vars.write_matrix_reg(b'A', id);
-    let r = eval_matrix("det(MatA)", &mut vars).unwrap();
-    assert_eq!(r.data[0], fp::SCALE);
-}
-
-#[test]
-fn test_det_singular() {
-    let mut vars = VariableStore::new();
-    let m = Matrix::mat_from_slice(&[fp::SCALE, fp::SCALE, fp::SCALE, fp::SCALE], 2, 2).unwrap();
-    vars.write_matrix_reg(b'A', m);
-    let r = eval_matrix("det(MatA)", &mut vars).unwrap();
-    assert_eq!(r.data[0], 0);
-}
-
-#[test]
-fn test_transpose() {
-    let mut vars = VariableStore::new();
-    let m = Matrix::mat_from_slice(&[1, 2, 3, 4, 5, 6], 2, 3).unwrap();
-    vars.write_matrix_reg(b'A', m);
-    let r = eval_matrix("transpose(MatA)", &mut vars).unwrap();
-    assert_eq!(r.rows, 3);
-    assert_eq!(r.cols, 2);
-    assert_eq!(r.cell(0, 0), 1);
-    assert_eq!(r.cell(1, 0), 2);
-    assert_eq!(r.cell(2, 1), 6);
-}
-
-#[test]
-fn test_identity_function() {
-    let mut vars = VariableStore::new();
-    let r = eval_matrix("identity(3)", &mut vars).unwrap();
-    assert_eq!(r.rows, 3);
-    assert_eq!(r.cols, 3);
-    assert_eq!(r.kind, MatrixKind::Mat);
-    for i in 0..3 {
-        for j in 0..3 {
-            let expected = if i == j { fp::SCALE } else { 0 };
-            assert_eq!(r.cell(i, j), expected);
-        }
-    }
-}
-
-#[test]
-fn test_identity_out_of_range() {
-    let mut vars = VariableStore::new();
-    assert!(eval_matrix("identity(0)", &mut vars).is_none());
-    assert!(eval_matrix("identity(7)", &mut vars).is_none());
-}
-
-#[test]
-fn test_matrix_sto_and_read() {
-    let mut vars = VariableStore::new();
-    let r = eval_matrix("sto([(1,2)(3,4)],MatA)", &mut vars).unwrap();
-    assert_eq!(r.rows, 2);
-    assert_eq!(r.cols, 2);
-
-    // Read back from MatA
-    let r2 = eval_matrix("MatA", &mut vars).unwrap();
-    assert_eq!(r2.cell(0, 0), fp::SCALE);
-    assert_eq!(r2.cell(1, 1), fp::SCALE * 4);
-}
-
-#[test]
-fn test_matrix_scalar_broadcast_add() {
-    let mut vars = VariableStore::new();
-    let m = eval_matrix("[(1,2)(3,4)]", &mut vars).unwrap();
-    vars.write_matrix_reg(b'A', m);
-    let r = eval_matrix("MatA+5", &mut vars).unwrap();
-    let five_scaled = fp::SCALE * 5;
-    assert_eq!(r.cell(0, 0), fp::SCALE + five_scaled);
-    assert_eq!(r.cell(1, 1), fp::SCALE * 4 + five_scaled);
-}
-
-#[test]
-fn test_matrix_scalar_broadcast_mul() {
-    let mut vars = VariableStore::new();
-    let m = Matrix::identity(2).unwrap();
-    vars.write_matrix_reg(b'A', m);
-    let r = eval_matrix("MatA*3", &mut vars).unwrap();
-    let three_scaled = fp::from_integer(3);
-    assert_eq!(r.cell(0, 0), three_scaled);
-    assert_eq!(r.cell(1, 1), three_scaled);
-}
-
-#[test]
-fn test_matrix_mode_guards_in_standard() {
-    let mut vars = VariableStore::new();
-    let mut lex_scratch = lexer::LexResult {
-        tokens: [lexer::Token::Number(0); lexer::MAX_TOKEN_COUNT],
-        token_count: 0,
-    };
-    let mut parse_scratch = parser::ParseTree {
-        nodes: [parser::AstNode::Literal(0); parser::MAX_NODE_COUNT],
-        node_count: 0,
-        root_index: 0,
-        mat_cache: [None; parser::MATRIX_CACHE_SIZE],
-        mat_cache_count: 0,
-        
-    };
-    // A scalar 5 in Matrix mode should still work
-    let r = engine::evaluate_expression(
-        b"5",
-        &mut vars,
-        &mut lex_scratch,
-        &mut parse_scratch,
-        MathMode::Matrix,
-        AngleMode::Radians,
-    );
-    assert!(matches!(r, engine::EvalResult::Matrix(ref m) if m.kind == MatrixKind::Scalar));
-}
-
-#[test]
-fn test_matrix_det_4x4_identity() {
-    let mut vars = VariableStore::new();
-    let id4 = Matrix::identity(4).unwrap();
-    vars.write_matrix_reg(b'A', id4);
-    let r = eval_matrix("det(MatA)", &mut vars).unwrap();
-    assert_eq!(r.data[0], fp::SCALE);
-}
-
-#[test]
-fn test_matrix_det_not_square() {
-    let mut vars = VariableStore::new();
-    let m = Matrix::mat_from_slice(&[1, 2, 3, 4, 5, 6], 2, 3).unwrap();
-    vars.write_matrix_reg(b'A', m);
-    let r = eval_matrix("det(MatA)", &mut vars);
-    assert!(r.is_none());
-}
-
-#[test]
-fn test_matrix_scalar_mul_preserves_mode() {
-    let mut vars = VariableStore::new();
-    let m = Matrix::mat_from_slice(
-        &[fp::SCALE, fp::SCALE * 2, fp::SCALE * 3, fp::SCALE * 4],
-        2,
-        2,
-    )
-    .unwrap();
-    vars.write_matrix_reg(b'A', m);
-    let r = eval_matrix("MatA*2", &mut vars).unwrap();
-    assert_eq!(r.kind, MatrixKind::Mat);
-    assert_eq!(r.cell(0, 0), fp::SCALE * 2);
-    assert_eq!(r.cell(1, 1), fp::SCALE * 8);
-}
-
-#[test]
-fn test_matrix_negation() {
-    let mut vars = VariableStore::new();
-    let r = eval_matrix("-[(1,2)(3,4)]", &mut vars).unwrap();
-    assert_eq!(r.cell(0, 0), -fp::SCALE);
-    assert_eq!(r.cell(1, 1), -fp::SCALE * 4);
-}
-
-#[test]
-fn test_matregister_identifiers() {
-    // Test that MatA, MatB, MatC are recognized (case-insensitive prefix)
-    let mut vars = VariableStore::new();
-    let m = Matrix::identity(2).unwrap();
-    vars.write_matrix_reg(b'A', m);
-    let r = eval_matrix("MatA", &mut vars).unwrap();
-    assert_eq!(r.cell(0, 0), fp::SCALE);
-
-    // mAtA should also work (case-insensitive)
-    let mut lex_scratch = lexer::LexResult {
-        tokens: [lexer::Token::Number(0); lexer::MAX_TOKEN_COUNT],
-        token_count: 0,
-    };
-    let mut parse_scratch = parser::ParseTree {
-        nodes: [parser::AstNode::Literal(0); parser::MAX_NODE_COUNT],
-        node_count: 0,
-        root_index: 0,
-        mat_cache: [None; parser::MATRIX_CACHE_SIZE],
-        mat_cache_count: 0,
-        
-    };
-    let r2 = engine::evaluate_expression(
-        b"mata",
-        &mut vars,
-        &mut lex_scratch,
-        &mut parse_scratch,
-        MathMode::Matrix,
-        AngleMode::Radians,
-    );
-    assert!(matches!(r2, engine::EvalResult::Matrix(ref m) if m.cell(0, 0) == fp::SCALE));
-}
-
-#[test]
-fn test_scalar_mat_mul_order() {
-    // User's exact workflow: sto(...) then Scalar*Mat, then Mat*Scalar
-    let mut vars = VariableStore::new();
-
-    // Step 1: store the matrix via sto()
-    let stored = eval_matrix("sto([(3,2,3)(4,5,6)(7,8,9)],MatA)", &mut vars);
-    assert!(stored.is_some(), "sto should succeed");
-
-    // Step 2: (Scalar * Mat) — user reports this produces scalar instead of matrix
-    let r = eval_matrix("(1/det(MatA))*MatA", &mut vars);
-    assert!(r.is_some(), "Scalar*Mat should succeed");
-    let r = r.unwrap();
-    assert_eq!(r.kind, MatrixKind::Mat,
-        "BUG: (1/det(MatA))*MatA produced kind={:?} instead of Mat. Result value: {}",
-        r.kind, r.data[0]);
-    assert_eq!(r.rows, 3);
-    assert_eq!(r.cols, 3);
-
-    // Step 3: (Mat * Scalar) — this should work (and does)
-    let r2 = eval_matrix("MatA*(1/det(MatA))", &mut vars);
-    assert!(r2.is_some());
-    let r2 = r2.unwrap();
-    assert_eq!(r2.kind, MatrixKind::Mat);
-    assert_eq!(r2.rows, 3);
-    assert_eq!(r2.cols, 3);
-
-    // Verify both orderings produce same result
-    for i in 0..9 {
-        let idx_t = (i / 3) * 3 + (i % 3);
-        assert_eq!(r.data[idx_t], r2.data[idx_t],
-            "Mismatch at cell ({}): Scalar*Mat={} Mat*Scalar={}",
-            i, r.data[idx_t], r2.data[idx_t]);
-    }
 }

@@ -1,91 +1,133 @@
+//! # Parser (Math Engine — Layer 6)
+//!
+//! Converts the flat token stream from the lexer into an Abstract Syntax Tree
+//! that encodes operator precedence, associativity, and function application.
+//!
+//! ## Grammar (recursive descent)
+//!
+//!   expression  =  term   ( ( '+' | '−' )   term   )*
+//!   term        =  power  ( ( '*' | '/' | '%' ) power )*
+//!   power       =  unary  ( '^' power )*          ← right-associative
+//!   unary       =  '−' unary  |  postfix
+//!   postfix     =  primary                         ← (future: factorial)
+//!   primary     =  NUMBER | CONSTANT | VARIABLE
+//!               |  FUNCTION '(' expression ')'
+//!               |  '(' expression ')'
+//!
+//! Precedence (low → high):
+//!   + −   (additive)
+//!   * / % (multiplicative)
+//!   ^     (exponentiation, right-associative)
+//!   unary −
+//!   function calls, grouping
+
 use super::lexer::{LexResult, Token};
-use super::matrix::Matrix;
 
+/// Maximum AST nodes for one expression.
 pub const MAX_NODE_COUNT: usize = 64;
+// 64 nodes covers deeply nested expressions within our 32-token budget.
+// Keeps ParseTree at ~1 KB — safe for static allocation in CalcState.
 
-#[derive(Clone, Copy)]
-pub enum StoreTarget {
-    Scalar,
-    Matrix,
-}
+// ─── AST node types ───────────────────────────────────────────────────────────
 
-pub const MATRIX_CACHE_SIZE: usize = 2;
-
+/// A single node in the Abstract Syntax Tree.
 #[derive(Clone, Copy)]
 pub enum AstNode {
+    /// A numeric literal in Q31.32.
     Literal(i64),
+
+    /// A named constant (π, e).
     Constant(MathConstant),
+
+    /// A variable reference (Ans, A–F).
     Variable(VariableRef),
+
+    /// A binary arithmetic operation.
     BinaryOperation {
         operator: BinaryOperator,
         left_child_index: usize,
         right_child_index: usize,
     },
-    UnaryNegation {
-        operand_index: usize,
-    },
+
+    /// Unary negation of a sub-expression.
+    UnaryNegation { operand_index: usize },
+
+    /// A mathematical function applied to one argument.
     FunctionCall {
         function: MathFunction,
         argument_index: usize,
     },
+
+    /// A numeric function applied to exactly three arguments.
+    /// Used by: binomP(n, k, p)
     ThreeArgFunction {
         function: ThreeArgMathFunction,
         arg_indices: [usize; 3],
     },
+
+    /// A numeric function applied to exactly two arguments.
+    /// Used by: poissonP(λ, k), chiCDF(x, k)
     TwoArgFunction {
         function: TwoArgMathFunction,
         arg_indices: [usize; 2],
     },
+
+    /// Store a value into a user register.
+    /// Used by sto(value, var). Returns the stored value.
     Store {
+        /// Index of the value expression node.
         value_index: usize,
+        /// The register letter to store into (e.g. b'A' for register A).
         register: u8,
-        target: StoreTarget,
     },
+
+    /// A looping aggregate over an expression body with a bound variable.
+    /// Used by sum(expr, var, start, end) and int(expr, var, a, b).
+    ///
+    /// The `variable` field identifies which register (A–F) serves as the
+    /// loop variable. Its value in the VariableStore is temporarily shadowed
+    /// during evaluation — the original value is restored afterward.
     LoopAggregate {
         operation: LoopOperation,
+        /// The register letter used as the loop variable (e.g. b'K' for K).
         variable: u8,
+        /// Index of the start-bound expression node.
         start_index: usize,
+        /// Index of the end-bound expression node.
         end_index: usize,
+        /// Index of the expression body node (evaluated once per step).
         body_index: usize,
     },
-    MatrixLiteral {
-        cache_index: usize,
-    },
-    MatrixRegister(u8),
-    MatrixFunctionCall {
-        function: MatrixFunction,
-        argument_index: usize,
-    },
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum MatrixFunction {
-    Det,
-    Transpose,
-    Identity,
-    Inv,
-    Cofactor,
-    Adjugate,
-}
-
+/// Functions that take exactly three numeric arguments.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ThreeArgMathFunction {
+    /// P(X=k) for X ~ Binomial(n, p). Arguments: n, k, p.
     BinomialProbability,
 }
 
+/// Functions that take exactly two numeric arguments.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum TwoArgMathFunction {
+    /// P(X=k) for X ~ Poisson(λ). Arguments: λ, k.
     PoissonProbability,
+    /// P(X≤x) for X ~ χ²(k). Arguments: x, k.
     ChiSquaredCDF,
+    /// n-th root of a number. Arguments: x, n.
     NthRoot,
 }
 
+/// The two looping aggregate operations.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum LoopOperation {
+    /// Σ: sum the body expression over the integer range [start, end].
     Summation,
+    /// ∫: integrate the body expression from start to end via Simpson's rule.
     Integration,
 }
 
+/// Named mathematical constants.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum MathConstant {
     Pi,
@@ -93,12 +135,16 @@ pub enum MathConstant {
     ImaginaryUnit,
 }
 
+/// Variable references.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum VariableRef {
+    /// The `Ans` variable — last computed answer.
     Ans,
+    /// A user register, identified by its letter byte ('A'–'F').
     Register(u8),
 }
 
+/// Binary arithmetic operators.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum BinaryOperator {
     Add,
@@ -109,6 +155,7 @@ pub enum BinaryOperator {
     Power,
 }
 
+/// Single-argument mathematical functions.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum MathFunction {
     Sin,
@@ -125,27 +172,29 @@ pub enum MathFunction {
     ATanH,
     Sqrt,
     Abs,
-    Log,
-    Ln,
+    Log, // log10
+    Ln,  // natural log
     Log2,
-    Exp,
+    Exp, // e^x
     Floor,
     Ceil,
     Round,
-    Deg,
-    Rad,
-    LnGamma,
+    Deg,     // radians → degrees
+    Rad,     // degrees → radians
+    LnGamma, // ln(Γ(x))
 }
 
+// ─── Parse tree ───────────────────────────────────────────────────────────────
+
+/// A complete AST stored as a flat arena of nodes.
 pub struct ParseTree {
     pub nodes: [AstNode; MAX_NODE_COUNT],
     pub node_count: usize,
     pub root_index: usize,
-    pub mat_cache: [Option<Matrix>; MATRIX_CACHE_SIZE],
-    pub mat_cache_count: usize,
 }
 
 impl ParseTree {
+    /// Allocate a new node in the arena and return its index.
     pub fn allocate_node(&mut self, node: AstNode) -> Option<usize> {
         if self.node_count >= MAX_NODE_COUNT {
             return None;
@@ -155,17 +204,9 @@ impl ParseTree {
         self.node_count += 1;
         Some(index)
     }
-
-    pub fn allocate_matrix(&mut self, m: Matrix) -> Option<usize> {
-        if self.mat_cache_count >= MATRIX_CACHE_SIZE {
-            return None;
-        }
-        let idx = self.mat_cache_count;
-        self.mat_cache[idx] = Some(m);
-        self.mat_cache_count += 1;
-        Some(idx)
-    }
 }
+
+// ─── Parser cursor ────────────────────────────────────────────────────────────
 
 struct ParserCursor<'a> {
     tokens: &'a [Token],
@@ -197,22 +238,34 @@ impl<'a> ParserCursor<'a> {
     }
 }
 
+// ─── Public API ───────────────────────────────────────────────────────────────
+
+/// Parse a `LexResult` into `tree` (a caller-provided scratch `ParseTree`).
+///
+/// The caller provides the `ParseTree` (typically from `CalcState`) so no
+/// stack allocation occurs. The tree is reset before use.
+///
+/// Returns `None` if the token stream is not a syntactically valid expression.
 pub fn parse_token_stream<'a>(lex: &LexResult, tree: &'a mut ParseTree) -> Option<&'a ParseTree> {
+    // Reset the scratch buffer before reuse.
     tree.node_count = 0;
     tree.root_index = 0;
-    tree.mat_cache_count = 0;
 
     let mut cursor = ParserCursor::new(lex);
 
     let root = parse_expression(&mut cursor, tree)?;
     tree.root_index = root;
 
+    // Any unconsumed tokens mean the input was malformed.
     if !cursor.is_finished() {
         return None;
     }
     Some(tree)
 }
 
+// ─── Grammar rule implementations ────────────────────────────────────────────
+
+/// expression = term ( ( '+' | '−' ) term )*
 fn parse_expression(cursor: &mut ParserCursor, tree: &mut ParseTree) -> Option<usize> {
     let mut left = parse_term(cursor, tree)?;
 
@@ -233,10 +286,17 @@ fn parse_expression(cursor: &mut ParserCursor, tree: &mut ParseTree) -> Option<u
     Some(left)
 }
 
+/// term = power ( ( '*' | '/' | '%' | implicit_mult ) power )*
+///
+/// Implicit multiplication fires when a primary expression is immediately
+/// followed by the start of another primary with no explicit operator, e.g.
+/// `3(5)`, `(a)b`, `(x)(y)`, `a b`, `a 3`. This makes the multiplication
+/// operator optional before parentheses, variables, constants, and numbers.
 fn parse_term(cursor: &mut ParserCursor, tree: &mut ParseTree) -> Option<usize> {
     let mut left = parse_power(cursor, tree)?;
 
     loop {
+        // ── Explicit multiplication / division / modulo ───────────────
         let op = match cursor.peek() {
             Some(Token::Star) => {
                 cursor.advance();
@@ -262,6 +322,10 @@ fn parse_term(cursor: &mut ParserCursor, tree: &mut ParseTree) -> Option<usize> 
             continue;
         }
 
+        // ── Implicit multiplication ───────────────────────────────────
+        // If the next token starts a primary expression (number, variable,
+        // constant, function call, or parenthesised group), treat it as an
+        // implicit multiply: a(b) → a * b, (a)b → a * b, 3(5) → 3 * 5.
         if let Some(token) = cursor.peek() {
             if is_primary_start(token) {
                 let right = parse_power(cursor, tree)?;
@@ -279,11 +343,14 @@ fn parse_term(cursor: &mut ParserCursor, tree: &mut ParseTree) -> Option<usize> 
     Some(left)
 }
 
+/// power = unary ( '^' power )*     ← right-associative via recursion
 fn parse_power(cursor: &mut ParserCursor, tree: &mut ParseTree) -> Option<usize> {
     let base = parse_unary(cursor, tree)?;
 
     if cursor.peek() == Some(Token::Caret) {
         cursor.advance();
+        // Recurse into parse_power for right-associativity:
+        // 2^3^4 = 2^(3^4), not (2^3)^4
         let exponent = parse_power(cursor, tree)?;
         tree.allocate_node(AstNode::BinaryOperation {
             operator: BinaryOperator::Power,
@@ -295,6 +362,7 @@ fn parse_power(cursor: &mut ParserCursor, tree: &mut ParseTree) -> Option<usize>
     }
 }
 
+/// unary = '−' unary | primary
 fn parse_unary(cursor: &mut ParserCursor, tree: &mut ParseTree) -> Option<usize> {
     if cursor.peek() == Some(Token::UnaryMinus) {
         cursor.advance();
@@ -307,18 +375,26 @@ fn parse_unary(cursor: &mut ParserCursor, tree: &mut ParseTree) -> Option<usize>
     }
 }
 
+/// primary = NUMBER | CONSTANT | VARIABLE
+///          | SINGLE_ARG_FUNC '(' expr ')'
+///          | THREE_ARG_FUNC '(' expr ',' expr ',' expr ')'
+///          | LOOP_AGGREGATE '(' expr ',' VAR ',' expr ',' expr ')'
+///          | '(' expr ')'
 fn parse_primary(cursor: &mut ParserCursor, tree: &mut ParseTree) -> Option<usize> {
     match cursor.advance()? {
+        // Numeric literal.
         Token::Number(value) => tree.allocate_node(AstNode::Literal(value)),
 
+        // Named constants.
         Token::ConstPi => tree.allocate_node(AstNode::Constant(MathConstant::Pi)),
         Token::ConstE => tree.allocate_node(AstNode::Constant(MathConstant::E)),
         Token::ConstI => tree.allocate_node(AstNode::Constant(MathConstant::ImaginaryUnit)),
 
+        // Variables.
         Token::VarAns => tree.allocate_node(AstNode::Variable(VariableRef::Ans)),
         Token::VarRegister(ch) => tree.allocate_node(AstNode::Variable(VariableRef::Register(ch))),
-        Token::MatRegister(ch) => tree.allocate_node(AstNode::MatrixRegister(ch)),
 
+        // Single-argument function calls: FUNC '(' expression ')'
         func_token if is_single_arg_function_token(func_token) => {
             if cursor.advance() != Some(Token::LeftParen) {
                 return None;
@@ -334,6 +410,7 @@ fn parse_primary(cursor: &mut ParserCursor, tree: &mut ParseTree) -> Option<usiz
             })
         }
 
+        // Three-argument functions: FUNC '(' expr ',' expr ',' expr ')'
         func_token if is_three_arg_function_token(func_token) => {
             if cursor.advance() != Some(Token::LeftParen) {
                 return None;
@@ -357,6 +434,7 @@ fn parse_primary(cursor: &mut ParserCursor, tree: &mut ParseTree) -> Option<usiz
             })
         }
 
+        // Two-argument functions: FUNC '(' expr ',' expr ')'
         func_token if is_two_arg_function_token(func_token) => {
             if cursor.advance() != Some(Token::LeftParen) {
                 return None;
@@ -376,6 +454,7 @@ fn parse_primary(cursor: &mut ParserCursor, tree: &mut ParseTree) -> Option<usiz
             })
         }
 
+        // sto(value, var): store expression value into a register.
         Token::FuncSto => {
             if cursor.advance() != Some(Token::LeftParen) {
                 return None;
@@ -384,9 +463,8 @@ fn parse_primary(cursor: &mut ParserCursor, tree: &mut ParseTree) -> Option<usiz
             if cursor.advance() != Some(Token::Comma) {
                 return None;
             }
-            let (register, target) = match cursor.advance()? {
-                Token::VarRegister(ch) => (ch, StoreTarget::Scalar),
-                Token::MatRegister(ch) => (ch, StoreTarget::Matrix),
+            let register = match cursor.advance()? {
+                Token::VarRegister(ch) => ch,
                 _ => return None,
             };
             if cursor.advance() != Some(Token::RightParen) {
@@ -395,10 +473,10 @@ fn parse_primary(cursor: &mut ParserCursor, tree: &mut ParseTree) -> Option<usiz
             tree.allocate_node(AstNode::Store {
                 value_index,
                 register,
-                target,
             })
         }
 
+        // Loop aggregates: sum/int '(' body ',' var ',' start ',' end ')'
         func_token if is_loop_aggregate_token(func_token) => {
             if cursor.advance() != Some(Token::LeftParen) {
                 return None;
@@ -407,6 +485,7 @@ fn parse_primary(cursor: &mut ParserCursor, tree: &mut ParseTree) -> Option<usiz
             if cursor.advance() != Some(Token::Comma) {
                 return None;
             }
+            // Variable must be a single register letter (A–F)
             let variable = match cursor.advance()? {
                 Token::VarRegister(ch) => ch,
                 _ => return None,
@@ -436,94 +515,7 @@ fn parse_primary(cursor: &mut ParserCursor, tree: &mut ParseTree) -> Option<usiz
             })
         }
 
-        tok @ (Token::FuncDet | Token::FuncTranspose | Token::FuncIdentity
-               | Token::FuncInv | Token::FuncCofactor | Token::FuncAdjugate) => {
-            let function = token_to_matrix_function(tok)?;
-            if cursor.advance() != Some(Token::LeftParen) {
-                return None;
-            }
-            let arg = parse_expression(cursor, tree)?;
-            if cursor.advance() != Some(Token::RightParen) {
-                return None;
-            }
-            tree.allocate_node(AstNode::MatrixFunctionCall {
-                function,
-                argument_index: arg,
-            })
-        }
-
-        Token::LeftBracket => {
-            let mut rows = 0u8;
-            let mut cols: Option<u8> = None;
-            let mut data = [0i64; super::matrix::MAX_MATRIX_CELLS];
-            let mut pos = 0usize;
-
-            loop {
-                if cursor.peek() != Some(Token::LeftParen) {
-                    return None;
-                }
-                cursor.advance();
-
-                let mut row_cols = 0u8;
-                loop {
-                    let val = match cursor.advance()? {
-                        Token::Number(v) => v,
-                        _ => return None,
-                    };
-                    if pos >= super::matrix::MAX_MATRIX_CELLS {
-                        return None;
-                    }
-                    data[pos] = val;
-                    pos += 1;
-                    row_cols += 1;
-
-                    match cursor.peek() {
-                        Some(Token::Comma) => {
-                            cursor.advance();
-                            continue;
-                        }
-                        Some(Token::RightParen) => {
-                            cursor.advance();
-                            break;
-                        }
-                        _ => return None,
-                    }
-                }
-
-                if let Some(expected) = cols {
-                    if row_cols != expected {
-                        return None;
-                    }
-                } else {
-                    if row_cols == 0 || row_cols as usize > super::matrix::MAX_MATRIX_DIM {
-                        return None;
-                    }
-                    cols = Some(row_cols);
-                }
-                rows += 1;
-                if rows as usize > super::matrix::MAX_MATRIX_DIM {
-                    return None;
-                }
-
-                match cursor.peek() {
-                    Some(Token::LeftParen) => continue,
-                    Some(Token::RightBracket) => {
-                        cursor.advance();
-                        break;
-                    }
-                    _ => return None,
-                }
-            }
-
-            if rows == 0 || pos == 0 {
-                return None;
-            }
-
-            let m = Matrix::mat_from_slice(&data[..pos], rows, cols.unwrap_or(0))?;
-            let idx = tree.allocate_matrix(m)?;
-            tree.allocate_node(AstNode::MatrixLiteral { cache_index: idx })
-        }
-
+        // Parenthesised sub-expression.
         Token::LeftParen => {
             let inner = parse_expression(cursor, tree)?;
             if cursor.advance() != Some(Token::RightParen) {
@@ -532,18 +524,24 @@ fn parse_primary(cursor: &mut ParserCursor, tree: &mut ParseTree) -> Option<usiz
             Some(inner)
         }
 
+        // Anything else is a syntax error.
         _ => None,
     }
 }
 
+// ─── Token classification helpers ────────────────────────────────────────────
+
+/// Return true if the token represents a single-argument mathematical function.
 fn is_single_arg_function_token(token: Token) -> bool {
     token_to_single_arg_function(token).is_some()
 }
 
+/// Return true if the token is a three-argument numeric function.
 fn is_three_arg_function_token(token: Token) -> bool {
     matches!(token, Token::FuncBinomP)
 }
 
+/// Return true if the token is a two-argument numeric function.
 fn is_two_arg_function_token(token: Token) -> bool {
     matches!(
         token,
@@ -551,28 +549,26 @@ fn is_two_arg_function_token(token: Token) -> bool {
     )
 }
 
+/// Return true if the token is a loop aggregate (sum or int).
 fn is_loop_aggregate_token(token: Token) -> bool {
     matches!(token, Token::FuncSum | Token::FuncInt)
 }
 
+/// Return true if the token can start a primary expression.
+///
+/// Used by `parse_term` for implicit multiplication detection. A primary
+/// starts with a literal, variable, constant, parenthesised group, or any
+/// named function (all of which demand `(` next in `parse_primary`).
 fn is_primary_start(token: Token) -> bool {
     matches!(
         token,
         Token::Number(_)
             | Token::VarAns
             | Token::VarRegister(_)
-            | Token::MatRegister(_)
             | Token::ConstPi
             | Token::ConstE
             | Token::ConstI
             | Token::LeftParen
-            | Token::LeftBracket
-            | Token::FuncDet
-            | Token::FuncTranspose
-            | Token::FuncIdentity
-            | Token::FuncInv
-            | Token::FuncCofactor
-            | Token::FuncAdjugate
     ) || is_single_arg_function_token(token)
         || is_three_arg_function_token(token)
         || is_two_arg_function_token(token)
@@ -580,6 +576,7 @@ fn is_primary_start(token: Token) -> bool {
         || token == Token::FuncSto
 }
 
+/// Map a single-argument function token to its MathFunction variant.
 fn token_to_single_arg_function(token: Token) -> Option<MathFunction> {
     Some(match token {
         Token::FuncSin => MathFunction::Sin,
@@ -610,6 +607,7 @@ fn token_to_single_arg_function(token: Token) -> Option<MathFunction> {
     })
 }
 
+/// Map a three-argument function token to its ThreeArgMathFunction variant.
 fn token_to_three_arg_function(token: Token) -> Option<ThreeArgMathFunction> {
     Some(match token {
         Token::FuncBinomP => ThreeArgMathFunction::BinomialProbability,
@@ -617,23 +615,12 @@ fn token_to_three_arg_function(token: Token) -> Option<ThreeArgMathFunction> {
     })
 }
 
+/// Map a two-argument function token to its TwoArgMathFunction variant.
 fn token_to_two_arg_function(token: Token) -> Option<TwoArgMathFunction> {
     Some(match token {
         Token::FuncPoissonP => TwoArgMathFunction::PoissonProbability,
         Token::FuncChiCDF => TwoArgMathFunction::ChiSquaredCDF,
         Token::FuncNthRoot => TwoArgMathFunction::NthRoot,
-        _ => return None,
-    })
-}
-
-fn token_to_matrix_function(token: Token) -> Option<MatrixFunction> {
-    Some(match token {
-        Token::FuncDet => MatrixFunction::Det,
-        Token::FuncTranspose => MatrixFunction::Transpose,
-        Token::FuncIdentity => MatrixFunction::Identity,
-        Token::FuncInv => MatrixFunction::Inv,
-        Token::FuncCofactor => MatrixFunction::Cofactor,
-        Token::FuncAdjugate => MatrixFunction::Adjugate,
         _ => return None,
     })
 }

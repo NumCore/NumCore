@@ -31,15 +31,12 @@ fn initialise_all_hardware<U: Uart, D: Display>() {
 
 fn print_welcome_banner<U: Uart>() {
     U::transmit_bytes(b"\r\nNumCore v0.4  LM3S811  Q31.32 PEMDAS\r\n");
-    U::transmit_bytes(b"Modes: Standard | Advanced | Matrix  (Esc cycles)\r\n");
-    U::transmit_bytes(b"Scalar/Complex: + - * / ^ %  |  sin cos tan asin acos atan\r\n");
+    U::transmit_bytes(b"Ops: + - * / ^ %  |  sin cos tan asin acos atan\r\n");
     U::transmit_bytes(b"  sinh cosh tanh asinh acosh atanh sqrt abs exp log ln\r\n");
     U::transmit_bytes(b"  log2 floor ceil round deg rad nthroot lngamma sto(v,r)\r\n");
     U::transmit_bytes(b"  binomp(n,k,p) poissonp(l,k) chicdf(x,k)\r\n");
     U::transmit_bytes(b"  sum(expr,v,a,b) int(expr,v,a,b)\r\n");
-    U::transmit_bytes(b"Matrix: det inv transpose identity cofactor adj\r\n");
-    U::transmit_bytes(b"  MatA MatB MatC  |  [(a,b)(c,d)]  |  k*MatA  MatA*MatB\r\n");
-    U::transmit_bytes(b"Const: pi e  |  Vars: Ans A-Z  |  MatA MatB MatC\r\n\r\n");
+    U::transmit_bytes(b"Const: pi e  |  Vars: Ans A-Z\r\n\r\n");
 }
 
 // ─── ANSI escape sequence parser ─────────────────────────────────────────────
@@ -83,39 +80,24 @@ fn run_event_loop<U: Uart, D: Display>(state: &mut CalcState) -> ! {
                         ansi_len = 2;
                         ansi_state = AnsiSeq::PendingBracket;
                     } else {
-                        // 0x1B followed by non-[ → standalone Escape (ToggleMode),
-                        // then process the current byte. If it's another 0x1B,
-                        // chain into another PendingEscape instead of toggling.
-                        if raw_byte == 0x1B {
-                            // Chained Escape — stay in pending state
-                            ansi_len = 1;
-                        } else {
-                            handle_event::<U, D>(CalcEvent::ToggleMode, state);
-                            handle_event::<U, D>(translate_input_byte_to_event(raw_byte), state);
-                            ansi_state = AnsiSeq::None;
-                            ansi_len = 0;
-                        }
+                        // 0x1B followed by non-[ → standalone Escape,
+                        // then process the current byte normally.
+                        handle_event::<U, D>(CalcEvent::ToggleMode, state);
+                        handle_event::<U, D>(translate_input_byte_to_event(raw_byte), state);
+                        ansi_state = AnsiSeq::None;
+                        ansi_len = 0;
                     }
                 }
                 AnsiSeq::PendingBracket => {
                     // Third byte determines the arrow direction.
-                    // If it's 0x1B (next Escape in rapid repeats), restart as PendingEscape.
                     ansi_state = AnsiSeq::None;
                     ansi_len = 0;
-                    if raw_byte == 0x1B {
-                        ansi_state = AnsiSeq::PendingEscape;
-                        ansi_buf[0] = 0x1B;
-                        ansi_len = 1;
-                    } else {
-                        let event = match raw_byte {
-                            b'A' => CalcEvent::CursorUp,
-                            b'B' => CalcEvent::CursorDown,
-                            b'D' => CalcEvent::CursorLeft,
-                            b'C' => CalcEvent::CursorRight,
-                            _ => CalcEvent::Ignored,
-                        };
-                        handle_event::<U, D>(event, state);
-                    }
+                    let event = match raw_byte {
+                        b'D' => CalcEvent::CursorLeft,
+                        b'C' => CalcEvent::CursorRight,
+                        _ => CalcEvent::Ignored,
+                    };
+                    handle_event::<U, D>(event, state);
                 }
             }
         } else if ansi_state != AnsiSeq::None {
@@ -143,53 +125,16 @@ fn handle_event<U: Uart, D: Display>(event: CalcEvent, state: &mut CalcState) {
         }
         CalcEvent::Submit => handle_expression_submission::<U, D>(state),
         CalcEvent::Backspace => handle_backspace::<U, D>(state),
-        CalcEvent::CursorLeft => {
-            if state.has_matrix_result() && state.current_input().is_empty() {
-                state.scroll_matrix_left();
-                render_oled::<D>(state);
-            } else {
-                handle_cursor_left::<U, D>(state);
-            }
-        }
-        CalcEvent::CursorRight => {
-            if state.has_matrix_result() && state.current_input().is_empty() {
-                state.scroll_matrix_right();
-                render_oled::<D>(state);
-            } else {
-                handle_cursor_right::<U, D>(state);
-            }
-        }
-        CalcEvent::CursorUp => {
-            if state.has_matrix_result() && state.current_input().is_empty() {
-                state.scroll_matrix_up();
-                render_oled::<D>(state);
-            } else if state.current_input().len() > 0 {
-                state.move_cursor_left();
-                render_oled::<D>(state);
-            }
-        }
-
-        CalcEvent::CursorDown => {
-            if state.has_matrix_result() && state.current_input().is_empty() {
-                state.scroll_matrix_down();
-                render_oled::<D>(state);
-            } else if state.current_input().len() > 0 {
-                state.move_cursor_right();
-                render_oled::<D>(state);
-            }
-        }
-
+        CalcEvent::CursorLeft => handle_cursor_left::<U, D>(state),
+        CalcEvent::CursorRight => handle_cursor_right::<U, D>(state),
         CalcEvent::ToggleMode => {
-            use state::CalculatorMode as CM;
             let new_mode = match state.active_mode() {
-                CM::Standard => CM::Advanced,
-                CM::Advanced => CM::Matrix,
-                CM::Matrix => CM::Standard,
+                state::CalculatorMode::Standard => state::CalculatorMode::Advanced,
+                state::CalculatorMode::Advanced => state::CalculatorMode::Standard,
             };
-            let name: &[u8] = match new_mode {
-                CM::Standard => b"Standard",
-                CM::Advanced => b"Advanced",
-                CM::Matrix => b"Matrix",
+            let name = match new_mode {
+                state::CalculatorMode::Standard => b"Standard",
+                state::CalculatorMode::Advanced => b"Advanced",
             };
             state.switch_mode(new_mode);
             state.set_last_result(name);
@@ -265,21 +210,6 @@ fn handle_expression_submission<U: Uart, D: Display>(state: &mut CalcState) {
         return;
     }
 
-    // Stack guard: refuse evaluation if stack pointer is too close to .bss.
-    // This prevents silent corruption from stack overflow into static RAM.
-    const BSS_END: usize = 0x2000_13E0;
-    const STACK_MARGIN: usize = 128;
-    let sp: usize;
-    unsafe { core::arch::asm!("mov {}, sp", out(reg) sp) };
-    if sp <= BSS_END + STACK_MARGIN {
-        U::transmit_bytes(b"! large\r\n");
-        state.set_last_result(b"large");
-        state.clear_input();
-        U::transmit_bytes(b"> ");
-        render_oled_result::<D>(state);
-        return;
-    }
-
     let result = {
         let variables = &mut state.variables as *mut _;
         let lex_scratch = &mut state.lex_scratch as *mut _;
@@ -297,30 +227,15 @@ fn handle_expression_submission<U: Uart, D: Display>(state: &mut CalcState) {
     };
 
     let mut result_line = [0u8; 48];
-    let mut uart_buf = [0u8; 192];
     match result {
-        EvalResult::Matrix(mat) => {
-            use crate::math::matrix::MatrixKind;
+        EvalResult::Value(complex) => {
+            state.record_answer(complex);
+
             U::transmit_bytes(b"= ");
-            match mat.kind {
-                MatrixKind::Scalar | MatrixKind::Complex => {
-                    let s = engine::format_result(&mat, state.math_mode(), &mut result_line);
-                    U::transmit_bytes(s);
-                    U::transmit_bytes(b"\r\n");
-                    state.set_last_result(s);
-                    if let Some(c) = mat.to_complex() {
-                        state.variables.write_ans(c);
-                    }
-                }
-                MatrixKind::Mat => {
-                    let u = engine::format_result_uart(&mat, &mut uart_buf);
-                    U::transmit_bytes(u);
-                    U::transmit_bytes(b"\r\n");
-                    let dims = [b'0' + mat.rows, b'x', b'0' + mat.cols];
-                    state.set_last_result(&dims);
-                    state.variables.write_matrix_ans(mat);
-                }
-            }
+            let formatted = engine::format_result(complex, state.math_mode(), &mut result_line);
+            U::transmit_bytes(formatted);
+            U::transmit_bytes(b"\r\n");
+            state.set_last_result(formatted);
         }
         EvalResult::Overflow {
             mantissa,
@@ -353,20 +268,6 @@ fn handle_expression_submission<U: Uart, D: Display>(state: &mut CalcState) {
 
 fn render_oled<D: Display>(state: &CalcState) {
     let mut framebuffer = D::new_buffer();
-    // Show matrix result only when no input is being composed
-    if state.current_input().is_empty() {
-        if let Some(ref mat) = state.get_matrix_result() {
-            let mut grid = crate::runtime::state::DisplayGrid::empty();
-            crate::ui::matrix_display::build_grid(mat, &mut grid);
-            crate::ui::matrix_display::render_matrix::<D>(
-                &mut framebuffer, &grid,
-                state.matrix_scroll_offset(),
-                state.matrix_col_offset(),
-            );
-            D::render(&framebuffer);
-            return;
-        }
-    }
     let result: Option<&[u8]> = if state.has_result() {
         Some(state.last_result())
     } else {
@@ -384,21 +285,11 @@ fn render_oled<D: Display>(state: &CalcState) {
 
 fn render_oled_result<D: Display>(state: &CalcState) {
     let mut framebuffer = D::new_buffer();
-    if let Some(ref mat) = state.get_matrix_result() {
-        let mut grid = crate::runtime::state::DisplayGrid::empty();
-        crate::ui::matrix_display::build_grid(mat, &mut grid);
-        crate::ui::matrix_display::render_matrix::<D>(
-            &mut framebuffer, &grid,
-            state.matrix_scroll_offset(),
-            state.matrix_col_offset(),
-        );
+    let result = if state.has_result() {
+        Some(state.last_result())
     } else {
-        let result = if state.has_result() {
-            Some(state.last_result())
-        } else {
-            None
-        };
-        formula::render_screen::<D>(&mut framebuffer, b"", 0, result, 0);
-    }
+        None
+    };
+    formula::render_screen::<D>(&mut framebuffer, b"", 0, result, 0);
     D::render(&framebuffer);
 }

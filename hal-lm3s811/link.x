@@ -9,7 +9,7 @@ MEMORY
     RAM   : ORIGIN = 0x20000000, LENGTH = 8K
 }
 
-_stack_size = 1536;
+_stack_size = 3K;
 _stack_start = ORIGIN(RAM) + LENGTH(RAM);
 _stack_end = _stack_start - _stack_size;
 
