@@ -41,6 +41,7 @@ pub enum MathMode {
     Standard,
     Advanced,
     Matrix,
+    Scientific,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -92,9 +93,19 @@ pub mod complex;
 #[path = "../../numcore/src/math/matrix.rs"]
 pub mod matrix;
 
+#[path = "../../numcore/src/math/opcodes.rs"]
+pub mod opcodes;
+
+#[path = "../../numcore/src/math/compiler.rs"]
+pub mod compiler;
+
+#[path = "../../numcore/src/math/vm.rs"]
+pub mod vm;
+
 // ─── Re-export under math:: for API compatibility ───────────────────────────
 
 pub mod math {
+    pub use crate::compiler;
     pub use crate::complex;
     pub use crate::distributions;
     pub use crate::engine;
@@ -103,8 +114,10 @@ pub mod math {
     pub use crate::lexer;
     pub use crate::matrix;
     pub use crate::matrix::{Matrix, MatrixKind};
+    pub use crate::opcodes;
     pub use crate::parser;
     pub use crate::vars;
+    pub use crate::vm;
     pub use crate::AngleMode;
     pub use crate::MathMode;
 }

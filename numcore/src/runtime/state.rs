@@ -1,7 +1,7 @@
+use crate::math::compiler::Bytecode;
 use crate::math::complex::Complex;
 use crate::math::lexer::{LexResult, Token, MAX_TOKEN_COUNT};
 use crate::math::matrix::Matrix;
-use crate::math::parser::{AstNode, ParseTree, MAX_NODE_COUNT};
 use crate::math::vars::VariableStore;
 use crate::math::AngleMode;
 use crate::math::MathMode;
@@ -46,6 +46,8 @@ pub enum CalculatorMode {
     Advanced,
     /// Matrix operations (MatA-MatC, det, transpose, identity).
     Matrix,
+    /// Scientific notation mode with E notation for large exponents.
+    Scientific,
 }
 
 // ─── Capacity constants ───────────────────────────────────────────────────────
@@ -96,8 +98,8 @@ pub struct CalcState {
     /// Reusable scratch buffer for the lexer output.
     pub lex_scratch: LexResult,
 
-    /// Reusable scratch buffer for the parser output (AST).
-    pub parse_scratch: ParseTree,
+    /// Reusable scratch buffer for the bytecode compiler output.
+    pub parse_scratch: Bytecode,
 
     /// Scratch buffer for expression submission (avoids stack allocation).
     pub expr_scratch: [u8; INPUT_BUFFER_CAPACITY],
@@ -122,13 +124,7 @@ impl CalcState {
                 tokens: [Token::Number(0i64); MAX_TOKEN_COUNT],
                 token_count: 0,
             },
-            parse_scratch: ParseTree {
-                nodes: [AstNode::Literal(0i64); MAX_NODE_COUNT],
-                node_count: 0,
-                root_index: 0,
-                mat_cache: [None; crate::math::parser::MATRIX_CACHE_SIZE],
-                mat_cache_count: 0,
-            },
+            parse_scratch: Bytecode::new(),
             expr_scratch: [0u8; INPUT_BUFFER_CAPACITY],
         }
     }
@@ -323,6 +319,7 @@ impl CalcState {
             CalculatorMode::Standard => MathMode::Standard,
             CalculatorMode::Advanced => MathMode::Advanced,
             CalculatorMode::Matrix => MathMode::Matrix,
+            CalculatorMode::Scientific => MathMode::Scientific,
         }
     }
 

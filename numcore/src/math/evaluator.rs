@@ -1,13 +1,11 @@
 use super::complex::Complex as Cplx;
 use super::distributions;
 use super::fixed_point as fp;
-use super::matrix::{Matrix, MatrixKind};
+use super::matrix::{normalize_scientific, Matrix, MatrixKind};
 use super::parser::{
-    AstNode, BinaryOperator, LoopOperation, MathConstant, MathFunction, MatrixFunction, ParseTree,
-    StoreTarget, ThreeArgMathFunction, TwoArgMathFunction, VariableRef,
+    BinaryOperator, MathFunction, MatrixFunction, ThreeArgMathFunction, TwoArgMathFunction,
 };
-use super::vars::VariableStore;
-use super::{AngleMode, MathMode};
+use super::AngleMode;
 
 #[derive(Clone, Copy, Debug)]
 pub enum EvalResult {
@@ -22,13 +20,13 @@ pub enum EvalResult {
 
 static mut LAST_OVERFLOW_INFO: Option<(i64, bool)> = None;
 
-fn set_overflow_info(log10_est: i64, negative: bool) {
+pub fn set_overflow_info(log10_est: i64, negative: bool) {
     unsafe {
         LAST_OVERFLOW_INFO = Some((log10_est, negative));
     }
 }
 
-fn take_overflow_info() -> Option<(i64, bool)> {
+pub fn take_overflow_info() -> Option<(i64, bool)> {
     unsafe {
         let val = LAST_OVERFLOW_INFO;
         LAST_OVERFLOW_INFO = None;
@@ -66,7 +64,7 @@ fn approx_log10(val: i64) -> Option<i64> {
     }
 }
 
-fn compute_overflow(log10_est: i64, negative: bool) -> EvalResult {
+pub fn compute_overflow(log10_est: i64, negative: bool) -> EvalResult {
     let exp_int = log10_est >> 32;
     let frac_q31 = log10_est - (exp_int << 32);
     let frac_times_ln10 = fp::multiply(frac_q31, fp::FIXED_LN10);
@@ -90,7 +88,7 @@ fn compute_overflow(log10_est: i64, negative: bool) -> EvalResult {
 
 const LOG10_2: i64 = 1_292_913_986;
 
-fn overflow_complex_hyp(result: Option<Cplx>, component: i64, negative: bool) -> Option<Cplx> {
+pub fn overflow_complex_hyp(result: Option<Cplx>, component: i64, negative: bool) -> Option<Cplx> {
     match result {
         Some(v) => Some(v),
         None => {
@@ -104,263 +102,13 @@ fn overflow_complex_hyp(result: Option<Cplx>, component: i64, negative: bool) ->
     }
 }
 
-pub fn evaluate_tree(
-    tree: &ParseTree,
-    variables: &mut VariableStore,
-    angle_mode: AngleMode,
-    mode: MathMode,
-) -> EvalResult {
-    take_overflow_info();
-    match evaluate_node(tree, tree.root_index, variables, angle_mode, mode) {
-        Some(mat) => match (mat.kind, mode) {
-            (MatrixKind::Complex, MathMode::Standard) => EvalResult::DomainError,
-            (MatrixKind::Mat, MathMode::Standard) => EvalResult::DomainError,
-            (MatrixKind::Mat, MathMode::Advanced) => EvalResult::DomainError,
-            _ => EvalResult::Matrix(mat),
-        },
-        None => match take_overflow_info() {
-            Some((log10_est, negative)) => compute_overflow(log10_est, negative),
-            None => EvalResult::DomainError,
-        },
-    }
-}
+// ─── Binary operator dispatch ────────────────────────────────────────
 
-fn evaluate_node(
-    tree: &ParseTree,
-    node_index: usize,
-    vars: &mut VariableStore,
-    angle_mode: AngleMode,
-    mode: MathMode,
+pub fn apply_binary_operator(
+    operator: BinaryOperator,
+    left: Matrix,
+    right: Matrix,
 ) -> Option<Matrix> {
-    match tree.nodes[node_index] {
-        AstNode::Literal(value) => Some(Matrix::scalar(value)),
-
-        AstNode::Constant(constant) => Some(match constant {
-            MathConstant::Pi => Matrix::scalar(fp::FIXED_PI),
-            MathConstant::E => Matrix::scalar(fp::FIXED_E),
-            MathConstant::ImaginaryUnit => Matrix::complex(0, fp::FIXED_ONE),
-        }),
-
-        AstNode::Variable(var_ref) => match var_ref {
-            VariableRef::Ans => {
-                // Always try matrix Ans first, then fall back to scalar Ans.
-                // This ensures Ans returns the most recent result of any kind.
-                vars.read_matrix_ans().or_else(|| {
-                    vars.read_ans().map(|c| {
-                        if c.im == 0 {
-                            Matrix::scalar(c.re)
-                        } else {
-                            Matrix::complex(c.re, c.im)
-                        }
-                    })
-                })
-            }
-            VariableRef::Register(ch) => vars.read_register(ch).map(|c| {
-                if c.im == 0 {
-                    Matrix::scalar(c.re)
-                } else {
-                    Matrix::complex(c.re, c.im)
-                }
-            }),
-        },
-
-        AstNode::MatrixRegister(ch) => vars.read_matrix_reg(ch),
-
-        AstNode::UnaryNegation { operand_index } => {
-            match evaluate_node(tree, operand_index, vars, angle_mode, mode) {
-                Some(v) => Some(v.negate()),
-                None => {
-                    if let Some((log10_est, negative)) = take_overflow_info() {
-                        set_overflow_info(log10_est, !negative);
-                    }
-                    None
-                }
-            }
-        }
-
-        AstNode::BinaryOperation {
-            operator,
-            left_child_index,
-            right_child_index,
-        } => {
-            // For commutative Multiply: if left is Scalar, extract value
-            // and drop the Matrix before evaluating right (ARM codegen workaround).
-
-            let left = evaluate_node(tree, left_child_index, vars, angle_mode, mode);
-            let left_info = if left.is_none() {
-                take_overflow_info()
-            } else {
-                None
-            };
-            let right = evaluate_node(tree, right_child_index, vars, angle_mode, mode);
-            let right_info = if right.is_none() {
-                take_overflow_info()
-            } else {
-                None
-            };
-
-            match (left, right) {
-                (Some(l), Some(r)) => apply_binary_operator(operator, l, r),
-                (left_val, right_val) => {
-                    let info = match (left_info, right_info) {
-                        (Some(l), Some(r)) => Some(if l.0 >= r.0 { l } else { r }),
-                        (a, b) => a.or(b),
-                    };
-                    if let Some((log10_est, negative)) = info {
-                        // Extract scalar values for overflow adjustment
-                        let l_scalar = left_val.as_ref().and_then(|m| m.to_complex());
-                        let r_scalar = right_val.as_ref().and_then(|m| m.to_complex());
-                        match (operator, l_scalar, r_scalar) {
-                            (BinaryOperator::Divide, _, Some(r)) if r.re != 0 => {
-                                if let Some(d) = fp::log10(r.re.unsigned_abs() as i64) {
-                                    set_overflow_info(
-                                        log10_est.wrapping_sub(d),
-                                        negative != (r.re < 0),
-                                    );
-                                } else {
-                                    set_overflow_info(log10_est, negative);
-                                }
-                            }
-                            (BinaryOperator::Divide, Some(_), None) => {}
-                            (BinaryOperator::Multiply, None, Some(r)) => {
-                                if let Some(m) = fp::log10(r.re.unsigned_abs() as i64) {
-                                    set_overflow_info(
-                                        log10_est.wrapping_add(m),
-                                        negative != (r.re < 0),
-                                    );
-                                } else {
-                                    set_overflow_info(log10_est, negative);
-                                }
-                            }
-                            (BinaryOperator::Multiply, Some(l), None) => {
-                                if let Some(m) = fp::log10(l.re.unsigned_abs() as i64) {
-                                    set_overflow_info(
-                                        log10_est.wrapping_add(m),
-                                        negative != (l.re < 0),
-                                    );
-                                } else {
-                                    set_overflow_info(log10_est, negative);
-                                }
-                            }
-                            (BinaryOperator::Power, None, Some(r)) if r.im == 0 && r.re > 0 => {
-                                if let Some(p) = fp::multiply(log10_est, r.re) {
-                                    set_overflow_info(p, negative);
-                                }
-                            }
-                            (BinaryOperator::Power, Some(_), None) => {}
-                            (BinaryOperator::Power, None, Some(_)) => {
-                                set_overflow_info(log10_est, negative);
-                            }
-                            (BinaryOperator::Add | BinaryOperator::Subtract, None, Some(r)) => {
-                                if r.re < 0 {
-                                    set_overflow_info(log10_est, !negative);
-                                } else {
-                                    set_overflow_info(log10_est, negative);
-                                }
-                            }
-                            (BinaryOperator::Add | BinaryOperator::Subtract, Some(_), None) => {
-                                set_overflow_info(log10_est, negative);
-                            }
-                            _ => {
-                                set_overflow_info(log10_est, negative);
-                            }
-                        }
-                    }
-                    None
-                }
-            }
-        }
-
-        AstNode::FunctionCall {
-            function,
-            argument_index,
-        } => {
-            let arg = evaluate_node(tree, argument_index, vars, angle_mode, mode)?;
-            let c = arg.to_complex()?;
-            apply_function(function, c, angle_mode).map(Matrix::from_complex)
-        }
-
-        AstNode::ThreeArgFunction {
-            function,
-            arg_indices,
-        } => {
-            let a0 = evaluate_node(tree, arg_indices[0], vars, angle_mode, mode)?;
-            let a1 = evaluate_node(tree, arg_indices[1], vars, angle_mode, mode)?;
-            let a2 = evaluate_node(tree, arg_indices[2], vars, angle_mode, mode)?;
-            let c0 = a0.to_complex()?;
-            let c1 = a1.to_complex()?;
-            let c2 = a2.to_complex()?;
-            apply_three_arg_function(function, c0, c1, c2).map(Matrix::from_complex)
-        }
-
-        AstNode::TwoArgFunction {
-            function,
-            arg_indices,
-        } => {
-            let a0 = evaluate_node(tree, arg_indices[0], vars, angle_mode, mode)?;
-            let a1 = evaluate_node(tree, arg_indices[1], vars, angle_mode, mode)?;
-            let c0 = a0.to_complex()?;
-            let c1 = a1.to_complex()?;
-            apply_two_arg_function(function, c0, c1).map(Matrix::from_complex)
-        }
-
-        AstNode::Store {
-            value_index,
-            register,
-            target,
-        } => {
-            let value = evaluate_node(tree, value_index, vars, angle_mode, mode)?;
-            match target {
-                StoreTarget::Scalar => {
-                    if let Some(c) = value.to_complex() {
-                        vars.write_register(register, c);
-                    } else {
-                        return None;
-                    }
-                }
-                StoreTarget::Matrix => {
-                    if value.kind == MatrixKind::Mat || value.kind == MatrixKind::Scalar {
-                        vars.write_matrix_reg(register, value);
-                    } else {
-                        return None;
-                    }
-                }
-            }
-            Some(value)
-        }
-
-        AstNode::LoopAggregate {
-            operation,
-            variable,
-            start_index,
-            end_index,
-            body_index,
-        } => {
-            let start = evaluate_node(tree, start_index, vars, angle_mode, mode)?;
-            let end = evaluate_node(tree, end_index, vars, angle_mode, mode)?;
-            let start_c = start.to_complex()?;
-            let end_c = end.to_complex()?;
-            evaluate_loop_aggregate(
-                operation, variable, start_c, end_c, body_index, tree, vars, angle_mode,
-            )
-            .map(Matrix::from_complex)
-        }
-
-        AstNode::MatrixLiteral { cache_index } => {
-            tree.mat_cache.get(cache_index).copied().flatten()
-        }
-
-        AstNode::MatrixFunctionCall {
-            function,
-            argument_index,
-        } => {
-            let arg = evaluate_node(tree, argument_index, vars, angle_mode, mode)?;
-            apply_matrix_function(function, arg)
-        }
-    }
-}
-
-fn apply_binary_operator(operator: BinaryOperator, left: Matrix, right: Matrix) -> Option<Matrix> {
     use MatrixKind as MK;
     match (left.kind, right.kind) {
         (MK::Scalar, MK::Scalar) => {
@@ -426,10 +174,166 @@ fn apply_binary_operator(operator: BinaryOperator, left: Matrix, right: Matrix) 
             }
         }
         (MK::Complex, MK::Mat) | (MK::Mat, MK::Complex) => None,
+
+        // ── Scientific notation arms ──
+        (MK::Scientific, _) | (_, MK::Scientific) => {
+            if operator == BinaryOperator::Modulo {
+                return None;
+            }
+            apply_sci_binary(operator, left, right)
+        }
     }
 }
 
-fn apply_binary_op_complex(operator: BinaryOperator, left: Cplx, right: Cplx) -> Option<Cplx> {
+#[inline(never)]
+fn apply_sci_binary(operator: BinaryOperator, left: Matrix, right: Matrix) -> Option<Matrix> {
+    use MatrixKind as MK;
+    match (left.kind, right.kind) {
+        (MK::Scientific, MK::Scientific) => apply_sci_sci(operator, left, right),
+        (MK::Scientific, MK::Scalar) => {
+            let r_sci = Matrix::to_scientific_value(&right)?;
+            apply_sci_sci(operator, left, Matrix::scientific(r_sci.0, r_sci.1)?)
+        }
+        (MK::Scalar, MK::Scientific) => {
+            let l_sci = Matrix::to_scientific_value(&left)?;
+            apply_sci_sci(operator, Matrix::scientific(l_sci.0, l_sci.1)?, right)
+        }
+        _ => None,
+    }
+}
+
+pub(crate) fn sci_to_scalar(mantissa: i64, exponent: i64) -> Option<i64> {
+    if mantissa & (fp::SCALE - 1) != 0 {
+        return None;
+    }
+    let int_mant = mantissa >> 32;
+    if exponent == 0 {
+        return Some(int_mant << 32);
+    }
+    if exponent > 0 {
+        let pow10 = fp::integer_power(fp::from_integer(10), exponent)?;
+        fp::multiply(int_mant << 32, pow10)
+    } else {
+        let mut val = int_mant << 32;
+        for _ in 0..(-exponent) {
+            val = fp::divide(val, fp::from_integer(10))?;
+        }
+        Some(val)
+    }
+}
+
+fn check_exp_overflow(total_exp: i64, negative: bool) -> Option<()> {
+    if total_exp > 99 || total_exp < -99 {
+        let log10_est = if total_exp > 0 {
+            fp::multiply(fp::from_integer(total_exp), fp::FIXED_ONE)
+                .unwrap_or(total_exp * fp::SCALE)
+        } else {
+            fp::multiply(fp::from_integer(total_exp), fp::FIXED_ONE)
+                .unwrap_or(total_exp * fp::SCALE)
+        };
+        set_overflow_info(log10_est, negative);
+        None
+    } else {
+        Some(())
+    }
+}
+
+fn apply_sci_sci(op: BinaryOperator, left: Matrix, right: Matrix) -> Option<Matrix> {
+    let (m1, e1) = left.to_scientific()?;
+    let (m2, e2) = right.to_scientific()?;
+    // Helper: try to convert a Scientific result to Scalar if it fits in Q31.32
+    fn result_or_scalar(m: Option<Matrix>) -> Option<Matrix> {
+        let mat = m?;
+        if let Some((mant, exp)) = mat.to_scientific() {
+            // Only convert positive/zero exponents where multiply is exact.
+            // Negative exponents lose precision from repeated division.
+            if exp >= 0 && exp <= 8 {
+                if let Some(v) = sci_to_scalar(mant, exp) {
+                    return Some(Matrix::scalar(v));
+                }
+            }
+            if exp == 9 {
+                if let Some(v) = sci_to_scalar(mant, 9) {
+                    return Some(Matrix::scalar(v));
+                }
+            }
+            Some(mat)
+        } else {
+            Some(mat)
+        }
+    }
+
+    match op {
+        BinaryOperator::Multiply => {
+            let m = fp::multiply(m1, m2)?;
+            let (m_n, e_adj) = normalize_scientific(m, 0)?;
+            let total = e1 + e2 + e_adj;
+            check_exp_overflow(total, m_n < 0)?;
+            result_or_scalar(Matrix::scientific(m_n, total))
+        }
+        BinaryOperator::Divide => {
+            let m = fp::divide(m1, m2)?;
+            let (m_n, e_adj) = normalize_scientific(m, 0)?;
+            let total = e1 - e2 + e_adj;
+            check_exp_overflow(total, m_n < 0)?;
+            result_or_scalar(Matrix::scientific(m_n, total))
+        }
+        BinaryOperator::Add | BinaryOperator::Subtract => {
+            let (m_small, m_large, e_small, e_large) = if e1 >= e2 {
+                (m2, m1, e2, e1)
+            } else {
+                (m1, m2, e1, e2)
+            };
+            let diff = e_large - e_small;
+            if diff > 9 {
+                return result_or_scalar(Matrix::scientific(m_large, e_large));
+            }
+            let mut scaled = m_small;
+            for _ in 0..diff {
+                scaled = fp::divide(scaled, fp::from_integer(10))?;
+            }
+            let m = if op == BinaryOperator::Add {
+                m_large.checked_add(scaled)?
+            } else {
+                m_large.checked_sub(scaled)?
+            };
+            if m == 0 {
+                return Some(Matrix::scalar(0));
+            }
+            let (m_n, e_adj) = normalize_scientific(m, 0)?;
+            let total = e_large + e_adj;
+            check_exp_overflow(total, m_n < 0)?;
+            result_or_scalar(Matrix::scientific(m_n, total))
+        }
+        BinaryOperator::Power => {
+            let m2_val = if e2 == 0 {
+                m2
+            } else {
+                let mut v = m2;
+                if e2 > 0 {
+                    for _ in 0..e2 {
+                        v = fp::multiply(v, fp::from_integer(10))?;
+                    }
+                } else {
+                    for _ in 0..(-e2) {
+                        v = fp::divide(v, fp::from_integer(10))?;
+                    }
+                }
+                v
+            };
+            let m = fp::power(m1, m2_val)?;
+            let e = fp::multiply(fp::from_integer(e1), m2_val)?;
+            let e_int = fp::to_integer_truncated(e);
+            let (m_n, e_adj) = normalize_scientific(m, 0)?;
+            let total = e_int + e_adj;
+            check_exp_overflow(total, m_n < 0)?;
+            result_or_scalar(Matrix::scientific(m_n, total))
+        }
+        BinaryOperator::Modulo => None,
+    }
+}
+
+pub fn apply_binary_op_complex(operator: BinaryOperator, left: Cplx, right: Cplx) -> Option<Cplx> {
     match operator {
         BinaryOperator::Add => Some(left.add(right)),
         BinaryOperator::Subtract => Some(left.sub(right)),
@@ -510,29 +414,19 @@ fn apply_binary_op_complex(operator: BinaryOperator, left: Cplx, right: Cplx) ->
     }
 }
 
-fn apply_function(function: MathFunction, arg: Cplx, angle_mode: AngleMode) -> Option<Cplx> {
+// ─── Function dispatch ──────────────────────────────────────────────
+
+pub fn apply_function(function: MathFunction, arg: Cplx, angle_mode: AngleMode) -> Option<Cplx> {
     if !arg.is_real() {
         return match function {
-            MathFunction::Sin => {
-                let r = Cplx::sin(arg);
-                overflow_complex_hyp(r, arg.im, false)
-            }
-            MathFunction::Cos => {
-                let r = Cplx::cos(arg);
-                overflow_complex_hyp(r, arg.im, false)
-            }
+            MathFunction::Sin => overflow_complex_hyp(Cplx::sin(arg), arg.im, false),
+            MathFunction::Cos => overflow_complex_hyp(Cplx::cos(arg), arg.im, false),
             MathFunction::Tan => Cplx::tan(arg),
             MathFunction::Asin => Cplx::asin(arg),
             MathFunction::Acos => Cplx::acos(arg),
             MathFunction::Atan => Cplx::atan(arg),
-            MathFunction::SinH => {
-                let r = Cplx::sinh(arg);
-                overflow_complex_hyp(r, arg.re, false)
-            }
-            MathFunction::CosH => {
-                let r = Cplx::cosh(arg);
-                overflow_complex_hyp(r, arg.re, false)
-            }
+            MathFunction::SinH => overflow_complex_hyp(Cplx::sinh(arg), arg.re, false),
+            MathFunction::CosH => overflow_complex_hyp(Cplx::cosh(arg), arg.re, false),
             MathFunction::TanH => Cplx::tanh(arg),
             MathFunction::ASinH => Cplx::asinh(arg),
             MathFunction::ACosH => Cplx::acosh(arg),
@@ -545,10 +439,7 @@ fn apply_function(function: MathFunction, arg: Cplx, angle_mode: AngleMode) -> O
             MathFunction::Log => Cplx::log10(arg),
             MathFunction::Ln => Cplx::ln(arg),
             MathFunction::Log2 => Cplx::log2(arg),
-            MathFunction::Exp => {
-                let r = Cplx::exp(arg);
-                overflow_complex_hyp(r, arg.re, arg.re < 0)
-            }
+            MathFunction::Exp => overflow_complex_hyp(Cplx::exp(arg), arg.re, arg.re < 0),
             MathFunction::Floor
             | MathFunction::Ceil
             | MathFunction::Round
@@ -561,15 +452,12 @@ fn apply_function(function: MathFunction, arg: Cplx, angle_mode: AngleMode) -> O
     match function {
         MathFunction::Sin => {
             let rad = if angle_mode == AngleMode::Degrees {
-                match fp::degrees_to_radians(x) {
-                    Some(v) => v,
-                    None => {
-                        if let Some(log) = approx_log10(x) {
-                            set_overflow_info(log.wrapping_add(fp::FIXED_ONE * 3 / 4), x < 0);
-                        }
-                        return None;
+                fp::degrees_to_radians(x).or_else(|| {
+                    if let Some(log) = approx_log10(x) {
+                        set_overflow_info(log.wrapping_add(fp::FIXED_ONE * 3 / 4), x < 0);
                     }
-                }
+                    None
+                })?
             } else {
                 x
             };
@@ -577,15 +465,12 @@ fn apply_function(function: MathFunction, arg: Cplx, angle_mode: AngleMode) -> O
         }
         MathFunction::Cos => {
             let rad = if angle_mode == AngleMode::Degrees {
-                match fp::degrees_to_radians(x) {
-                    Some(v) => v,
-                    None => {
-                        if let Some(log) = approx_log10(x) {
-                            set_overflow_info(log.wrapping_add(fp::FIXED_ONE * 3 / 4), x < 0);
-                        }
-                        return None;
+                fp::degrees_to_radians(x).or_else(|| {
+                    if let Some(log) = approx_log10(x) {
+                        set_overflow_info(log.wrapping_add(fp::FIXED_ONE * 3 / 4), x < 0);
                     }
-                }
+                    None
+                })?
             } else {
                 x
             };
@@ -593,15 +478,12 @@ fn apply_function(function: MathFunction, arg: Cplx, angle_mode: AngleMode) -> O
         }
         MathFunction::Tan => {
             let rad = if angle_mode == AngleMode::Degrees {
-                match fp::degrees_to_radians(x) {
-                    Some(v) => v,
-                    None => {
-                        if let Some(log) = approx_log10(x) {
-                            set_overflow_info(log.wrapping_add(fp::FIXED_ONE * 3 / 4), x < 0);
-                        }
-                        return None;
+                fp::degrees_to_radians(x).or_else(|| {
+                    if let Some(log) = approx_log10(x) {
+                        set_overflow_info(log.wrapping_add(fp::FIXED_ONE * 3 / 4), x < 0);
                     }
-                }
+                    None
+                })?
             } else {
                 x
             };
@@ -610,62 +492,53 @@ fn apply_function(function: MathFunction, arg: Cplx, angle_mode: AngleMode) -> O
         MathFunction::Asin => match fp::asin(x) {
             Some(r) => {
                 let deg = if angle_mode == AngleMode::Degrees {
-                    match fp::radians_to_degrees(r) {
-                        Some(v) => v,
-                        None => {
-                            if let Some(log) = approx_log10(r) {
-                                set_overflow_info(
-                                    log.wrapping_add(fp::FIXED_ONE + fp::FIXED_ONE * 3 / 4),
-                                    r < 0,
-                                );
-                            }
-                            return None;
-                        }
-                    }
-                } else {
-                    r
-                };
-                Some(Cplx::from_real(deg))
-            }
-            None => return None,
-        },
-        MathFunction::Acos => match fp::acos(x) {
-            Some(r) => {
-                let deg = if angle_mode == AngleMode::Degrees {
-                    match fp::radians_to_degrees(r) {
-                        Some(v) => v,
-                        None => {
-                            if let Some(log) = approx_log10(r) {
-                                set_overflow_info(
-                                    log.wrapping_add(fp::FIXED_ONE + fp::FIXED_ONE * 3 / 4),
-                                    r < 0,
-                                );
-                            }
-                            return None;
-                        }
-                    }
-                } else {
-                    r
-                };
-                Some(Cplx::from_real(deg))
-            }
-            None => return None,
-        },
-        MathFunction::Atan => {
-            let r = fp::atan(x);
-            let deg = if angle_mode == AngleMode::Degrees {
-                match fp::radians_to_degrees(r) {
-                    Some(v) => v,
-                    None => {
+                    fp::radians_to_degrees(r).or_else(|| {
                         if let Some(log) = approx_log10(r) {
                             set_overflow_info(
                                 log.wrapping_add(fp::FIXED_ONE + fp::FIXED_ONE * 3 / 4),
                                 r < 0,
                             );
                         }
-                        return None;
+                        None
+                    })?
+                } else {
+                    r
+                };
+                Some(Cplx::from_real(deg))
+            }
+            None => None,
+        },
+        MathFunction::Acos => match fp::acos(x) {
+            Some(r) => {
+                let deg = if angle_mode == AngleMode::Degrees {
+                    fp::radians_to_degrees(r).or_else(|| {
+                        if let Some(log) = approx_log10(r) {
+                            set_overflow_info(
+                                log.wrapping_add(fp::FIXED_ONE + fp::FIXED_ONE * 3 / 4),
+                                r < 0,
+                            );
+                        }
+                        None
+                    })?
+                } else {
+                    r
+                };
+                Some(Cplx::from_real(deg))
+            }
+            None => None,
+        },
+        MathFunction::Atan => {
+            let r = fp::atan(x);
+            let deg = if angle_mode == AngleMode::Degrees {
+                fp::radians_to_degrees(r).or_else(|| {
+                    if let Some(log) = approx_log10(r) {
+                        set_overflow_info(
+                            log.wrapping_add(fp::FIXED_ONE + fp::FIXED_ONE * 3 / 4),
+                            r < 0,
+                        );
                     }
-                }
+                    None
+                })?
             } else {
                 r
             };
@@ -717,32 +590,26 @@ fn apply_function(function: MathFunction, arg: Cplx, angle_mode: AngleMode) -> O
         MathFunction::Floor => Some(Cplx::from_real(fp::floor(x))),
         MathFunction::Ceil => Some(Cplx::from_real(fp::ceil(x))),
         MathFunction::Round => Some(Cplx::from_real(fp::round(x))),
-        MathFunction::Deg => match fp::degrees_to_radians(x) {
-            Some(v) => Some(Cplx::from_real(v)),
-            None => {
-                if let Some(log) = approx_log10(x) {
-                    set_overflow_info(log.wrapping_add(fp::FIXED_ONE * 3 / 4), x < 0);
-                }
-                None
+        MathFunction::Deg => fp::degrees_to_radians(x).map(Cplx::from_real).or_else(|| {
+            if let Some(log) = approx_log10(x) {
+                set_overflow_info(log.wrapping_add(fp::FIXED_ONE * 3 / 4), x < 0);
             }
-        },
-        MathFunction::Rad => match fp::radians_to_degrees(x) {
-            Some(v) => Some(Cplx::from_real(v)),
-            None => {
-                if let Some(log) = approx_log10(x) {
-                    set_overflow_info(
-                        log.wrapping_add(fp::FIXED_ONE + fp::FIXED_ONE * 3 / 4),
-                        x < 0,
-                    );
-                }
-                None
+            None
+        }),
+        MathFunction::Rad => fp::radians_to_degrees(x).map(Cplx::from_real).or_else(|| {
+            if let Some(log) = approx_log10(x) {
+                set_overflow_info(
+                    log.wrapping_add(fp::FIXED_ONE + fp::FIXED_ONE * 3 / 4),
+                    x < 0,
+                );
             }
-        },
+            None
+        }),
         MathFunction::LnGamma => distributions::ln_gamma(x).map(Cplx::from_real),
     }
 }
 
-fn apply_two_arg_function(function: TwoArgMathFunction, a0: Cplx, a1: Cplx) -> Option<Cplx> {
+pub fn apply_two_arg_function(function: TwoArgMathFunction, a0: Cplx, a1: Cplx) -> Option<Cplx> {
     if !a0.is_real() || !a1.is_real() {
         return None;
     }
@@ -767,7 +634,7 @@ fn apply_two_arg_function(function: TwoArgMathFunction, a0: Cplx, a1: Cplx) -> O
     }
 }
 
-fn apply_three_arg_function(
+pub fn apply_three_arg_function(
     function: ThreeArgMathFunction,
     a0: Cplx,
     a1: Cplx,
@@ -783,7 +650,7 @@ fn apply_three_arg_function(
     }
 }
 
-fn apply_matrix_function(function: MatrixFunction, arg: Matrix) -> Option<Matrix> {
+pub fn apply_matrix_function(function: MatrixFunction, arg: Matrix) -> Option<Matrix> {
     match function {
         MatrixFunction::Det => {
             let d = arg.determinant()?;
@@ -793,7 +660,7 @@ fn apply_matrix_function(function: MatrixFunction, arg: Matrix) -> Option<Matrix
         MatrixFunction::Identity => {
             let n = arg.to_complex()?.re;
             let int_n = fp::to_integer_truncated(n);
-            if int_n < 1 || int_n as usize > super::matrix::MAX_MATRIX_DIM {
+            if int_n < 1 || int_n as usize > 4 {
                 return None;
             }
             Matrix::identity(int_n as u8)
@@ -804,251 +671,8 @@ fn apply_matrix_function(function: MatrixFunction, arg: Matrix) -> Option<Matrix
     }
 }
 
-const INTEGRATION_SNAP_THRESHOLD: i64 = 4295;
+// ─── Integration constants (used by vm.rs) ──────────────────────────
 
-const ADAPTIVE_TOL: i64 = 43;
-const ADAPTIVE_MAX_DEPTH: u32 = 20;
-const ADAPTIVE_MAX_EVALS: u32 = 10_000;
-const ADAPTIVE_MAX_STACK: usize = 24;
-
-#[derive(Clone, Copy)]
-struct AdSimpTask {
-    a: i64,
-    b: i64,
-    fa_re: i64,
-    fb_re: i64,
-    tol: i64,
-    depth: u32,
-}
-
-fn simpson_step(h: i64, fa: i64, fm: i64, fb: i64) -> Option<i64> {
-    let ws = (fa as i128) + 4 * (fm as i128) + (fb as i128);
-    let prod = (h as i128) * ws;
-    let result = prod / (6 * fp::SCALE as i128);
-    if result > i64::MAX as i128 || result < i64::MIN as i128 {
-        return None;
-    }
-    Some(result as i64)
-}
-
-fn adaptive_simpson_integrate(
-    variable: u8,
-    start: Cplx,
-    end: Cplx,
-    body_index: usize,
-    tree: &ParseTree,
-    vars: &mut VariableStore,
-    angle_mode: AngleMode,
-) -> Option<Cplx> {
-    if start.im != 0 || end.im != 0 {
-        return None;
-    }
-
-    let (a, b, negate) = if start.re <= end.re {
-        (start.re, end.re, false)
-    } else {
-        (end.re, start.re, true)
-    };
-
-    vars.write_register(variable, Cplx::from_real(a));
-    let fa = evaluate_node(tree, body_index, vars, angle_mode, MathMode::Advanced)?;
-    let fa_c = fa.to_complex()?;
-    if !fa_c.is_real() {
-        return None;
-    }
-
-    vars.write_register(variable, Cplx::from_real(b));
-    let fb = evaluate_node(tree, body_index, vars, angle_mode, MathMode::Advanced)?;
-    let fb_c = fb.to_complex()?;
-    if !fb_c.is_real() {
-        return None;
-    }
-
-    if a == b {
-        return Some(Cplx::zero());
-    }
-
-    let mut stack: [AdSimpTask; ADAPTIVE_MAX_STACK] = [AdSimpTask {
-        a: 0,
-        b: 0,
-        fa_re: 0,
-        fb_re: 0,
-        tol: 0,
-        depth: 0,
-    }; ADAPTIVE_MAX_STACK];
-    let mut stack_len: u32 = 1;
-    let mut result: i64 = 0;
-    let mut total_evals: u32 = 2;
-
-    stack[0] = AdSimpTask {
-        a,
-        b,
-        fa_re: fa_c.re,
-        fb_re: fb_c.re,
-        tol: ADAPTIVE_TOL,
-        depth: 0,
-    };
-
-    while stack_len > 0 {
-        stack_len -= 1;
-        let task = stack[stack_len as usize];
-
-        if task.depth >= ADAPTIVE_MAX_DEPTH || total_evals >= ADAPTIVE_MAX_EVALS {
-            let h = task.b.wrapping_sub(task.a);
-            let m = task.a + (h >> 1);
-            vars.write_register(variable, Cplx::from_real(m));
-            let fm = evaluate_node(tree, body_index, vars, angle_mode, MathMode::Advanced)?;
-            let fm_c = fm.to_complex()?;
-            if !fm_c.is_real() {
-                return None;
-            }
-            total_evals += 1;
-            let s = simpson_step(h, task.fa_re, fm_c.re, task.fb_re)?;
-            result = result.saturating_add(s);
-            continue;
-        }
-
-        let h = task.b.checked_sub(task.a)?;
-        let m = task.a + (h >> 1);
-
-        vars.write_register(variable, Cplx::from_real(m));
-        let fm = evaluate_node(tree, body_index, vars, angle_mode, MathMode::Advanced)?;
-        let fm_c = fm.to_complex()?;
-        if !fm_c.is_real() {
-            return None;
-        }
-        total_evals += 1;
-
-        let s_ab = simpson_step(h, task.fa_re, fm_c.re, task.fb_re)?;
-
-        let am_mid = task.a + ((m - task.a) >> 1);
-        vars.write_register(variable, Cplx::from_real(am_mid));
-        let fl = evaluate_node(tree, body_index, vars, angle_mode, MathMode::Advanced)?;
-        let fl_c = fl.to_complex()?;
-        if !fl_c.is_real() {
-            return None;
-        }
-        total_evals += 1;
-
-        let mb_mid = m + ((task.b - m) >> 1);
-        vars.write_register(variable, Cplx::from_real(mb_mid));
-        let fr = evaluate_node(tree, body_index, vars, angle_mode, MathMode::Advanced)?;
-        let fr_c = fr.to_complex()?;
-        if !fr_c.is_real() {
-            return None;
-        }
-        total_evals += 1;
-
-        let s_am = simpson_step(m - task.a, task.fa_re, fl_c.re, fm_c.re)?;
-        let s_mb = simpson_step(task.b - m, fm_c.re, fr_c.re, task.fb_re)?;
-
-        let error = (s_am as i128)
-            .wrapping_add(s_mb as i128)
-            .wrapping_sub(s_ab as i128);
-        let error_abs = if error < 0 {
-            error.wrapping_neg() as u128
-        } else {
-            error as u128
-        };
-        let threshold = 15u128 * (task.tol as u128);
-
-        if error_abs < threshold {
-            result = result.saturating_add(s_am.saturating_add(s_mb));
-        } else {
-            let child_tol = (task.tol >> 1).max(1);
-            let new_len = stack_len + 2;
-            if (new_len as usize) < stack.len() {
-                let idx = stack_len as usize;
-                stack[idx] = AdSimpTask {
-                    a: m,
-                    b: task.b,
-                    fa_re: fm_c.re,
-                    fb_re: task.fb_re,
-                    tol: child_tol,
-                    depth: task.depth + 1,
-                };
-                stack[idx + 1] = AdSimpTask {
-                    a: task.a,
-                    b: m,
-                    fa_re: task.fa_re,
-                    fb_re: fm_c.re,
-                    tol: child_tol,
-                    depth: task.depth + 1,
-                };
-                stack_len = new_len;
-            } else {
-                result = result.saturating_add(s_am.saturating_add(s_mb));
-            }
-        }
-    }
-
-    let final_result = if negate {
-        result.wrapping_neg()
-    } else {
-        result
-    };
-
-    let nearest = fp::round(final_result);
-    if (final_result - nearest).abs() < INTEGRATION_SNAP_THRESHOLD {
-        Some(Cplx::from_real(nearest))
-    } else {
-        Some(Cplx::from_real(final_result))
-    }
-}
-
-fn evaluate_loop_aggregate(
-    operation: LoopOperation,
-    variable: u8,
-    start: Cplx,
-    end: Cplx,
-    body_index: usize,
-    tree: &ParseTree,
-    vars: &mut VariableStore,
-    angle_mode: AngleMode,
-) -> Option<Cplx> {
-    let saved = vars.read_register(variable);
-
-    let result = (|| match operation {
-        LoopOperation::Summation => {
-            if start.im != 0 || end.im != 0 {
-                return None;
-            }
-            if start.re & (fp::SCALE - 1) != 0 {
-                return None;
-            }
-            if end.re & (fp::SCALE - 1) != 0 {
-                return None;
-            }
-
-            let start_int = fp::to_integer_truncated(start.re);
-            let end_int = fp::to_integer_truncated(end.re);
-
-            if end_int < start_int {
-                return Some(Cplx::zero());
-            }
-            if end_int - start_int > 10_000 {
-                return None;
-            }
-
-            let mut accumulator = Cplx::zero();
-            let mut k = start_int;
-            while k <= end_int {
-                vars.write_register(variable, Cplx::from_real(fp::from_integer(k)));
-                let term = evaluate_node(tree, body_index, vars, angle_mode, MathMode::Advanced)?;
-                let term_c = term.to_complex()?;
-                accumulator = accumulator.add(term_c);
-                k += 1;
-            }
-            Some(accumulator)
-        }
-
-        LoopOperation::Integration => {
-            adaptive_simpson_integrate(variable, start, end, body_index, tree, vars, angle_mode)
-        }
-    })();
-
-    if let Some(val) = saved {
-        vars.write_register(variable, val);
-    }
-    result
-}
+pub const ADAPTIVE_TOL: i64 = 43;
+pub const ADAPTIVE_MAX_DEPTH: u32 = 20;
+pub const ADAPTIVE_MAX_EVALS: u32 = 10_000;
