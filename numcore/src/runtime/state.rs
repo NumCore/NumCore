@@ -1,9 +1,39 @@
 use crate::math::complex::Complex;
 use crate::math::lexer::{LexResult, Token, MAX_TOKEN_COUNT};
+use crate::math::matrix::Matrix;
 use crate::math::parser::{AstNode, ParseTree, MAX_NODE_COUNT};
 use crate::math::vars::VariableStore;
 use crate::math::AngleMode;
 use crate::math::MathMode;
+
+/// Max characters per row in the virtual matrix buffer.
+pub const MAX_ROW_LEN: usize = 80;
+
+/// Pre-rendered matrix virtual buffer.
+/// Each row is a flat string of `row_len` chars:
+///   bracket + gap + padded_value + gap + padded_value + ... + gap
+/// where each value is padded to its column's max width.
+/// The display shows a 14-char viewport (cols 0-13) of this buffer
+/// offset by col_off. Cols 14-15 on the display are fixed overlays
+/// (whitespace margin + scroll arrow).
+pub struct DisplayGrid {
+    /// Full formatted rows (max 5 rows × MAX_ROW_LEN chars).
+    pub rows: [[u8; MAX_ROW_LEN]; 5],
+    /// Actual length of each formatted row (all rows same length).
+    pub row_len: u8,
+    /// Number of matrix rows.
+    pub num_rows: u8,
+}
+
+impl DisplayGrid {
+    pub const fn empty() -> Self {
+        Self {
+            rows: [[0u8; MAX_ROW_LEN]; 5],
+            row_len: 0,
+            num_rows: 0,
+        }
+    }
+}
 
 // ─── Calculator modes ─────────────────────────────────────────────────────────
 
@@ -12,8 +42,10 @@ use crate::math::MathMode;
 pub enum CalculatorMode {
     /// Basic four-function arithmetic + scientific functions. Initial mode.
     Standard,
-    /// Future: matrix operations, complex numbers, etc.
+    /// Complex numbers, imaginary unit i.
     Advanced,
+    /// Matrix operations (MatA-MatC, det, transpose, identity).
+    Matrix,
 }
 
 // ─── Capacity constants ───────────────────────────────────────────────────────
@@ -26,6 +58,7 @@ const RESULT_BUFFER_CAPACITY: usize = 48;
 
 // ─── CalcState ────────────────────────────────────────────────────────────────
 
+#[repr(C)]
 pub struct CalcState {
     /// The expression the user is currently composing.
     pub(crate) input_buffer: [u8; INPUT_BUFFER_CAPACITY],
@@ -45,7 +78,13 @@ pub struct CalcState {
     /// Horizontal scroll offset for the result display (in characters).
     result_scroll_offset: usize,
 
-    /// All calculator variables (Ans + A–F). Owned here, borrowed by math engine.
+    /// Vertical scroll offset for matrix result display (which row is at top).
+    matrix_scroll_offset: usize,
+
+    /// Horizontal scroll offset for matrix display (in character positions).
+    matrix_col_offset: usize,
+
+    /// All calculator variables (Ans, A–Z, MatA–MatC). Owned here, borrowed by math engine.
     pub(crate) variables: VariableStore,
 
     /// Currently active calculator mode.
@@ -74,6 +113,8 @@ impl CalcState {
             last_result: [0u8; RESULT_BUFFER_CAPACITY],
             last_result_len: 0,
             result_scroll_offset: 0,
+            matrix_scroll_offset: 0,
+            matrix_col_offset: 0,
             variables: VariableStore::new(),
             active_mode: CalculatorMode::Standard,
             angle_mode: AngleMode::Radians,
@@ -85,6 +126,8 @@ impl CalcState {
                 nodes: [AstNode::Literal(0i64); MAX_NODE_COUNT],
                 node_count: 0,
                 root_index: 0,
+                mat_cache: [None; crate::math::parser::MATRIX_CACHE_SIZE],
+                mat_cache_count: 0,
             },
             expr_scratch: [0u8; INPUT_BUFFER_CAPACITY],
         }
@@ -176,12 +219,14 @@ impl CalcState {
         self.result_scroll_offset
     }
 
-    /// Store the last formatted result for scrolling.
+    /// Store the last formatted result for scrolling. Also clears the matrix
+    /// Ans so the OLED doesn't show a stale matrix after a scalar result.
     pub fn set_last_result(&mut self, result: &[u8]) {
         let len = result.len().min(RESULT_BUFFER_CAPACITY);
         self.last_result[..len].copy_from_slice(result);
         self.last_result_len = len;
         self.result_scroll_offset = 0;
+        self.variables.clear_matrix_ans();
     }
 
     /// The full last result string.
@@ -189,7 +234,8 @@ impl CalcState {
         &self.last_result[..self.last_result_len]
     }
 
-    /// Clear the stored result.
+    /// Clear the displayed result (not the Ans/matrix Ans — those persist
+    /// so subsequent Ans expressions can still reference them).
     pub fn clear_last_result(&mut self) {
         self.last_result_len = 0;
         self.result_scroll_offset = 0;
@@ -197,6 +243,52 @@ impl CalcState {
 
     pub fn has_result(&self) -> bool {
         self.last_result_len > 0
+    }
+
+    pub fn has_matrix_result(&self) -> bool {
+        self.variables.read_matrix_ans().is_some()
+    }
+
+    pub fn get_matrix_result(&self) -> Option<Matrix> {
+        self.variables.read_matrix_ans()
+    }
+
+    pub fn clear_matrix_result(&mut self) {
+        self.matrix_scroll_offset = 0;
+        self.matrix_col_offset = 0;
+    }
+
+    pub fn matrix_scroll_offset(&self) -> usize {
+        self.matrix_scroll_offset
+    }
+
+    pub fn matrix_col_offset(&self) -> usize {
+        self.matrix_col_offset
+    }
+
+    pub fn scroll_matrix_up(&mut self) {
+        if self.matrix_scroll_offset > 0 {
+            self.matrix_scroll_offset -= 1;
+        }
+    }
+
+    pub fn scroll_matrix_down(&mut self) {
+        if let Some(m) = self.variables.read_matrix_ans() {
+            let rows = m.rows as usize;
+            if rows > 2 && self.matrix_scroll_offset + 2 < rows {
+                self.matrix_scroll_offset += 1;
+            }
+        }
+    }
+
+    pub fn scroll_matrix_left(&mut self) {
+        if self.matrix_col_offset > 0 {
+            self.matrix_col_offset -= 1;
+        }
+    }
+
+    pub fn scroll_matrix_right(&mut self) {
+        self.matrix_col_offset += 1;
     }
 
     // ── Variable store access ─────────────────────────────────────────────────
@@ -222,12 +314,15 @@ impl CalcState {
     pub fn switch_mode(&mut self, new_mode: CalculatorMode) {
         self.active_mode = new_mode;
         self.clear_input();
+        self.matrix_scroll_offset = 0;
+        self.matrix_col_offset = 0;
     }
 
     pub fn math_mode(&self) -> MathMode {
         match self.active_mode {
             CalculatorMode::Standard => MathMode::Standard,
             CalculatorMode::Advanced => MathMode::Advanced,
+            CalculatorMode::Matrix => MathMode::Matrix,
         }
     }
 
