@@ -87,7 +87,7 @@ pub struct CalcState {
     matrix_col_offset: usize,
 
     /// All calculator variables (Ans, A–Z, MatA–MatC). Owned here, borrowed by math engine.
-    pub(crate) variables: VariableStore,
+    pub variables: VariableStore,
 
     /// Currently active calculator mode.
     active_mode: CalculatorMode,

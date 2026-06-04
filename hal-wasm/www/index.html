@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>NumCore Simulator</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    background: #1a1a2e; color: #ccc; display: flex;
+    justify-content: center; min-height: 100vh; padding: 20px;
+  }
+  .container { max-width: 700px; width: 100%; }
+  h1 { font-size: 18px; color: #e94560; margin-bottom: 12px; text-align: center; }
+  .lcd {
+    background: #9bbc0f; border-radius: 8px; padding: 12px;
+    box-shadow: 0 0 20px rgba(0,0,0,0.5); margin-bottom: 12px;
+  }
+  #display {
+    display: block; width: 100%; image-rendering: pixelated;
+    max-width: 480px; margin: 0 auto; height: auto;
+  }
+  .info { font-size: 12px; color: #888; margin-bottom: 8px; text-align: center; }
+  #term {
+    background: #0d0d1a; color: #0f0; padding: 10px; border-radius: 4px;
+    font-size: 13px; height: 200px; overflow-y: auto; white-space: pre-wrap;
+    word-break: break-all; margin-bottom: 8px; border: 1px solid #333;
+  }
+  .controls { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; margin-bottom: 12px; }
+  .controls button {
+    background: #16213e; color: #ccc; border: 1px solid #333;
+    padding: 6px 12px; border-radius: 4px; cursor: pointer; font-family: inherit;
+  }
+  .controls button:hover { background: #0f3460; }
+  .mode-indicator { text-align: center; font-size: 13px; color: #e94560; margin-bottom: 8px; }
+  #status { font-size: 12px; color: #666; text-align: center; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>NumCore v0.6.1 — Simulator</h1>
+  <div class="lcd">
+    <canvas id="display" width="384" height="64"></canvas>
+  </div>
+  <div class="controls">
+    <button data-key="esc">Esc (Mode)</button>
+    <button data-key="ctrl-d">Ctrl+D (Deg/Rad)</button>
+    <button data-key="backspace">&larr; Bksp</button>
+    <button data-key="enter">Enter</button>
+    <button data-key="up">&uarr;</button>
+    <button data-key="down">&darr;</button>
+    <button data-key="left">&larr;</button>
+    <button data-key="right">&rarr;</button>
+  </div>
+  <div class="mode-indicator" id="modeIndicator">Standard mode</div>
+  <div id="term"></div>
+  <div id="status">Click anywhere and start typing. Ctrl+D toggles Deg/Rad.</div>
+</div>
+<script src="pkg/hal_wasm.js"></script>
+<script src="index.js"></script>
+</body>
+</html>

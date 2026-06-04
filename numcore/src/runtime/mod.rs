@@ -30,7 +30,7 @@ fn initialise_all_hardware<U: Uart, D: Display>() {
 }
 
 fn print_welcome_banner<U: Uart>() {
-    U::transmit_bytes(b"\r\nNumCore v0.6  LM3S811  Q31.32 PEMDAS\r\n");
+    U::transmit_bytes(b"\r\nNumCore v0.6.1  LM3S811  Q31.32 PEMDAS\r\n");
     U::transmit_bytes(b"Modes: Standard | Advanced | Matrix | Scientific  (Esc cycles)\r\n");
     U::transmit_bytes(b"Scientific: use 1.5E+10 for scientific notation\r\n");
     U::transmit_bytes(b"Scalar/Complex: + - * / ^ %  |  sin cos tan asin acos atan\r\n");
@@ -308,17 +308,20 @@ fn handle_expression_submission<U: Uart, D: Display>(state: &mut CalcState) {
 
     // Stack guard: refuse evaluation if stack pointer is too close to .bss.
     // This prevents silent corruption from stack overflow into static RAM.
-    const BSS_END: usize = 0x2000_13E0;
-    const STACK_MARGIN: usize = 128;
-    let sp: usize;
-    unsafe { core::arch::asm!("mov {}, sp", out(reg) sp) };
-    if sp <= BSS_END + STACK_MARGIN {
-        U::transmit_bytes(b"! large\r\n");
-        state.set_last_result(b"large");
-        state.clear_input();
-        U::transmit_bytes(b"> ");
-        render_oled_result::<D>(state);
-        return;
+    #[cfg(any(target_arch = "arm", target_arch = "thumb"))]
+    {
+        const BSS_END: usize = 0x2000_13E0;
+        const STACK_MARGIN: usize = 128;
+        let sp: usize;
+        unsafe { core::arch::asm!("mov {}, sp", out(reg) sp) };
+        if sp <= BSS_END + STACK_MARGIN {
+            U::transmit_bytes(b"! large\r\n");
+            state.set_last_result(b"large");
+            state.clear_input();
+            U::transmit_bytes(b"> ");
+            render_oled_result::<D>(state);
+            return;
+        }
     }
 
     let result = {

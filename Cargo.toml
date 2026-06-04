@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["numcore", "numcore-lm3s811", "hal-lm3s811", "test-suite"]
+members = ["numcore", "numcore-lm3s811", "hal-lm3s811", "test-suite", "hal-wasm"]
 
 [profile.release]
 opt-level = "z"
