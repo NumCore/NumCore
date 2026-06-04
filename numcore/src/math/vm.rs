@@ -13,7 +13,7 @@ use crate::math::evaluator::{
     compute_overflow, take_overflow_info, EvalResult,
 };
 
-pub const VALUE_STACK_SIZE: usize = 16;
+pub const VALUE_STACK_SIZE: usize = 8;
 
 macro_rules! push {
     ($st:expr, $sp:expr, $v:expr) => {{

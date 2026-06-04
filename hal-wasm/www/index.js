@@ -115,6 +115,8 @@ function feedAll(key, e) {
   updateMode();
 }
 
+// ─── Keyboard input (desktop) ──────────────────────────────────────────────
+
 document.addEventListener('keydown', (e) => {
   if (!wasm) return;
   const key = e.key;
@@ -123,6 +125,72 @@ document.addEventListener('keydown', (e) => {
       key.length === 1) {
     feedAll(key, e);
   }
+});
+
+// ─── Mobile input via hidden text field ─────────────────────────────────────
+// Mobile browsers only fire keydown when a text input is focused. We use a
+// hidden <input> that gets focused on any page tap, then forward characters
+// via the 'input' event (which fires on each insertion).
+
+const mobileInput = document.getElementById('mobile-input');
+
+// Focus hidden input on any click/tap on the page body
+document.body.addEventListener('click', () => {
+  mobileInput.focus();
+});
+// Also focus when the canvas is tapped
+canvas.addEventListener('click', () => {
+  mobileInput.focus();
+});
+
+let prevMobileValue = '';
+
+mobileInput.addEventListener('input', () => {
+  if (!wasm) return;
+  const val = mobileInput.value;
+  // Find new characters since last check
+  for (let i = prevMobileValue.length; i < val.length; i++) {
+    const ch = val[i];
+    if (ch === '\n') {
+      feedAll('Enter', { preventDefault: () => {} });
+    } else {
+      const code = ch.charCodeAt(0);
+      if (code >= 0x20 && code <= 0x7e) {
+        feedAll(ch, { preventDefault: () => {} });
+      }
+    }
+  }
+  // Handle deletion (value got shorter)
+  if (val.length < prevMobileValue.length) {
+    const deleted = prevMobileValue.length - val.length;
+    for (let i = 0; i < deleted; i++) {
+      feedAll('Backspace', { preventDefault: () => {} });
+    }
+  }
+  prevMobileValue = val;
+  // Keep input empty - we process characters immediately
+  mobileInput.value = '';
+  prevMobileValue = '';
+});
+
+// Handle Enter/Backspace from mobile keyboard
+mobileInput.addEventListener('keydown', (e) => {
+  if (!wasm) return;
+  if (e.key === 'Enter' || e.key === 'Backspace') {
+    feedAll(e.key, e);
+    // Clear any pending input value
+    mobileInput.value = '';
+    prevMobileValue = '';
+  }
+});
+
+// When the input loses focus, refocus it if the simulator is active
+mobileInput.addEventListener('blur', () => {
+  setTimeout(() => {
+    if (document.activeElement !== mobileInput && document.hasFocus()) {
+      mobileInput.focus();
+    }
+  }, 100);
 });
 
 document.querySelectorAll('.controls button').forEach(btn => {
