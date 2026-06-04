@@ -4510,7 +4510,10 @@ fn test_matrix_inv_2x2() {
 fn test_matrix_inv_3x3() {
     let mut vars = VariableStore::new();
     let r = eval_matrix("inv([(3,2,3)(4,5,6)(7,8,9)])", &mut vars);
-    assert!(r.is_some(), "inv([(3,2,3)(4,5,6)(7,8,9)]) should return Some");
+    assert!(
+        r.is_some(),
+        "inv([(3,2,3)(4,5,6)(7,8,9)]) should return Some"
+    );
     let m = r.unwrap();
     assert_eq!(m.rows, 3);
     assert_eq!(m.cols, 3);
@@ -4564,26 +4567,41 @@ fn test_adjugate_reused_scratch() {
     // First evaluation: sto
     let r1 = engine::evaluate_expression(
         b"sto([(1,2)(3,4)],MatA)",
-        &mut vars, &mut lex, &mut bc,
-        MathMode::Matrix, AngleMode::Radians,
+        &mut vars,
+        &mut lex,
+        &mut bc,
+        MathMode::Matrix,
+        AngleMode::Radians,
     );
     assert!(matches!(r1, engine::EvalResult::Matrix(_)));
 
     // Second evaluation: adjugate with same scratch buffers
     let r2 = engine::evaluate_expression(
         b"adjugate(MatA)",
-        &mut vars, &mut lex, &mut bc,
-        MathMode::Matrix, AngleMode::Radians,
+        &mut vars,
+        &mut lex,
+        &mut bc,
+        MathMode::Matrix,
+        AngleMode::Radians,
     );
-    assert!(matches!(r2, engine::EvalResult::Matrix(_)), "adjugate(MatA) failed on reused scratch");
+    assert!(
+        matches!(r2, engine::EvalResult::Matrix(_)),
+        "adjugate(MatA) failed on reused scratch"
+    );
 
     // Third evaluation: fresh adjugate literal, same scratch
     let r3 = engine::evaluate_expression(
         b"adjugate([(1,2)(3,4)])",
-        &mut vars, &mut lex, &mut bc,
-        MathMode::Matrix, AngleMode::Radians,
+        &mut vars,
+        &mut lex,
+        &mut bc,
+        MathMode::Matrix,
+        AngleMode::Radians,
     );
-    assert!(matches!(r3, engine::EvalResult::Matrix(_)), "adjugate([(1,2)(3,4)]) failed on reused scratch");
+    assert!(
+        matches!(r3, engine::EvalResult::Matrix(_)),
+        "adjugate([(1,2)(3,4)]) failed on reused scratch"
+    );
 }
 
 #[test]
@@ -4598,17 +4616,26 @@ fn test_adjugate_after_det() {
 
     let r1 = engine::evaluate_expression(
         b"det([(3,2,3)(4,5,6)(7,8,9)])",
-        &mut vars, &mut lex, &mut bc,
-        MathMode::Matrix, AngleMode::Radians,
+        &mut vars,
+        &mut lex,
+        &mut bc,
+        MathMode::Matrix,
+        AngleMode::Radians,
     );
     assert!(matches!(r1, engine::EvalResult::Matrix(_)));
 
     let r2 = engine::evaluate_expression(
         b"adjugate([(3,2,3)(4,5,6)(7,8,9)])",
-        &mut vars, &mut lex, &mut bc,
-        MathMode::Matrix, AngleMode::Radians,
+        &mut vars,
+        &mut lex,
+        &mut bc,
+        MathMode::Matrix,
+        AngleMode::Radians,
     );
-    assert!(matches!(r2, engine::EvalResult::Matrix(_)), "adjugate after det failed");
+    assert!(
+        matches!(r2, engine::EvalResult::Matrix(_)),
+        "adjugate after det failed"
+    );
 }
 
 #[test]
@@ -4619,7 +4646,9 @@ fn test_adjugate_bytecode() {
     };
     let mut bc = compiler::Bytecode::new();
 
-    assert!(lexer::tokenise_expression(b"adjugate([(1,2)(3,4)])", &mut lex, MathMode::Matrix).is_some());
+    assert!(
+        lexer::tokenise_expression(b"adjugate([(1,2)(3,4)])", &mut lex, MathMode::Matrix).is_some()
+    );
     assert!(compiler::compile(&lex, &mut bc).is_some());
 
     // Print bytecode
@@ -4631,7 +4660,7 @@ fn test_adjugate_bytecode() {
     while i < ops.len() {
         let op = ops[i];
         if op == 0x50 {
-            let fn_idx = ops[i+1];
+            let fn_idx = ops[i + 1];
             println!("  CallMatrixFunc({}) at byte {}", fn_idx, i);
             i += 2;
         } else {
@@ -4648,7 +4677,9 @@ fn test_adjugate_bytecode_verbose() {
     };
     let mut bc = compiler::Bytecode::new();
 
-    assert!(lexer::tokenise_expression(b"adjugate([(1,2)(3,4)])", &mut lex, MathMode::Matrix).is_some());
+    assert!(
+        lexer::tokenise_expression(b"adjugate([(1,2)(3,4)])", &mut lex, MathMode::Matrix).is_some()
+    );
     assert!(compiler::compile(&lex, &mut bc).is_some());
 
     let ops = &bc.code[..bc.len as usize];
@@ -4657,12 +4688,22 @@ fn test_adjugate_bytecode_verbose() {
 
     // Check for PushMatLit followed by CallMatrixFunc
     let push_mat_lit_pos = ops.iter().position(|&b| b == 0x08);
-    assert!(push_mat_lit_pos.is_some(), "bytecode must contain PushMatLit");
+    assert!(
+        push_mat_lit_pos.is_some(),
+        "bytecode must contain PushMatLit"
+    );
 
     let call_mf_pos = ops.iter().position(|&b| b == 0x50);
-    assert!(call_mf_pos.is_some(), "bytecode must contain CallMatrixFunc");
+    assert!(
+        call_mf_pos.is_some(),
+        "bytecode must contain CallMatrixFunc"
+    );
 
     // The function index should be right after the opcode
     let fn_idx = ops[call_mf_pos.unwrap() + 1];
-    assert_eq!(fn_idx, 5, "adjugate should emit CallMatrixFunc(5), got {}", fn_idx);
+    assert_eq!(
+        fn_idx, 5,
+        "adjugate should emit CallMatrixFunc(5), got {}",
+        fn_idx
+    );
 }
