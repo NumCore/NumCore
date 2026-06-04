@@ -10,6 +10,7 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RUST_TARGET: thumbv7m-none-eabi
+  WASM_TARGET: wasm32-unknown-unknown
 
 jobs:
   test:
@@ -82,6 +83,21 @@ jobs:
       - name: Build firmware (release)
         run: cargo build -p numcore-lm3s811 --release --target ${{ env.RUST_TARGET }} --verbose
 
+      - name: Install wasm32 target
+        run: rustup target add ${{ env.WASM_TARGET }}
+
+      - name: Install wasm-bindgen-cli
+        run: cargo install wasm-bindgen-cli
+
+      - name: Build WASM simulator
+        run: |
+          cargo build -p hal-wasm --target ${{ env.WASM_TARGET }}
+          wasm-bindgen target/${{ env.WASM_TARGET }}/debug/hal_wasm.wasm \
+            --out-dir hal-wasm/www/pkg --target no-modules
+
+      - name: Build standalone HTML
+        run: python3 hal-wasm/build-single-html.py target/${{ env.WASM_TARGET }}/debug/index-standalone.html
+
       - name: Extract version and name artifact
         run: |
           VERSION="v$(grep '^version' numcore-lm3s811/Cargo.toml | head -1 | cut -d'"' -f2)"
@@ -119,7 +135,9 @@ jobs:
           tag_name: ${{ env.VERSION }}
           name: "NumCore ${{ env.VERSION }}"
           body: ${{ env.PR_BODY }}
-          files: ${{ env.ARTIFACT_NAME }}
+          files: |
+            ${{ env.ARTIFACT_NAME }}
+            target/${{ env.WASM_TARGET }}/debug/index-standalone.html
           draft: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
