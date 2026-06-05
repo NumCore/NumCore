@@ -4707,3 +4707,14 @@ fn test_adjugate_bytecode_verbose() {
         fn_idx
     );
 }
+
+#[test]
+fn test_matrix_literal_unary_minus() {
+    let mut vars = VariableStore::new();
+    let r = eval_matrix("[(9,6,3,4)(-4,6,7,8)]", &mut vars);
+    assert!(r.is_some(), "matrix with unary minus should parse");
+    let m = r.unwrap();
+    assert_eq!(m.rows, 2);
+    assert_eq!(m.cols, 4);
+    assert_eq!(m.data[4], -4 * 4294967296);
+}

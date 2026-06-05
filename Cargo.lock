@@ -35,7 +35,7 @@ version = "0.1.0"
 
 [[package]]
 name = "numcore-lm3s811"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "hal-lm3s811",
  "numcore",

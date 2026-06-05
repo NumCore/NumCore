@@ -30,7 +30,7 @@ fn initialise_all_hardware<U: Uart, D: Display>() {
 }
 
 fn print_welcome_banner<U: Uart>() {
-    U::transmit_bytes(b"\r\nNumCore v0.6.2  LM3S811  Q31.32 PEMDAS\r\n");
+    U::transmit_bytes(b"\r\nNumCore v0.6.3  LM3S811  Q31.32 PEMDAS\r\n");
     U::transmit_bytes(b"Modes: Standard | Advanced | Matrix | Scientific  (Esc cycles)\r\n");
     U::transmit_bytes(b"Scientific: use 1.5E+10 for scientific notation\r\n");
     U::transmit_bytes(b"Scalar/Complex: + - * / ^ %  |  sin cos tan asin acos atan\r\n");
