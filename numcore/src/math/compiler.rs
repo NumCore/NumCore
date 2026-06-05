@@ -410,8 +410,18 @@ fn compile_matrix_literal(cursor: &mut ParserCursor, bc: &mut Bytecode) -> Optio
         cursor.advance();
         let mut row_cols = 0u8;
         loop {
+            let negative = cursor.peek() == Some(Token::UnaryMinus);
+            if negative {
+                cursor.advance();
+            }
             let val = match cursor.advance()? {
-                Token::Number(v) => v,
+                Token::Number(v) => {
+                    if negative {
+                        v.wrapping_neg()
+                    } else {
+                        v
+                    }
+                }
                 _ => return None,
             };
             if pos >= 16 {
