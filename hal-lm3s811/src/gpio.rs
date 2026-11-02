@@ -11,7 +11,7 @@
 
 use crate::mmio;
 
-// ─── GPIO port base addresses ─────────────────────────────────────────────────
+// --- GPIO port base addresses -------------------------------------------------
 
 /// GPIO Port A base address. Hosts UART0: PA0 = RX, PA1 = TX.
 pub const GPIOA_BASE: u32 = 0x4000_4000;
@@ -19,7 +19,7 @@ pub const GPIOA_BASE: u32 = 0x4000_4000;
 /// GPIO Port B base address. Hosts I2C0: PB2 = SCL, PB3 = SDA.
 pub const GPIOB_BASE: u32 = 0x4000_5000;
 
-// ─── GPIO register offsets ────────────────────────────────────────────────────
+// --- GPIO register offsets ----------------------------------------------------
 
 /// Alternate Function Select register offset.
 /// Setting a bit hands the corresponding pin to the peripheral mux.
@@ -33,17 +33,17 @@ pub const GPIO_DEN_OFFSET: u32 = 0x51C;
 /// Required for I2C SDA and SCL pins per the I2C specification.
 pub const GPIO_ODR_OFFSET: u32 = 0x50C;
 
-// ─── Public API ───────────────────────────────────────────────────────────────
+// --- Public API ---------------------------------------------------------------
 
 /// Configure a set of pins on a GPIO port for peripheral (alternate) function.
 ///
 /// # Arguments
-/// * `port_base` — base address of the GPIO port (use `GPIOA_BASE` etc.)
-/// * `pin_mask`  — bitmask of pins to configure (bit 0 = pin 0, bit 1 = pin 1…)
+/// * `port_base` - base address of the GPIO port (use `GPIOA_BASE` etc.)
+/// * `pin_mask`  - bitmask of pins to configure (bit 0 = pin 0, bit 1 = pin 1...)
 pub fn configure_pins_as_alternate_function(port_base: u32, pin_mask: u8) {
     // Enable alternate function selection for the specified pins.
     mmio::set_register_bits(port_base, GPIO_AFSEL_OFFSET, pin_mask as u32);
-    // Activate digital mode — mandatory for any digital operation.
+    // Activate digital mode - mandatory for any digital operation.
     mmio::set_register_bits(port_base, GPIO_DEN_OFFSET, pin_mask as u32);
 }
 

@@ -1,4 +1,4 @@
-//! # HAL — LM3S811 (Stellaris)
+//! # HAL - LM3S811 (Stellaris)
 //!
 //! Hardware Abstraction Layer for the LM3S811 ARM Cortex-M3 MCU.
 //! Implements UART, I2C, GPIO, clock control, MMIO primitives, and

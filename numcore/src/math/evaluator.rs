@@ -102,7 +102,7 @@ pub fn overflow_complex_hyp(result: Option<Cplx>, component: i64, negative: bool
     }
 }
 
-// ─── Binary operator dispatch ────────────────────────────────────────
+// --- Binary operator dispatch ----------------------------------------
 
 pub fn apply_binary_operator(
     operator: BinaryOperator,
@@ -175,7 +175,7 @@ pub fn apply_binary_operator(
         }
         (MK::Complex, MK::Mat) | (MK::Mat, MK::Complex) => None,
 
-        // ── Scientific notation arms ──
+        // -- Scientific notation arms --
         (MK::Scientific, _) | (_, MK::Scientific) => {
             if operator == BinaryOperator::Modulo {
                 return None;
@@ -414,7 +414,7 @@ pub fn apply_binary_op_complex(operator: BinaryOperator, left: Cplx, right: Cplx
     }
 }
 
-// ─── Function dispatch ──────────────────────────────────────────────
+// --- Function dispatch ----------------------------------------------
 
 pub fn apply_function(function: MathFunction, arg: Cplx, angle_mode: AngleMode) -> Option<Cplx> {
     if !arg.is_real() {
@@ -671,7 +671,7 @@ pub fn apply_matrix_function(function: MatrixFunction, arg: Matrix) -> Option<Ma
     }
 }
 
-// ─── Integration constants (used by vm.rs) ──────────────────────────
+// --- Integration constants (used by vm.rs) --------------------------
 
 pub const ADAPTIVE_TOL: i64 = 43;
 pub const ADAPTIVE_MAX_DEPTH: u32 = 20;

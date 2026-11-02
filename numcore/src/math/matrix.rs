@@ -334,7 +334,21 @@ impl Matrix {
         let mut mat = self.data;
         let mut det = fp::SCALE;
         for col in 0..n {
-            let pivot_row = (col..n).find(|&r| mat[r * n + col] != 0)?;
+            // Partial pivoting: choose the largest available pivot for
+            // numerical stability.  If the whole column is zero, the matrix
+            // is singular and the determinant is exactly zero, not an error.
+            let mut pivot_row = col;
+            let mut pivot_abs = mat[col * n + col].unsigned_abs();
+            for r in (col + 1)..n {
+                let candidate = mat[r * n + col].unsigned_abs();
+                if candidate > pivot_abs {
+                    pivot_abs = candidate;
+                    pivot_row = r;
+                }
+            }
+            if pivot_abs == 0 {
+                return Some(0);
+            }
             if pivot_row != col {
                 for j in col..n {
                     mat.swap(col * n + j, pivot_row * n + j);
@@ -434,8 +448,14 @@ impl Matrix {
     pub fn negate(&self) -> Self {
         let len = self.rows as usize * self.cols as usize;
         let mut data = [0i64; MAX_MATRIX_CELLS];
-        for i in 0..len {
-            data[i] = self.data[i].wrapping_neg();
+        if self.kind == MatrixKind::Scientific {
+            // The second cell is the exponent, not a value component.
+            data[0] = self.data[0].wrapping_neg();
+            data[1] = self.data[1];
+        } else {
+            for i in 0..len {
+                data[i] = self.data[i].wrapping_neg();
+            }
         }
         Self {
             data,
@@ -446,7 +466,7 @@ impl Matrix {
     }
 }
 
-// ─── Scientific notation constants and normalizer ────────────────────────
+// --- Scientific notation constants and normalizer ------------------------
 
 pub const SCI_MANTISSA_MIN: i64 = 4_294_967_296;
 pub const SCI_MANTISSA_MAX: i64 = 42_949_672_959;
@@ -455,20 +475,33 @@ pub fn normalize_scientific(mantissa: i64, _exponent: i64) -> Option<(i64, i64)>
     if mantissa == 0 {
         return Some((0, 0));
     }
-    let mut m = mantissa;
+
+    // Normalise the magnitude, then restore the sign.  Handling the sign
+    // separately avoids the infinite loop that occurs when a negative
+    // mantissa is compared against the positive minimum.
+    let negative = mantissa < 0;
+    let mut m = if negative {
+        (mantissa as i128).unsigned_abs() as i128
+    } else {
+        mantissa as i128
+    };
     let mut e = _exponent;
-    while m < SCI_MANTISSA_MIN {
-        m = super::fixed_point::multiply(m, super::fixed_point::from_integer(10))?;
+    while m < SCI_MANTISSA_MIN as i128 {
+        m = m.checked_mul(10)?;
         e -= 1;
     }
-    while m > SCI_MANTISSA_MAX {
-        m = super::fixed_point::divide(m, super::fixed_point::from_integer(10))?;
+    while m > SCI_MANTISSA_MAX as i128 {
+        m /= 10;
         e += 1;
     }
     if e > 99 || e < -99 {
         return None;
     }
-    Some((m, e))
+    let signed = if negative { -m } else { m };
+    if signed > i64::MAX as i128 || signed < i64::MIN as i128 {
+        return None;
+    }
+    Some((signed as i64, e))
 }
 
 #[cfg(test)]

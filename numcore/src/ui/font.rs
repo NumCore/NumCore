@@ -1,6 +1,6 @@
-//! # 5×7 Bitmap Font (UI Layer)
+//! # 5x7 Bitmap Font (UI Layer)
 //!
-//! A compact ASCII bitmap font for the 96×16 OSRAM Pictiva OLED display.
+//! A compact ASCII bitmap font for the 96x16 OSRAM Pictiva OLED display.
 //!
 //! ## Glyph layout
 //!   Each character is 5 columns wide and 7 rows tall, stored as 5 bytes.
@@ -12,10 +12,10 @@
 //!   Printable ASCII 0x20 (space) through 0x7E (~).
 //!   Characters outside this range render as a solid rectangle (replacement glyph).
 //!
-//! ## Capacity on 96×16 display
-//!   Page 0 (rows 0-7):  ⌊96 / 6⌋ = 16 characters  ← expression line
-//!   Page 1 (rows 8-15): ⌊96 / 6⌋ = 16 characters  ← result line
-//!   Total: 16 chars × 2 lines (7 pixel rows of each glyph fit in 8-row page)
+//! ## Capacity on 96x16 display
+//!   Page 0 (rows 0-7):  floor(96 / 6) = 16 characters  <- expression line
+//!   Page 1 (rows 8-15): floor(96 / 6) = 16 characters  <- result line
+//!   Total: 16 chars x 2 lines (7 pixel rows of each glyph fit in 8-row page)
 
 /// Width of one glyph in pixel-columns (not counting the inter-character gap).
 pub const GLYPH_WIDTH: usize = 5;
@@ -35,14 +35,14 @@ const GLYPH_FIRST: u8 = 0x20; // space
 /// Last ASCII codepoint with a glyph in the table.
 const GLYPH_LAST: u8 = 0x7E; // tilde
 
-/// Replacement glyph rendered for out-of-range codepoints (solid 5×7 block).
+/// Replacement glyph rendered for out-of-range codepoints (solid 5x7 block).
 const REPLACEMENT_GLYPH: [u8; GLYPH_WIDTH] = [0x7F, 0x7F, 0x7F, 0x7F, 0x7F];
 
-// ─── Font table ───────────────────────────────────────────────────────────────
+// --- Font table ---------------------------------------------------------------
 //
 // 95 entries covering 0x20..=0x7E.
 // Each entry is 5 bytes, one byte per column, bit 0 = top pixel.
-// Designed to be readable at 96×16 on the Pictiva OLED.
+// Designed to be readable at 96x16 on the Pictiva OLED.
 
 #[rustfmt::skip]
 static FONT5X7: [[u8; GLYPH_WIDTH]; 95] = [
@@ -240,7 +240,7 @@ static FONT5X7: [[u8; GLYPH_WIDTH]; 95] = [
 
 use crate::hal::Display;
 
-// ─── Public API ───────────────────────────────────────────────────────────────
+// --- Public API ---------------------------------------------------------------
 
 /// Return the 5-byte column bitmap for an ASCII character.
 #[inline]

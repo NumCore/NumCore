@@ -9,7 +9,7 @@ use crate::ui::font;
 //   Col 14:    whitespace margin (fixed)
 //   Col 15:    scroll-direction arrow (fixed)
 //     Page 0 (top row): < if col_off>0, > if content continues right
-//     Page 1 (bottom row): ^ if row_off>0, ↓ if more rows below
+//     Page 1 (bottom row): ^ if row_off>0, v if more rows below
 
 const VIEWPORT_W: usize = 14;
 const ARROW_COL: usize = 15;
@@ -221,7 +221,7 @@ pub fn render_matrix<D: Display>(
     };
     let co = col_off.min(max_co);
 
-    // ─ Blit viewport from virtual buffer ─
+    // - Blit viewport from virtual buffer -
     // The buffer contains the full row: [ bracket gap values gap bracket ]
     // Brackets are stored as `[`, `]`, `|` and rendered with box-drawing glyphs.
     for i in 0..VIEWPORT_W {
@@ -257,7 +257,7 @@ pub fn render_matrix<D: Display>(
         }
     }
 
-    // ─ Fixed arrow overlays at col 15 ─
+    // - Fixed arrow overlays at col 15 -
     let arrow_px = ARROW_COL * font::CHAR_ADVANCE;
     if arrow_px + font::GLYPH_WIDTH > D::WIDTH {
         return;
@@ -272,7 +272,7 @@ pub fn render_matrix<D: Display>(
     }
 
     // Page 1 (bottom row): vertical scroll indicator
-    // Show `↓` when rows below; `^` when at the bottommost scroll position.
+    // Show `v` when rows below; `^` when at the bottommost scroll position.
     let max_ro = total_rows.saturating_sub(2);
     if row_off == max_ro && row_off > 0 {
         put_char::<D>(fb, 1, arrow_px, b'^');

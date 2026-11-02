@@ -1,50 +1,46 @@
-## Hotfix — Matrix `adjugate` / `inverse` returning `DomainError`
+# Stack and matrix fixes
+
+## Matrix adjugate / inverse returned `DomainError`
 
 ### Symptom
 
-In Matrix mode, the following operations return `! error` despite valid inputs:
+In Matrix mode, `adjugate`, `adj` and `inv` returned `! error` for valid matrices, while `det`, `cofactor` and `transpose` worked.
 
-```
-> adjugate([(1,2)(3,4)])
-! error
-> inv(MatA)
-! error
-> adj(MatA)
-! error
-```
+### Cause
 
-While `det`, `cofactor`, `transpose`, and `identity` all work correctly.
-
-### Root cause
-
-The VM's value stack — a `[Option<Matrix>; 16]` local array in `execute()` — consumes **2,304 bytes** on the C stack. The firmware's hardware stack (configured in `link.x`) is only **1,536 bytes**. The value stack alone exceeds it by 768 bytes.
-
-This doesn't corrupt `.bss` — the overflow stays in the unused RAM gap between `.bss` and `.stack`. What gets corrupted is the **stack itself**.
-
-When `execute()` calls `adjugate()` which calls `cofactor()`, each callee pushes its frame below. The compiler generates code that addresses `cofactor()`'s local variables (like `data: [i64; 16]`) at specific offsets from the stack pointer. But SP has already been pushed so far down by the huge value stack that those offset calculations land on addresses that overlap with **`adjugate()`'s own return address and saved registers**.
-
-So `cofactor()` computes correctly and writes to where it thinks its locals are, but those writes silently corrupt `adjugate()`'s frame. When `cofactor()` returns, `adjugate()` reads back corrupted data from what it thinks is `c` (the cofactor result), but is actually garbage — and returns `None`.
-
-Shallow call chains like `det`/`cofactor`/`transpose` survived because they don't nest deeply enough for the callee's frame to reach the caller's frame. `adjugate` (which internally calls `cofactor`) adds exactly one extra frame, which is enough to push SP into the danger zone. `inverse` also failed because it calls `adjugate`.
+The VM value stack was a local `[Option<Matrix>; 16]` array in `execute()`. It used 2,304 bytes, which was larger than the 1,536-byte stack reserve in `link.x`. The overflow landed in the gap between `.bss` and `.stack`, so shallow calls appeared to work. A deeper call chain such as `adjugate` -> `cofactor` pushed the stack pointer into the caller frame and corrupted the return path.
 
 ### Fix
 
-`numcore/src/math/vm.rs:16` — `VALUE_STACK_SIZE` reduced from **16 to 8**.
+`VALUE_STACK_SIZE` was reduced from 16 to 8. The value stack is now 4 entries because the compiler never needs more than four live values, and the VM value stack was reduced again to leave room for nested loop bodies.
 
-Maximum real expression depth is ~4 entries; 8 is safe. The value stack shrinks from 2,304 B to **1,152 B**, fitting comfortably within the 1,536 B hardware stack with room for nested function frames.
+## Integration stack overflow
 
-No other changes were needed. All matrix functions (`det`, `cofactor`, `transpose`, `identity`, `adjugate`, `inverse`) now pass in QEMU testing.
+### Symptom
 
-### Files changed
+`int(X^2,X,0,1)` and other integrals hung in QEMU. Instrumentation showed the stack pointer moving below SRAM and overwriting `.data`.
 
-| File | Change |
-|------|--------|
-| `numcore/src/math/vm.rs` | `VALUE_STACK_SIZE` 16 → 8 |
-| `hal-wasm/www/index.html` | Hidden `<input>` for mobile keyboard focus |
-| `hal-wasm/www/index.js` | Mobile `input`/`keydown` event forwarding |
-| `test-suite/tests/math.rs` | Regression tests for adjugate/inverse |
+### Cause
 
-### Tests
+`adaptive_simpson_exec` kept a 16-entry task array and a full bytecode copy on the stack. Each body evaluation also entered `execute()`, which allocated another value stack. The combined frames exceeded the stack reserve.
 
-- All 309 host-side unit tests pass (6 pre‑existing ignored)
-- QEMU-verified: adjugate and inverse produce correct results for 2×2 and 3×3 matrices, with and without variable storage
+### Fix
+
+- The integration task array is now a static `INTEGRATION_TASKS` buffer. Nested integration is rejected with `DomainError`.
+- Loop bodies execute directly from the main bytecode through `execute_range`, so no body bytecode copy is made.
+- The value stack is 4 entries.
+- The stack reserve is 4,096 bytes.
+- The stack guard uses the linker `_stack_end` symbol instead of a hard-coded address.
+
+## Other correctness fixes
+
+- Scientific notation now normalises negative mantissas correctly, and negating a `Scientific` value preserves its exponent.
+- Unary minus binds below exponentiation, so `-2^2` is `-4` and `(-2)^2` is `4`.
+- A 4x4 determinant with a zero pivot returns 0 instead of a domain error.
+- The 50 MHz PLL configuration is applied before UART and I2C timing is calculated.
+
+## Tests
+
+- 313 host-side unit tests pass.
+- 6 tests are ignored for host-only overflow or underflow differences.
+- QEMU checks cover `int`, `sum`, negative scientific notation, unary-minus precedence and singular 4x4 determinants.

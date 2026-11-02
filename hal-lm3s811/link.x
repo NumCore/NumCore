@@ -9,7 +9,7 @@ MEMORY
     RAM   : ORIGIN = 0x20000000, LENGTH = 8K
 }
 
-_stack_size = 1536;
+_stack_size = 4096;
 _stack_start = ORIGIN(RAM) + LENGTH(RAM);
 _stack_end = _stack_start - _stack_size;
 
@@ -18,7 +18,7 @@ ENTRY(Reset)
 
 SECTIONS
 {
-    /* ── Vector table ─────────────────────────────────────── */
+    /* -- Vector table --------------------------------------- */
     .vector_table ORIGIN(FLASH) :
     {
         /* Initial stack pointer (end of RAM) */
@@ -29,14 +29,14 @@ SECTIONS
         KEEP(*(.vector_table.exceptions));
     } > FLASH
 
-    /* ── Code & read-only data ────────────────────────────── */
+    /* -- Code & read-only data ------------------------------ */
     .text :
     {
         *(.text .text.*);
         *(.rodata .rodata.*);
     } > FLASH
 
-    /* ── Initialised data (LMA in Flash, VMA in RAM) ─────── */
+    /* -- Initialised data (LMA in Flash, VMA in RAM) ------- */
     .data : AT(ADDR(.text) + SIZEOF(.text))
     {
         _sdata = .;
@@ -44,7 +44,7 @@ SECTIONS
         _edata = .;
     } > RAM
 
-    /* ── Zero-initialised data ────────────────────────────── */
+    /* -- Zero-initialised data ------------------------------ */
     .bss (NOLOAD) :
     {
         _sbss = .;
@@ -58,7 +58,7 @@ SECTIONS
         . = . + _stack_size;
     } > RAM
 
-    /* ── Discarded sections ──────────────────────────────── */
+    /* -- Discarded sections -------------------------------- */
     /DISCARD/ :
     {
         *(.ARM.exidx*);

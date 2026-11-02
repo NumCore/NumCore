@@ -7,7 +7,7 @@ const AGGREGATE_BOUND_CHARS: usize = 5;
 const AGGREGATE_BOUND_COLUMNS: usize = AGGREGATE_BOUND_CHARS * font::CHAR_ADVANCE;
 const AGGREGATE_BODY_START: usize = AGGREGATE_SYMBOL_COLUMNS + AGGREGATE_BOUND_COLUMNS;
 
-// ─── Scroll-indicator sentinel bytes ──────────────────────────────────────────
+// --- Scroll-indicator sentinel bytes ------------------------------------------
 
 /// Used by the display layer for the right-arrow glyph. Outside printable ASCII
 /// range so it never collides with normal expression or result text.
@@ -15,7 +15,7 @@ pub const RIGHT_ARROW_BYTE: u8 = 0x01;
 /// Left-arrow sentinel byte.
 pub const LEFT_ARROW_BYTE: u8 = 0x02;
 
-// ─── Custom glyphs ────────────────────────────────────────────────────────────
+// --- Custom glyphs ------------------------------------------------------------
 
 #[rustfmt::skip]
 const RIGHT_ARROW_GLYPH: [u8; 5] = [
@@ -107,7 +107,7 @@ const MINUS_GLYPH: [u8; 5] = [
     0b00001000,
 ];
 
-// ─── Aggregate types ──────────────────────────────────────────────────────────
+// --- Aggregate types ----------------------------------------------------------
 
 #[derive(Clone, Copy)]
 struct AggregateView<'a> {
@@ -124,7 +124,7 @@ enum AggregateOp {
     Sum,
 }
 
-// ─── Public API ───────────────────────────────────────────────────────────────
+// --- Public API ---------------------------------------------------------------
 
 pub fn render_screen<D: Display>(
     fb: &mut D::Buffer,
@@ -148,7 +148,7 @@ pub fn render_screen<D: Display>(
     }
 }
 
-// ─── Expression line with cursor ──────────────────────────────────────────────
+// --- Expression line with cursor ----------------------------------------------
 
 fn render_expression_line<D: Display>(fb: &mut D::Buffer, expression: &[u8], cursor_pos: usize) {
     let len = expression.len();
@@ -187,7 +187,7 @@ fn invert_char_at<D: Display>(fb: &mut D::Buffer, page: usize, char_index: usize
     }
 }
 
-// ─── Result line with scrolling ───────────────────────────────────────────────
+// --- Result line with scrolling -----------------------------------------------
 
 fn render_result_line<D: Display>(fb: &mut D::Buffer, result: &[u8], scroll_offset: usize) {
     const RESULT_CHARS: usize = 15;
@@ -209,7 +209,7 @@ fn render_result_line<D: Display>(fb: &mut D::Buffer, result: &[u8], scroll_offs
     render_ascii_pretty::<D>(fb, 1, font::CHAR_ADVANCE, &display);
 }
 
-// ─── Aggregate display ────────────────────────────────────────────────────────
+// --- Aggregate display --------------------------------------------------------
 
 fn render_aggregate_screen<D: Display>(
     fb: &mut D::Buffer,
@@ -320,7 +320,7 @@ fn split_top_level_commas<'a>(input: &'a [u8], parts: &mut [&'a [u8]; 4]) -> Opt
     Some(())
 }
 
-// ─── Glyph helpers ─────────────────────────────────────────────────────────────
+// --- Glyph helpers -------------------------------------------------------------
 
 /// Number of byte positions the glyph starting at `text[0]` occupies.
 /// A value >1 means multiple bytes are collapsed into one display slot.
@@ -333,7 +333,7 @@ fn glyph_byte_width(text: &[u8]) -> usize {
 }
 
 /// Map a byte-position in the expression to a 0-based display column,
-/// accounting for multi-byte glyphs that collapse (e.g. `pi` → π).
+/// accounting for multi-byte glyphs that collapse (e.g. `pi` -> pi).
 fn byte_pos_to_glyph_col(expr: &[u8], visible_start: usize, cursor_pos: usize) -> usize {
     let mut col = 0usize;
     let mut i = visible_start;
@@ -349,7 +349,7 @@ fn byte_pos_to_glyph_col(expr: &[u8], visible_start: usize, cursor_pos: usize) -
     col
 }
 
-// ─── Rendering primitives ─────────────────────────────────────────────────────
+// --- Rendering primitives -----------------------------------------------------
 
 fn render_ascii_pretty<D: Display>(fb: &mut D::Buffer, page: usize, start_col: usize, text: &[u8]) {
     let page_count = D::HEIGHT / 8;
@@ -410,7 +410,7 @@ fn clear_framebuffer<D: Display>(fb: &mut D::Buffer) {
     }
 }
 
-// ─── Utility ──────────────────────────────────────────────────────────────────
+// --- Utility ------------------------------------------------------------------
 
 fn trim_ascii(bytes: &[u8]) -> &[u8] {
     let mut start = 0usize;

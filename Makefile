@@ -16,7 +16,7 @@ build-lm3s811:
 	cargo build -p numcore-lm3s811 --release --target $(TARGET)
 
 test:
-	cargo test -p numcore_math --tests
+	cargo test -p numcore_math --tests -- --test-threads=1
 
 check:
 	cargo check -p numcore-lm3s811 --release --target $(TARGET)

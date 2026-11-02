@@ -174,7 +174,7 @@ impl Complex {
         Some(Self { re, im })
     }
 
-    // ── Logarithm ────────────────────────────────────────────────────────────
+    // -- Logarithm ------------------------------------------------------------
 
     pub fn ln(z: Self) -> Option<Self> {
         let norm = z.norm_sq()?;
@@ -202,7 +202,7 @@ impl Complex {
         })
     }
 
-    // ── Trigonometric ────────────────────────────────────────────────────────
+    // -- Trigonometric --------------------------------------------------------
 
     pub fn sin(z: Self) -> Option<Self> {
         let sh = fp::sinh(z.im)?;
@@ -227,7 +227,7 @@ impl Complex {
         Self::sin(z)?.div(Self::cos(z)?)
     }
 
-    // ── Hyperbolic ──────────────────────────────────────────────────────────
+    // -- Hyperbolic ----------------------------------------------------------
 
     pub fn sinh(z: Self) -> Option<Self> {
         let sh = fp::sinh(z.re)?;
@@ -249,7 +249,7 @@ impl Complex {
         Self::sinh(z)?.div(Self::cosh(z)?)
     }
 
-    // ── Inverse trigonometric ───────────────────────────────────────────────
+    // -- Inverse trigonometric -----------------------------------------------
 
     pub fn asin(z: Self) -> Option<Self> {
         let i = Self {
@@ -301,7 +301,7 @@ impl Complex {
         i_over_2.mul(ln_val)
     }
 
-    // ── Inverse hyperbolic ──────────────────────────────────────────────────
+    // -- Inverse hyperbolic --------------------------------------------------
 
     pub fn asinh(z: Self) -> Option<Self> {
         let one = Self::from_real(fp::FIXED_ONE);

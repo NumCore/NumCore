@@ -30,3 +30,5 @@ sqrt(-1)
 ln(0)
 a
 int(sinh(X),X,0,10)
+int(X^2,X,0,1)
+sum(X,X,1,100)

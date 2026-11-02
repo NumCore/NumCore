@@ -1,20 +1,20 @@
 #![allow(dead_code)]
-//! # OLED Display Driver — SSD0303 / OSRAM Pictiva 96×16 (Layer 4 — HAL)
+//! # OLED Display Driver - SSD0303 / OSRAM Pictiva 96x16 (Layer 4 - HAL)
 //!
-//! Drives the 96×16 monochrome OLED display fitted to the LM3S811EVB
+//! Drives the 96x16 monochrome OLED display fitted to the LM3S811EVB
 //! evaluation board via the I2C0 peripheral (PB2 = SCL, PB3 = SDA).
 //!
 //! ## Display geometry
-//!   96 columns × 16 rows = 1 536 pixels
-//!   The SSD0303 organises RAM as 2 pages × 96 columns (1 byte = 8 vertical pixels).
+//!   96 columns x 16 rows = 1 536 pixels
+//!   The SSD0303 organises RAM as 2 pages x 96 columns (1 byte = 8 vertical pixels).
 //!   Page 0 = rows 0-7 (top), Page 1 = rows 8-15 (bottom).
 //!
 //! ## I2C protocol (SSD0303)
 //!   Every I2C write starts with a control byte that tells the controller
 //!   whether the following bytes are commands or data (GDDRAM pixels):
 //!
-//!     Control byte 0x80  → one command byte follows  (Co=1, D/C#=0)
-//!     Control byte 0x40  → data stream     (Co=0, D/C#=1)
+//!     Control byte 0x80  -> one command byte follows  (Co=1, D/C#=0)
+//!     Control byte 0x40  -> data stream     (Co=0, D/C#=1)
 //!
 //! ## QEMU behaviour
 //!   The `lm3s811evb` QEMU machine models the SSD0303 faithfully enough for
@@ -22,7 +22,7 @@
 //!   QEMU SDL/GTK window that appears when you run without `-nographic`.
 //!
 //! ## Coordinate system
-//!   (col, page) where col ∈ [0, 95] and page ∈ [0, 1].
+//!   (col, page) where col in [0, 95] and page in [0, 1].
 //!   Within each page byte, bit 0 = topmost pixel of that 8-pixel stripe.
 //!
 //! ## Usage
@@ -34,12 +34,12 @@
 
 use crate::i2c;
 
-// ─── I2C address ──────────────────────────────────────────────────────────────
+// --- I2C address --------------------------------------------------------------
 
 /// SSD0303 I2C address on the LM3S811EVB.
 const OLED_I2C_ADDRESS: u8 = 0x3D;
 
-// ─── SSD0303 command constants ────────────────────────────────────────────────
+// --- SSD0303 command constants ------------------------------------------------
 
 /// Control byte: the next byte in this transaction is a command.
 ///
@@ -61,7 +61,7 @@ const CMD_DISPLAY_OFF: u8 = 0xAE;
 const CMD_START_LINE_0: u8 = 0x40;
 
 /// Set memory addressing mode (SSD0303 uses page mode by default; this
-/// command is included for clarity — value 0x20 selects horizontal mode on
+/// command is included for clarity - value 0x20 selects horizontal mode on
 /// SSD1306, but SSD0303 uses a different scheme; we set the page address
 /// explicitly instead).
 
@@ -74,7 +74,7 @@ const CMD_COLUMN_HIGH_BASE: u8 = 0x10;
 /// Set column address low nibble (OR with low nibble of column).
 const CMD_COLUMN_LOW_BASE: u8 = 0x00;
 
-/// Set contrast (double-byte command — next byte is the contrast value 0-255).
+/// Set contrast (double-byte command - next byte is the contrast value 0-255).
 const CMD_SET_CONTRAST: u8 = 0x81;
 
 /// Default contrast level. Increase if the display appears dim in QEMU.
@@ -83,16 +83,16 @@ const DEFAULT_CONTRAST: u8 = 0xCF;
 /// Normal display (pixel on = GDDRAM bit 1). 0xA7 inverts.
 const CMD_NORMAL_DISPLAY: u8 = 0xA7;
 
-/// Segment re-map: column address 0 → SEG0 (left-to-right scan).
+/// Segment re-map: column address 0 -> SEG0 (left-to-right scan).
 const CMD_SEG_REMAP_NORMAL: u8 = 0xA0;
 
 /// COM output scan direction: from COM0 downward (top-to-bottom).
 const CMD_COM_SCAN_NORMAL: u8 = 0xC0;
 
-/// Multiplex ratio command (double-byte: next byte = MUX ratio − 1).
+/// Multiplex ratio command (double-byte: next byte = MUX ratio - 1).
 const CMD_SET_MUX_RATIO: u8 = 0xA8;
 
-/// MUX ratio for 16 rows (16 − 1 = 15).
+/// MUX ratio for 16 rows (16 - 1 = 15).
 const MUX_RATIO_16_ROWS: u8 = 0x0F;
 
 /// Display offset command (double-byte: next byte = vertical shift, 0 = none).
@@ -106,7 +106,7 @@ const DISPLAY_OFFSET_NONE: u8 = 0x00;
 const CMD_CHARGE_PUMP: u8 = 0x8D;
 const CHARGE_PUMP_ENABLE: u8 = 0x14;
 
-// ─── Display dimensions ───────────────────────────────────────────────────────
+// --- Display dimensions -------------------------------------------------------
 
 /// Number of pixel columns.
 pub const DISPLAY_WIDTH_PIXELS: usize = 96;
@@ -117,10 +117,10 @@ const VISIBLE_COLUMN_OFFSET: u8 = 36;
 /// Number of pages (each page = 8 pixel rows).
 pub const DISPLAY_PAGE_COUNT: usize = 2;
 
-/// Total bytes in one full framebuffer (width × pages).
+/// Total bytes in one full framebuffer (width x pages).
 pub const FRAMEBUFFER_SIZE: usize = DISPLAY_WIDTH_PIXELS * DISPLAY_PAGE_COUNT;
 
-// ─── Framebuffer type alias ───────────────────────────────────────────────────
+// --- Framebuffer type alias ---------------------------------------------------
 
 /// A complete display framebuffer.
 ///
@@ -128,7 +128,7 @@ pub const FRAMEBUFFER_SIZE: usize = DISPLAY_WIDTH_PIXELS * DISPLAY_PAGE_COUNT;
 /// Bit 0 of each byte is the topmost pixel of that 8-row stripe.
 pub type Framebuffer = [u8; FRAMEBUFFER_SIZE];
 
-// ─── Initialisation ───────────────────────────────────────────────────────────
+// --- Initialisation -----------------------------------------------------------
 
 /// Initialise the SSD0303 controller and turn the display on.
 ///
@@ -146,7 +146,7 @@ pub fn initialise_oled() {
     send_command_bytes(&init_sequence);
 }
 
-// ─── Display operations ───────────────────────────────────────────────────────
+// --- Display operations -------------------------------------------------------
 
 /// Fill every pixel to off (black). Equivalent to `render_screen(&[0u8; 192])`.
 pub fn clear_display() {
@@ -160,12 +160,12 @@ pub fn clear_display() {
 /// streams all 96 pixel bytes in a single I2C data transaction.
 ///
 /// # Arguments
-/// * `framebuffer` — 192-byte array, layout: `fb[page * 96 + col]`
+/// * `framebuffer` - 192-byte array, layout: `fb[page * 96 + col]`
 pub fn render_screen(framebuffer: &Framebuffer) {
     for page in 0..DISPLAY_PAGE_COUNT {
         seek_to_page_column(page as u8, VISIBLE_COLUMN_OFFSET);
 
-        // Build a data packet: [CTRL_DATA_STREAM, byte0, byte1, … byte95]
+        // Build a data packet: [CTRL_DATA_STREAM, byte0, byte1, ... byte95]
         // We need a fixed-size buffer because no_std has no Vec.
         let mut packet = [0u8; 1 + DISPLAY_WIDTH_PIXELS]; // 97 bytes
         packet[0] = CTRL_DATA_STREAM;
@@ -213,7 +213,7 @@ fn send_command_bytes(commands: &[u8]) {
     }
 }
 
-// ─── Pixel helpers ────────────────────────────────────────────────────────────
+// --- Pixel helpers ------------------------------------------------------------
 
 /// Set or clear an individual pixel in a framebuffer (does not push to display).
 ///
@@ -221,10 +221,10 @@ fn send_command_bytes(commands: &[u8]) {
 /// transaction per pixel.
 ///
 /// # Arguments
-/// * `fb`  — mutable reference to the framebuffer to modify
-/// * `col` — pixel column, 0-95 (clamped — out-of-range silently ignored)
-/// * `row` — pixel row,    0-15 (clamped)
-/// * `on`  — `true` lights the pixel, `false` clears it
+/// * `fb`  - mutable reference to the framebuffer to modify
+/// * `col` - pixel column, 0-95 (clamped - out-of-range silently ignored)
+/// * `row` - pixel row,    0-15 (clamped)
+/// * `on`  - `true` lights the pixel, `false` clears it
 #[inline]
 pub fn set_pixel(fb: &mut Framebuffer, col: usize, row: usize, on: bool) {
     if col >= DISPLAY_WIDTH_PIXELS || row >= (DISPLAY_PAGE_COUNT * 8) {

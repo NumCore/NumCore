@@ -13,7 +13,36 @@ use crate::math::evaluator::{
     compute_overflow, take_overflow_info, EvalResult,
 };
 
-pub const VALUE_STACK_SIZE: usize = 8;
+pub const VALUE_STACK_SIZE: usize = 4;
+
+const ADAPTIVE_TASK_COUNT: usize = 16;
+
+#[derive(Clone, Copy)]
+struct AdSimpTask {
+    a: i64,
+    b: i64,
+    tol: i64,
+    depth: u32,
+}
+
+static mut INTEGRATION_TASKS: [AdSimpTask; ADAPTIVE_TASK_COUNT] = [AdSimpTask {
+    a: 0,
+    b: 0,
+    tol: 0,
+    depth: 0,
+}; ADAPTIVE_TASK_COUNT];
+
+static mut INTEGRATION_ACTIVE: bool = false;
+
+struct IntegrationGuard;
+
+impl Drop for IntegrationGuard {
+    fn drop(&mut self) {
+        unsafe {
+            INTEGRATION_ACTIVE = false;
+        }
+    }
+}
 
 macro_rules! push {
     ($st:expr, $sp:expr, $v:expr) => {{
@@ -80,13 +109,27 @@ pub fn execute(
     angle_mode: AngleMode,
     mode: MathMode,
 ) -> EvalResult {
+    execute_range(bc, 0, bc.len as usize, vars, angle_mode, mode)
+}
+
+fn execute_range(
+    bc: &Bytecode,
+    start: usize,
+    end: usize,
+    vars: &mut VariableStore,
+    angle_mode: AngleMode,
+    mode: MathMode,
+) -> EvalResult {
     let mut st: [Option<Matrix>; VALUE_STACK_SIZE] = [None; VALUE_STACK_SIZE];
     let mut sp: usize = 0;
-    let mut pc: usize = 0;
+    let mut pc: usize = start;
     let mut overflow: Option<(i64, bool)> = None;
     take_overflow_info(); // clear any stale overflow state from previous evaluations
 
     loop {
+        if pc >= end {
+            return EvalResult::DomainError;
+        }
         let op_byte = match bc.code.get(pc) {
             Some(&b) => b,
             None => return EvalResult::DomainError,
@@ -243,7 +286,7 @@ pub fn execute(
                                 .map(|d| (log_est.wrapping_sub(d), neg != (r.re < 0)))
                                 .unwrap_or((log_est, neg)),
                         ),
-                        (BinaryOperator::Divide, Some(_), None) => None, // 5 / overflow → 0, clear overflow
+                        (BinaryOperator::Divide, Some(_), None) => None, // 5 / overflow -> 0, clear overflow
                         (BinaryOperator::Multiply, _, Some(r)) => Some(
                             fp::log10(r.re.unsigned_abs() as i64)
                                 .map(|m| (log_est.wrapping_add(m), neg != (r.re < 0)))
@@ -284,8 +327,8 @@ pub fn execute(
                     };
                     match apply_binary_operator(bin_op, left, right) {
                         Some(m) => {
-                            // result_or_scalar in apply_sci_sci handles Scalar↔Scientific conversion.
-                            // Do NOT re-promote here — it would undo the auto-conversion.
+                            // result_or_scalar in apply_sci_sci handles Scalar<->Scientific conversion.
+                            // Do NOT re-promote here - it would undo the auto-conversion.
                             push!(st, sp, m);
                         }
                         None => match take_overflow_info() {
@@ -421,59 +464,10 @@ pub fn execute(
             }
 
             Op::LoopSum | Op::LoopInt => {
-                let var = bc.code[pc];
-                pc += 1;
-                let past_end_off = read_u16(&bc.code, &mut pc);
-                let body_len = read_u16(&bc.code, &mut pc) as usize;
-                let body_start = pc;
-                let body_end = pc + body_len;
-
-                let end_m = pop!(st, sp);
-                let start_m = pop!(st, sp);
-                let start_c = start_m.to_complex().unwrap_or(Cplx::zero());
-                let end_c = end_m.to_complex().unwrap_or(Cplx::zero());
-                if start_c.im != 0 || end_c.im != 0 {
-                    return EvalResult::DomainError;
+                match execute_loop(&mut st, &mut sp, bc, pc, vars, angle_mode, op) {
+                    Ok(next_pc) => pc = next_pc,
+                    Err(error) => return error,
                 }
-
-                let saved = vars.read_register(var);
-                let result = match op {
-                    Op::LoopSum => {
-                        let si = fp::to_integer_truncated(start_c.re);
-                        let ei = fp::to_integer_truncated(end_c.re);
-                        if ei < si || ei - si > 10_000 {
-                            return EvalResult::DomainError;
-                        }
-                        let mut acc = Cplx::zero();
-                        let mut k = si;
-                        while k <= ei {
-                            vars.write_register(var, Cplx::from_real(fp::from_integer(k)));
-                            let body_bc = bc_copy(bc, body_start, body_end);
-                            match execute(&body_bc, vars, angle_mode, MathMode::Advanced) {
-                                EvalResult::Matrix(m) => {
-                                    if let Some(c) = m.to_complex() {
-                                        acc = acc.add(c);
-                                    }
-                                }
-                                _ => return EvalResult::DomainError,
-                            }
-                            k += 1;
-                        }
-                        Cplx::from_real(acc.re)
-                    }
-                    Op::LoopInt => match adaptive_simpson_exec(
-                        var, start_c.re, end_c.re, bc, body_start, body_end, vars, angle_mode,
-                    ) {
-                        Some(r) => r,
-                        None => return EvalResult::DomainError,
-                    },
-                    _ => unreachable!(),
-                };
-                if let Some(val) = saved {
-                    vars.write_register(var, val);
-                }
-                push!(st, sp, Matrix::from_complex(result));
-                pc = body_start + past_end_off as usize;
             }
 
             Op::Halt => {
@@ -498,21 +492,111 @@ pub fn execute(
     }
 }
 
+#[inline(never)]
+fn execute_loop(
+    st: &mut [Option<Matrix>; VALUE_STACK_SIZE],
+    sp: &mut usize,
+    bc: &Bytecode,
+    mut pc: usize,
+    vars: &mut VariableStore,
+    angle_mode: AngleMode,
+    op: Op,
+) -> Result<usize, EvalResult> {
+    let var = bc.code[pc];
+    pc += 1;
+    let past_end_off = read_u16(&bc.code, &mut pc);
+    let body_len = read_u16(&bc.code, &mut pc) as usize;
+    let body_start = pc;
+    let body_end = pc + body_len;
+
+    let end_m = pop_stack(st, sp)?;
+    let start_m = pop_stack(st, sp)?;
+    let start_c = start_m.to_complex().unwrap_or(Cplx::zero());
+    let end_c = end_m.to_complex().unwrap_or(Cplx::zero());
+    if start_c.im != 0 || end_c.im != 0 {
+        return Err(EvalResult::DomainError);
+    }
+
+    let saved = vars.read_register(var);
+    let result = match op {
+        Op::LoopSum => {
+            let si = fp::to_integer_truncated(start_c.re);
+            let ei = fp::to_integer_truncated(end_c.re);
+            if ei < si || ei - si > 10_000 {
+                return Err(EvalResult::DomainError);
+            }
+            let mut acc = Cplx::zero();
+            let mut k = si;
+            while k <= ei {
+                vars.write_register(var, Cplx::from_real(fp::from_integer(k)));
+                match execute_range(
+                    bc,
+                    body_start,
+                    body_end,
+                    vars,
+                    angle_mode,
+                    MathMode::Advanced,
+                ) {
+                    EvalResult::Matrix(m) => {
+                        if let Some(c) = m.to_complex() {
+                            acc = acc.add(c);
+                        }
+                    }
+                    _ => return Err(EvalResult::DomainError),
+                }
+                k += 1;
+            }
+            Cplx::from_real(acc.re)
+        }
+        Op::LoopInt => match adaptive_simpson_exec(
+            var, start_c.re, end_c.re, bc, body_start, body_end, vars, angle_mode,
+        ) {
+            Some(r) => r,
+            None => return Err(EvalResult::DomainError),
+        },
+        _ => unreachable!(),
+    };
+    if let Some(val) = saved {
+        vars.write_register(var, val);
+    }
+    push_stack(st, sp, Matrix::from_complex(result))?;
+    Ok(body_start + past_end_off as usize)
+}
+
+#[inline(always)]
+fn pop_stack(
+    st: &mut [Option<Matrix>; VALUE_STACK_SIZE],
+    sp: &mut usize,
+) -> Result<Matrix, EvalResult> {
+    if *sp == 0 {
+        return Err(EvalResult::DomainError);
+    }
+    *sp -= 1;
+    match st[*sp].take() {
+        Some(value) => Ok(value),
+        None => Err(EvalResult::DomainError),
+    }
+}
+
+#[inline(always)]
+fn push_stack(
+    st: &mut [Option<Matrix>; VALUE_STACK_SIZE],
+    sp: &mut usize,
+    value: Matrix,
+) -> Result<(), EvalResult> {
+    if *sp >= VALUE_STACK_SIZE {
+        return Err(EvalResult::DomainError);
+    }
+    st[*sp] = Some(value);
+    *sp += 1;
+    Ok(())
+}
+
 fn read_u16(code: &[u8], pc: &mut usize) -> u16 {
     let lo = code[*pc] as u16;
     let hi = code[*pc + 1] as u16;
     *pc += 2;
     lo | (hi << 8)
-}
-
-fn bc_copy(bc: &Bytecode, start: usize, end: usize) -> Bytecode {
-    let mut copy = Bytecode::new();
-    let len = end - start;
-    if len <= 256 {
-        copy.code[..len].copy_from_slice(&bc.code[start..end]);
-        copy.len = len as u16;
-    }
-    copy
 }
 
 fn adaptive_simpson_exec(
@@ -526,58 +610,48 @@ fn adaptive_simpson_exec(
     angle_mode: AngleMode,
 ) -> Option<Cplx> {
     use crate::math::evaluator::{ADAPTIVE_MAX_DEPTH, ADAPTIVE_MAX_EVALS, ADAPTIVE_TOL};
+
+    if unsafe { INTEGRATION_ACTIVE } {
+        return None;
+    }
+    unsafe {
+        INTEGRATION_ACTIVE = true;
+    }
+    let _guard = IntegrationGuard;
+
     let (start, end, negate) = if a <= b { (a, b, false) } else { (b, a, true) };
 
-    let mut body_bc = Bytecode::new();
-    let blen = body_end - body_start;
-    if blen <= 256 {
-        body_bc.code[..blen].copy_from_slice(&bc.code[body_start..body_end]);
-        body_bc.len = blen as u16;
-    } else {
+    if body_end.saturating_sub(body_start) > 256 {
         return None;
     }
 
     let eval_body = |x: i64, vars: &mut VariableStore| -> Option<i64> {
         vars.write_register(variable, Cplx::from_real(x));
-        match execute(&body_bc, vars, angle_mode, MathMode::Advanced) {
+        match execute_range(
+            bc,
+            body_start,
+            body_end,
+            vars,
+            angle_mode,
+            MathMode::Advanced,
+        ) {
             EvalResult::Matrix(m) => m.to_complex().map(|c| c.re),
             _ => None,
         }
     };
 
-    let fa = eval_body(start, vars)?;
-    let fb = eval_body(end, vars)?;
     if start == end {
         return Some(Cplx::zero());
     }
 
-    #[derive(Clone, Copy)]
-    struct AdSimpTask {
-        a: i64,
-        b: i64,
-        fa_re: i64,
-        fb_re: i64,
-        tol: i64,
-        depth: u32,
-    }
-
-    let mut tasks = [AdSimpTask {
-        a: 0,
-        b: 0,
-        fa_re: 0,
-        fb_re: 0,
-        tol: 0,
-        depth: 0,
-    }; 24];
+    let tasks = unsafe { &mut *(&raw mut INTEGRATION_TASKS) };
     let mut stack_len: u32 = 1;
     let mut result: i64 = 0;
-    let mut total_evals: u32 = 2;
+    let mut total_evals: u32 = 0;
 
     tasks[0] = AdSimpTask {
         a: start,
         b: end,
-        fa_re: fa,
-        fb_re: fb,
         tol: ADAPTIVE_TOL,
         depth: 0,
     };
@@ -585,25 +659,28 @@ fn adaptive_simpson_exec(
     while stack_len > 0 {
         stack_len -= 1;
         let task = tasks[stack_len as usize];
+        let fa = eval_body(task.a, vars)?;
+        let fb = eval_body(task.b, vars)?;
+        total_evals += 2;
         if task.depth >= ADAPTIVE_MAX_DEPTH || total_evals >= ADAPTIVE_MAX_EVALS {
             let h = task.b.wrapping_sub(task.a);
             let m = task.a + (h >> 1);
             let fm = eval_body(m, vars)?;
             total_evals += 1;
-            result = result.saturating_add(simpson_step(h, task.fa_re, fm, task.fb_re)?);
+            result = result.saturating_add(simpson_step(h, fa, fm, fb)?);
             continue;
         }
         let h = task.b.checked_sub(task.a)?;
         let m = task.a + (h >> 1);
         let fm = eval_body(m, vars)?;
         total_evals += 1;
-        let s_ab = simpson_step(h, task.fa_re, fm, task.fb_re)?;
+        let s_ab = simpson_step(h, fa, fm, fb)?;
         let fl = eval_body(task.a + ((m - task.a) >> 1), vars)?;
         total_evals += 1;
         let fr = eval_body(m + ((task.b - m) >> 1), vars)?;
         total_evals += 1;
-        let s_am = simpson_step(m - task.a, task.fa_re, fl, fm)?;
-        let s_mb = simpson_step(task.b - m, fm, fr, task.fb_re)?;
+        let s_am = simpson_step(m - task.a, fa, fl, fm)?;
+        let s_mb = simpson_step(task.b - m, fm, fr, fb)?;
         let error = (s_am as i128)
             .wrapping_add(s_mb as i128)
             .wrapping_sub(s_ab as i128);
@@ -622,16 +699,12 @@ fn adaptive_simpson_exec(
                 tasks[idx] = AdSimpTask {
                     a: m,
                     b: task.b,
-                    fa_re: fm,
-                    fb_re: task.fb_re,
                     tol: ct,
                     depth: task.depth + 1,
                 };
                 tasks[idx + 1] = AdSimpTask {
                     a: task.a,
                     b: m,
-                    fa_re: task.fa_re,
-                    fb_re: fm,
                     tol: ct,
                     depth: task.depth + 1,
                 };

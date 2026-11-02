@@ -1,4 +1,4 @@
-//! # NumCore Math — Host-side Test Harness
+//! # NumCore Math - Host-side Test Harness
 //!
 //! This library enables host-side unit testing of the `math/` module
 //! from the NumCore firmware.  It includes each source file from
@@ -19,7 +19,7 @@
 //! # Run host-side unit tests (overrides the embedded target from .cargo/config.toml)
 //! cargo test -p numcore_math --target "$(rustc -vV | grep host | awk '{print $2}')"
 //!
-//! # Build firmware (embedded target) — unchanged
+//! # Build firmware (embedded target) - unchanged
 //! cargo build --release --target thumbv7m-none-eabi
 //! ```
 //!
@@ -32,7 +32,7 @@
 
 #![no_std]
 
-// ─── MathMode / AngleMode ─────────────────────────────────────────────────────
+// --- MathMode / AngleMode -----------------------------------------------------
 // Defined at crate root so that `super::MathMode` and `super::AngleMode`
 // resolve correctly in the #[path]-included evaluator.rs and engine.rs.
 
@@ -50,7 +50,7 @@ pub enum AngleMode {
     Degrees,
 }
 
-// ─── HAL stub ────────────────────────────────────────────────────────────────
+// --- HAL stub ----------------------------------------------------------------
 // Satisfies `use crate::hal::uart;` in fixed_point.rs (line 39), a dead
 // import only used in commented-out debug prints.
 
@@ -61,7 +61,7 @@ pub mod hal {
     }
 }
 
-// ─── Math modules (included from src/math/ via #[path]) ─────────────────────
+// --- Math modules (included from src/math/ via #[path]) ---------------------
 //
 // Each file sits at crate root level so that `super::fixed_point` etc.
 // inside the math files resolves to the sibling module created here.
@@ -102,7 +102,7 @@ pub mod compiler;
 #[path = "../../numcore/src/math/vm.rs"]
 pub mod vm;
 
-// ─── Re-export under math:: for API compatibility ───────────────────────────
+// --- Re-export under math:: for API compatibility ---------------------------
 
 pub mod math {
     pub use crate::compiler;

@@ -43,11 +43,11 @@ fn print_welcome_banner<U: Uart>() {
     U::transmit_bytes(b"Const: pi e  |  Vars: Ans A-Z  |  MatA MatB MatC\r\n\r\n");
 }
 
-// ─── ANSI escape sequence parser ─────────────────────────────────────────────
+// --- ANSI escape sequence parser ---------------------------------------------
 //
 // Physical arrow keys send multi-byte sequences: 0x1B [ D (left) or 0x1B [ C
 // (right).  The event loop buffers up to 3 bytes to detect these sequences.
-// Standalone 0x1B (Escape key) fires ToggleMode — but only when no second byte
+// Standalone 0x1B (Escape key) fires ToggleMode - but only when no second byte
 // follows in the same poll cycle (a short timeout by MCU standards at 50 MHz).
 
 const ANSI_BUF_CAP: usize = 3;
@@ -84,11 +84,11 @@ fn run_event_loop<U: Uart, D: Display>(state: &mut CalcState) -> ! {
                         ansi_len = 2;
                         ansi_state = AnsiSeq::PendingBracket;
                     } else {
-                        // 0x1B followed by non-[ → standalone Escape (ToggleMode),
+                        // 0x1B followed by non-[ -> standalone Escape (ToggleMode),
                         // then process the current byte. If it's another 0x1B,
                         // chain into another PendingEscape instead of toggling.
                         if raw_byte == 0x1B {
-                            // Chained Escape — stay in pending state
+                            // Chained Escape - stay in pending state
                             ansi_len = 1;
                         } else {
                             handle_event::<U, D>(CalcEvent::ToggleMode, state);
@@ -120,7 +120,7 @@ fn run_event_loop<U: Uart, D: Display>(state: &mut CalcState) -> ! {
                 }
             }
         } else if ansi_state != AnsiSeq::None {
-            // No new byte from UART this cycle — increment idle counter.
+            // No new byte from UART this cycle - increment idle counter.
             // Flush only after 2 consecutive idle polls, giving the next byte
             // of a multi-byte ANSI sequence (e.g. '[' after 0x1B) time to arrive.
             ansi_idle += 1;
@@ -306,15 +306,19 @@ fn handle_expression_submission<U: Uart, D: Display>(state: &mut CalcState) {
         return;
     }
 
-    // Stack guard: refuse evaluation if stack pointer is too close to .bss.
-    // This prevents silent corruption from stack overflow into static RAM.
-    #[cfg(any(target_arch = "arm", target_arch = "thumb"))]
+    // Stack guard: refuse evaluation if the stack pointer has reached the
+    // reserved stack floor.  The floor is supplied by the linker script so
+    // the check follows changes to the SRAM map automatically.
+    #[cfg(target_arch = "arm")]
     {
-        const BSS_END: usize = 0x2000_13E0;
+        extern "C" {
+            static _stack_end: u8;
+        }
         const STACK_MARGIN: usize = 128;
+        let stack_floor = unsafe { &_stack_end as *const u8 as usize };
         let sp: usize;
         unsafe { core::arch::asm!("mov {}, sp", out(reg) sp) };
-        if sp <= BSS_END + STACK_MARGIN {
+        if sp <= stack_floor + STACK_MARGIN {
             U::transmit_bytes(b"! large\r\n");
             state.set_last_result(b"large");
             state.clear_input();

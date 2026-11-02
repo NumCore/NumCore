@@ -10,7 +10,9 @@ Full documentation: **[numcore.tech](https://numcore.tech)**
 ```bash
 rustup target add thumbv7m-none-eabi
 cargo build -p numcore-lm3s811 --release --target thumbv7m-none-eabi
-cargo test -p numcore_math --tests
+cargo test -p numcore_math --tests -- --test-threads=1
+# The maths engine keeps a small global overflow and integration state, so
+# host tests run serially.
 
 qemu-system-arm -M lm3s811evb -serial mon:stdio -display none \
   -kernel target/thumbv7m-none-eabi/release/NumCore

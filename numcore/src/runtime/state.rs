@@ -17,7 +17,7 @@ pub const MAX_ROW_LEN: usize = 80;
 /// offset by col_off. Cols 14-15 on the display are fixed overlays
 /// (whitespace margin + scroll arrow).
 pub struct DisplayGrid {
-    /// Full formatted rows (max 5 rows × MAX_ROW_LEN chars).
+    /// Full formatted rows (max 5 rows x MAX_ROW_LEN chars).
     pub rows: [[u8; MAX_ROW_LEN]; 5],
     /// Actual length of each formatted row (all rows same length).
     pub row_len: u8,
@@ -35,7 +35,7 @@ impl DisplayGrid {
     }
 }
 
-// ─── Calculator modes ─────────────────────────────────────────────────────────
+// --- Calculator modes ---------------------------------------------------------
 
 /// The operating mode currently active.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -50,7 +50,7 @@ pub enum CalculatorMode {
     Scientific,
 }
 
-// ─── Capacity constants ───────────────────────────────────────────────────────
+// --- Capacity constants -------------------------------------------------------
 
 /// Maximum characters in a single input expression.
 const INPUT_BUFFER_CAPACITY: usize = 64;
@@ -58,7 +58,7 @@ const INPUT_BUFFER_CAPACITY: usize = 64;
 /// Maximum length of a formatted result string.
 const RESULT_BUFFER_CAPACITY: usize = 48;
 
-// ─── CalcState ────────────────────────────────────────────────────────────────
+// --- CalcState ----------------------------------------------------------------
 
 #[repr(C)]
 pub struct CalcState {
@@ -86,7 +86,7 @@ pub struct CalcState {
     /// Horizontal scroll offset for matrix display (in character positions).
     matrix_col_offset: usize,
 
-    /// All calculator variables (Ans, A–Z, MatA–MatC). Owned here, borrowed by math engine.
+    /// All calculator variables (Ans, A-Z, MatA-MatC). Owned here, borrowed by math engine.
     pub variables: VariableStore,
 
     /// Currently active calculator mode.
@@ -129,7 +129,7 @@ impl CalcState {
         }
     }
 
-    // ── Input buffer operations ───────────────────────────────────────────────
+    // -- Input buffer operations -----------------------------------------------
 
     pub fn append_character_to_input(&mut self, character: u8) -> bool {
         if self.input_length >= INPUT_BUFFER_CAPACITY - 1 {
@@ -175,7 +175,7 @@ impl CalcState {
         self.cursor_position = 0;
     }
 
-    // ── Cursor operations ─────────────────────────────────────────────────────
+    // -- Cursor operations -----------------------------------------------------
 
     pub fn move_cursor_left(&mut self) {
         if self.cursor_position > 0 {
@@ -193,7 +193,7 @@ impl CalcState {
         self.cursor_position
     }
 
-    // ── Result scroll operations ──────────────────────────────────────────────
+    // -- Result scroll operations ----------------------------------------------
 
     pub fn scroll_result_left(&mut self) {
         if self.result_scroll_offset > 0 {
@@ -230,7 +230,7 @@ impl CalcState {
         &self.last_result[..self.last_result_len]
     }
 
-    /// Clear the displayed result (not the Ans/matrix Ans — those persist
+    /// Clear the displayed result (not the Ans/matrix Ans - those persist
     /// so subsequent Ans expressions can still reference them).
     pub fn clear_last_result(&mut self) {
         self.last_result_len = 0;
@@ -287,7 +287,7 @@ impl CalcState {
         self.matrix_col_offset += 1;
     }
 
-    // ── Variable store access ─────────────────────────────────────────────────
+    // -- Variable store access -------------------------------------------------
 
     pub fn variables(&self) -> &VariableStore {
         &self.variables
@@ -301,7 +301,7 @@ impl CalcState {
         self.variables.write_register(letter, value)
     }
 
-    // ── Mode operations ───────────────────────────────────────────────────────
+    // -- Mode operations -------------------------------------------------------
 
     pub fn active_mode(&self) -> CalculatorMode {
         self.active_mode

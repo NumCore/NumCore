@@ -1,7 +1,6 @@
 use super::lexer::{LexResult, Token};
 use super::matrix::Matrix;
 use super::opcodes::Op;
-use super::parser::{MathFunction, MatrixFunction};
 
 pub const MAX_BYTECODE: usize = 256;
 pub const MATRIX_CACHE_SIZE: usize = 2;
@@ -127,7 +126,7 @@ fn compile_expression(cursor: &mut ParserCursor, bc: &mut Bytecode) -> Option<()
 }
 
 fn compile_term(cursor: &mut ParserCursor, bc: &mut Bytecode) -> Option<()> {
-    compile_power(cursor, bc)?;
+    compile_unary(cursor, bc)?;
     loop {
         let op = match cursor.peek() {
             Some(Token::Star) => {
@@ -145,14 +144,14 @@ fn compile_term(cursor: &mut ParserCursor, bc: &mut Bytecode) -> Option<()> {
             _ => None,
         };
         if let Some(op) = op {
-            compile_power(cursor, bc)?;
+            compile_unary(cursor, bc)?;
             bc.emit(op as u8)?;
             continue;
         }
 
         if let Some(token) = cursor.peek() {
             if is_primary_start(token) {
-                compile_power(cursor, bc)?;
+                compile_unary(cursor, bc)?;
                 bc.emit(Op::Mul as u8)?;
                 continue;
             }
@@ -164,10 +163,10 @@ fn compile_term(cursor: &mut ParserCursor, bc: &mut Bytecode) -> Option<()> {
 }
 
 fn compile_power(cursor: &mut ParserCursor, bc: &mut Bytecode) -> Option<()> {
-    compile_unary(cursor, bc)?;
+    compile_primary(cursor, bc)?;
     if cursor.peek() == Some(Token::Caret) {
         cursor.advance();
-        compile_power(cursor, bc)?;
+        compile_unary(cursor, bc)?;
         bc.emit(Op::Pow as u8)?;
     }
     Some(())
@@ -179,7 +178,7 @@ fn compile_unary(cursor: &mut ParserCursor, bc: &mut Bytecode) -> Option<()> {
         compile_unary(cursor, bc)?;
         bc.emit(Op::Neg as u8)?;
     } else {
-        compile_primary(cursor, bc)?;
+        compile_power(cursor, bc)?;
     }
     Some(())
 }
@@ -333,17 +332,6 @@ fn compile_primary(cursor: &mut ParserCursor, bc: &mut Bytecode) -> Option<()> {
         _ => return None,
     }
     Some(())
-}
-
-fn compile_single_arg(cursor: &mut ParserCursor, bc: &mut Bytecode, op: Op) -> Option<()> {
-    if cursor.advance() != Some(Token::LeftParen) {
-        return None;
-    }
-    compile_expression(cursor, bc)?;
-    if cursor.advance() != Some(Token::RightParen) {
-        return None;
-    }
-    bc.emit(op as u8)
 }
 
 fn compile_single_arg_fn(

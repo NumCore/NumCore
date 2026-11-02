@@ -1,27 +1,27 @@
-//! # Fixed-Point Arithmetic — Q31.32
+//! # Fixed-Point Arithmetic - Q31.32
 //!
 //! Every value in the math engine is a Q31.32 fixed-point number:
 //!   - Stored as a signed 64-bit integer (`i64`)
 //!   - Bottom 32 bits = fractional part
-//!   - Top 32 bits    = integer part (signed, range ±2 147 483 647)
+//!   - Top 32 bits    = integer part (signed, range +/-2 147 483 647)
 //!   - Scale factor   = 2^32 = 4 294 967 296
-//!   - Precision      = 1/2^32 ≈ 2.33×10⁻¹⁰  (~9 correct decimal digits)
+//!   - Precision      = 1/2^32 ~= 2.33x10-^10  (~9 correct decimal digits)
 //!
 //! ## Why Q31.32 on an 8 KB MCU?
 //!
 //! SRAM holds *values*, not arithmetic width. All Q31.32 operations run in
-//! CPU registers — the Cortex-M3 supports 64-bit arithmetic via `SMULL` /
+//! CPU registers - the Cortex-M3 supports 64-bit arithmetic via `SMULL` /
 //! `UMULL` multiply-long instructions, emitted automatically by the compiler
 //! for `i64` operations. The only SRAM increase is that each stored value
 //! is 8 bytes instead of 4 (an extra ~544 bytes total across all buffers),
-//! leaving ~5.35 KB of stack budget — entirely safe.
+//! leaving ~5.35 KB of stack budget - entirely safe.
 //!
 //! ## Intermediate arithmetic
 //!
 //! Multiplying two Q31.32 values produces a Q31.64 intermediate that must
 //! be shifted right by 32. To avoid overflow this intermediate is held in
 //! `i128`. The Cortex-M3 has no native 128-bit instruction but the compiler
-//! synthesises it from 64-bit operations — no extra RAM, just a few extra
+//! synthesises it from 64-bit operations - no extra RAM, just a few extra
 //! instructions.
 //!
 //! ## CORDIC
@@ -29,13 +29,13 @@
 //! CORDIC runs natively in Q31.32 with `i128` intermediates, giving
 //! full 32-bit fractional precision on every sin/cos/atan result.
 //! 22 iterations + linear Taylor correction for rotation mode (sin/cos),
-//! 22 iterations for vectoring mode (atan) — sufficient for 1e-6 error.
+//! 22 iterations for vectoring mode (atan) - sufficient for 1e-6 error.
 //!
 //! ## deg(x) / rad(x) semantics
-//!   `deg(x)` — x is in degrees → converts to radians  (sin(deg(90)) = 1)
-//!   `rad(x)` — x is in radians → converts to degrees  (rad(pi) = 180)
+//!   `deg(x)` - x is in degrees -> converts to radians  (sin(deg(90)) = 1)
+//!   `rad(x)` - x is in radians -> converts to degrees  (rad(pi) = 180)
 
-// ─── Scale and precision ──────────────────────────────────────────────────────
+// --- Scale and precision ------------------------------------------------------
 
 /// Number of fractional bits. Defines the entire numeric format.
 pub const FRACTIONAL_BITS: u32 = 32;
@@ -43,42 +43,42 @@ pub const FRACTIONAL_BITS: u32 = 32;
 /// Scale factor: 2^32. The value 1.0 is stored as 4_294_967_296_i64.
 pub const SCALE: i64 = 1_i64 << FRACTIONAL_BITS;
 
-// ─── Mathematical constants in Q31.32 ────────────────────────────────────────
-// All values: round(true_value × 2^32), verified in Python.
+// --- Mathematical constants in Q31.32 ----------------------------------------
+// All values: round(true_value x 2^32), verified in Python.
 
-/// π ≈ 3.14159265358979 → 13_493_037_705
+/// pi ~= 3.14159265358979 -> 13_493_037_705
 pub const FIXED_PI: i64 = 13_493_037_705;
 
-/// π/2 ≈ 1.57079632679490 → 6_746_518_852
+/// pi/2 ~= 1.57079632679490 -> 6_746_518_852
 pub const FIXED_PI_OVER_2: i64 = 6_746_518_852;
 
-/// 2π ≈ 6.28318530717959 → 26_986_075_409
+/// 2pi ~= 6.28318530717959 -> 26_986_075_409
 pub const FIXED_TWO_PI: i64 = 26_986_075_409;
 
-/// π/180 ≈ 0.01745329251994 → 74_961_321
-/// Used by deg(x): degrees → radians.
+/// pi/180 ~= 0.01745329251994 -> 74_961_321
+/// Used by deg(x): degrees -> radians.
 pub const FIXED_PI_OVER_180: i64 = 74_961_321;
 
-/// 180/π ≈ 57.29577951308 → 246_083_499_208
-/// Used by rad(x): radians → degrees.
+/// 180/pi ~= 57.29577951308 -> 246_083_499_208
+/// Used by rad(x): radians -> degrees.
 pub const FIXED_180_OVER_PI: i64 = 246_083_499_208;
 
-/// Euler's number e ≈ 2.71828182845905 → 11_674_931_555
+/// Euler's number e ~= 2.71828182845905 -> 11_674_931_555
 pub const FIXED_E: i64 = 11_674_931_555;
 
-/// ln(2) ≈ 0.69314718055995 → 2_977_044_472
+/// ln(2) ~= 0.69314718055995 -> 2_977_044_472
 pub const FIXED_LN2: i64 = 2_977_044_472;
 
-/// ln(10) ≈ 2.30258509299405 → 9_889_527_671
+/// ln(10) ~= 2.30258509299405 -> 9_889_527_671
 pub const FIXED_LN10: i64 = 9_889_527_671;
 
-/// √2 ≈ 1.41421356237310 → 6_074_001_000
+/// sqrt2 ~= 1.41421356237310 -> 6_074_001_000
 pub const FIXED_SQRT2: i64 = 6_074_001_000;
 
-/// 1/√2 ≈ 0.70710678118655 → 3_037_000_500
+/// 1/sqrt2 ~= 0.70710678118655 -> 3_037_000_500
 pub const FIXED_INV_SQRT2: i64 = 3_037_000_500;
 
-/// √3/2 ≈ 0.86602540378444 → 3_719_550_787
+/// sqrt3/2 ~= 0.86602540378444 -> 3_719_550_787
 pub const FIXED_SQRT3_OVER_2: i64 = 3_719_550_787;
 
 /// 0.5 in Q31.32 = 2^31.
@@ -87,13 +87,13 @@ pub const FIXED_HALF: i64 = SCALE / 2;
 /// 1.0 in Q31.32.
 pub const FIXED_ONE: i64 = SCALE;
 
-// ─── CORDIC constants (Q31.32, i128 intermediates) ───────────────────────────
+// --- CORDIC constants (Q31.32, i128 intermediates) ---------------------------
 
-/// CORDIC gain K = ∏ cos(atan(2^-i)) ≈ 0.60725293501 → 2_608_131_496
+/// CORDIC gain K = prod cos(atan(2^-i)) ~= 0.60725293501 -> 2_608_131_496
 const CORDIC_GAIN: i64 = 2_608_131_496;
 
-/// CORDIC atan table in Q31.32. Entry i = round(atan(2^-i) × 2^32).
-/// 22 entries — 22 CORDIC iterations + linear Taylor correction for residual.
+/// CORDIC atan table in Q31.32. Entry i = round(atan(2^-i) x 2^32).
+/// 22 entries - 22 CORDIC iterations + linear Taylor correction for residual.
 const CORDIC_ATAN_TABLE: [i64; 22] = [
     3_373_259_426, // atan(2^0)  = 0.78539816 rad
     1_991_351_318, // atan(2^-1) = 0.46364761 rad
@@ -119,11 +119,11 @@ const CORDIC_ATAN_TABLE: [i64; 22] = [
     2_048,         // atan(2^-21)
 ];
 
-// ─── Rational minimax constants for atan (Ganssle-Homer form) ────────────────
+// --- Rational minimax constants for atan (Ganssle-Homer form) ----------------
 //
-// atan(r) = r * P(r^2) / Q(r^2),  r ∈ [0, 1]
-// P(t) = p0 + p2·t + p4·t^2 + p6·t^3 + p8·t^4
-// Q(t) = 1 + q2·t + q4·t^2 + q6·t^3 + q8·t^4
+// atan(r) = r * P(r^2) / Q(r^2),  r in [0, 1]
+// P(t) = p0 + p2*t + p4*t^2 + p6*t^3 + p8*t^4
+// Q(t) = 1 + q2*t + q4*t^2 + q6*t^3 + q8*t^4
 //
 // Remez-optimised for [0, 1]; max error < 1.6e-10 after Q31.32 quantisation.
 
@@ -138,7 +138,7 @@ const ATAN_Q4: i64 = 7_715_167_325; //  1.7963273742
 const ATAN_Q6: i64 = 2_095_582_640; //  0.4879158549
 const ATAN_Q8: i64 = 142_430_693; //  0.0331622299
 
-// ─── Core arithmetic ──────────────────────────────────────────────────────────
+// --- Core arithmetic ----------------------------------------------------------
 
 /// Convert an integer to Q31.32.
 #[inline(always)]
@@ -160,7 +160,7 @@ pub fn to_integer_rounded(fp: i64) -> i64 {
 
 /// Multiply two Q31.32 values.  Returns `None` on overflow.
 ///
-/// Result = (a × b) >> 32, computed in i128 to capture the full
+/// Result = (a x b) >> 32, computed in i128 to capture the full
 /// Q31.64 product.  Symmetric rounding is applied before truncation.
 /// If the Q31.32 result does not fit in i64, `None` is returned.
 pub fn multiply(a: i64, b: i64) -> Option<i64> {
@@ -171,8 +171,8 @@ pub fn multiply(a: i64, b: i64) -> Option<i64> {
     // arithmetic.  For positive products, (product + offset) >> 32 gives
     // truncation-toward-zero of the rounded result.  For negative we
     // negate to the positive domain, apply the same rounding, then
-    // negate back — this avoids Rust's arithmetic right shift (>>)
-    // which truncates toward -∞ and would give the wrong direction
+    // negate back - this avoids Rust's arithmetic right shift (>>)
+    // which truncates toward -inf and would give the wrong direction
     // when combined with a subtracted offset.
     let result = if product >= 0 {
         (product + offset) >> FRACTIONAL_BITS
@@ -192,7 +192,7 @@ pub fn multiply(a: i64, b: i64) -> Option<i64> {
 }
 
 /// Divide two Q31.32 values. Returns None if divisor is zero or if the
-/// quotient exceeds the Q31.32 range (|result| > ~2.147 × 10⁹).
+/// quotient exceeds the Q31.32 range (|result| > ~2.147 x 10^9).
 /// Result = (a << 32) / b, computed in i128 to prevent intermediate overflow.
 pub fn divide(a: i64, b: i64) -> Option<i64> {
     if b == 0 {
@@ -205,7 +205,7 @@ pub fn divide(a: i64, b: i64) -> Option<i64> {
     Some(result as i64)
 }
 
-// ─── Power ────────────────────────────────────────────────────────────────────
+// --- Power --------------------------------------------------------------------
 
 /// Raise a Q31.32 base to a Q31.32 exponent.
 pub fn power(base: i64, exponent: i64) -> Option<i64> {
@@ -213,7 +213,7 @@ pub fn power(base: i64, exponent: i64) -> Option<i64> {
     if to_integer_truncated(exponent) * SCALE == exponent {
         return integer_power(base, to_integer_truncated(exponent));
     }
-    // Non-integer exponent: compute via exp(exponent × ln(base)).
+    // Non-integer exponent: compute via exp(exponent x ln(base)).
     // Requires base > 0 for ln to be defined.
     if base <= 0 {
         return None;
@@ -225,8 +225,8 @@ pub fn power(base: i64, exponent: i64) -> Option<i64> {
     // The log/exp chain accumulates ~1e-7 error per operation; for inputs
     // like 27^(1/3) this propagates to ~6e-5 in the result. Any value that
     // lands within 1e-4 of an integer was almost certainly meant to be that
-    // integer — snap it exactly.
-    // Threshold: 1e-4 in Q31.32 = round(1e-4 × 2^32) = 429497
+    // integer - snap it exactly.
+    // Threshold: 1e-4 in Q31.32 = round(1e-4 x 2^32) = 429497
     const SNAP_THRESHOLD: i64 = 429_497;
     let nearest = round(result);
     if (result - nearest).abs() < SNAP_THRESHOLD {
@@ -255,9 +255,9 @@ pub fn integer_power(base: i64, exp: i64) -> Option<i64> {
     Some(result)
 }
 
-// ─── Reciprocal sqrt (CLZ initial guess + Newton–Raphson) ─────────────────────
+// --- Reciprocal sqrt (CLZ initial guess + Newton-Raphson) ---------------------
 
-/// 32-entry LUT for 1/√m where m ∈ [1, 2), midpoint of each 1/32 interval.
+/// 32-entry LUT for 1/sqrtm where m in [1, 2), midpoint of each 1/32 interval.
 /// Precomputed via Python with numpy; max error ~2%.
 const RSQRT_INIT_TABLE: [i64; 32] = [
     4_261_801_029, // 1/sqrt(1.015625)
@@ -294,9 +294,9 @@ const RSQRT_INIT_TABLE: [i64; 32] = [
     3_048_933_750, // 1/sqrt(1.984375)
 ];
 
-/// CLZ-based initial approximation of 1/√x for Q31.32 x > 0.
+/// CLZ-based initial approximation of 1/sqrtx for Q31.32 x > 0.
 ///
-/// Normalises x to m ∈ [1, 2), indexes the 32-entry LUT, then applies
+/// Normalises x to m in [1, 2), indexes the 32-entry LUT, then applies
 /// exponent scaling.  Error < 2% across the full Q31.32 domain.
 fn rsqrt_clz_initial(x: i64) -> i64 {
     let x_u = x as u64;
@@ -328,17 +328,17 @@ fn rsqrt_clz_initial(x: i64) -> i64 {
     }
 }
 
-/// Compute √x for Q31.32 x ≥ 0. Returns None for negative input.
+/// Compute sqrtx for Q31.32 x >= 0. Returns None for negative input.
 ///
-/// Uses CLZ-based initial guess for 1/√x, 3 Newton–Raphson iterations
+/// Uses CLZ-based initial guess for 1/sqrtx, 3 Newton-Raphson iterations
 /// on the reciprocal square root, then one final Newton step refining
-/// √x directly.
+/// sqrtx directly.
 ///
 /// ```text
-///     y_0     ← CLZ + 32-entry LUT (error < 2%)
-///     y_{n+1} ← y_n · (3 − x·y_n²) / 2    (3 iterations)
-///     s       ← x · y_3
-///     s       ← (s + x / s) / 2            (final Newton refinement)
+///     y_0     <- CLZ + 32-entry LUT (error < 2%)
+///     y_{n+1} <- y_n * (3 - x*y_n^2) / 2    (3 iterations)
+///     s       <- x * y_3
+///     s       <- (s + x / s) / 2            (final Newton refinement)
 /// ```
 ///
 /// Error < 1e-6 relative (~3.7e-8 worst observed), ~250 cycles.
@@ -352,10 +352,10 @@ pub fn sqrt(x: i64) -> Option<i64> {
 
     let three = 3 * SCALE;
 
-    // CLZ initial guess for 1/√x.
+    // CLZ initial guess for 1/sqrtx.
     let mut y = rsqrt_clz_initial(x);
 
-    // Three Newton–Raphson iterations on 1/√x.
+    // Three Newton-Raphson iterations on 1/sqrtx.
     for _ in 0..3 {
         let y_sq = multiply(y, y)?;
         let x_y_sq = multiply(x, y_sq)?;
@@ -363,11 +363,11 @@ pub fn sqrt(x: i64) -> Option<i64> {
         y = multiply(y, three_minus)? >> 1;
     }
 
-    // s = x · y  (our first approximation of √x).
+    // s = x * y  (our first approximation of sqrtx).
     let mut s = multiply(x, y)?;
 
     // One final Newton step refining sqrt directly:
-    //   s ← (s + x / s) / 2
+    //   s <- (s + x / s) / 2
     s = (s.checked_add(divide(x, s)?)?) >> 1;
 
     Some(s)
@@ -378,11 +378,11 @@ pub fn sqrt(x: i64) -> Option<i64> {
 /// Uses the iteration:
 ///
 /// ```text
-///     x_{k+1} = ((n−1)·x_k + x / x_k^(n−1)) / n
+///     x_{k+1} = ((n-1)*x_k + x / x_k^(n-1)) / n
 /// ```
 ///
-/// which converges quadratically to x^(1/n).  n must be ≥ 2 and a
-/// plain integer (not Q31.32).  x must be ≥ 0.
+/// which converges quadratically to x^(1/n).  n must be >= 2 and a
+/// plain integer (not Q31.32).  x must be >= 0.
 fn newton_nthroot(x: i64, n: i64) -> Option<i64> {
     // Initial guess: x / 2 in Q31.32, same as sqrt.
     let mut guess = x >> 1;
@@ -393,10 +393,10 @@ fn newton_nthroot(x: i64, n: i64) -> Option<i64> {
     let n_minus_1 = from_integer(n - 1);
 
     for _ in 0..12 {
-        // x_k^(n−1) via integer fast squaring.
+        // x_k^(n-1) via integer fast squaring.
         let pow = integer_power(guess, n - 1)?;
         let quotient = divide(x, pow)?;
-        // ((n−1)·x_k + x / x_k^(n−1)) / n
+        // ((n-1)*x_k + x / x_k^(n-1)) / n
         let sum = multiply(n_minus_1, guess)?.checked_add(quotient)?;
         guess = divide(sum, n_fp)?;
     }
@@ -441,7 +441,7 @@ pub fn nthroot(x: i64, n: i64) -> Option<i64> {
             let n_odd = (n_int & 1) != 0;
 
             if !n_odd && x_neg {
-                return None; // even root of negative → domain error
+                return None; // even root of negative -> domain error
             }
             if n_odd && x_neg {
                 return newton_nthroot(-x, n_int).map(|v| -v);
@@ -460,11 +460,11 @@ pub fn nthroot(x: i64, n: i64) -> Option<i64> {
     }
 }
 
-// ─── Trigonometry (CORDIC Q31.32) ────────────────────────────────────────────
+// --- Trigonometry (CORDIC Q31.32) --------------------------------------------
 
 /// Compute (sin, cos) for a Q31.32 radian angle. Results are Q31.32.
 ///
-/// First normalises the angle to the principal range [−π, π] via
+/// First normalises the angle to the principal range [-pi, pi] via
 /// `reduce_angle_to_principal`, then delegates to `cordic_sin_cos` which runs
 /// CORDIC with i128 intermediates.
 pub fn sin_cos(angle: i64) -> (i64, i64) {
@@ -484,18 +484,18 @@ pub fn cos(angle: i64) -> i64 {
 
 /// |cos| below which tan(x) = sin/cos is rejected as too close to a pole.
 ///
-/// 0.0001 in Q31.32 = round(0.0001 × 2^32) = 429_497.
+/// 0.0001 in Q31.32 = round(0.0001 x 2^32) = 429_497.
 ///
 /// At |cos| = 0.0001 the true tan magnitude is ~10 000.  The nearest
-/// representable Q31.32 integer part is 2^31 − 1 ≈ 2.147 × 10^9, so
-/// there is headroom — but the CORDIC sin/cos error (~1−2 ULP at 22
+/// representable Q31.32 integer part is 2^31 - 1 ~= 2.147 x 10^9, so
+/// there is headroom - but the CORDIC sin/cos error (~1-2 ULP at 22
 /// iterations + Taylor) means the computed cos could be slightly smaller or
-/// even zero for inputs extremely close to ±π/2.  Picking 0.0001
+/// even zero for inputs extremely close to +/-pi/2.  Picking 0.0001
 /// gives a comfortable safety margin while still covering angles up
-/// to ~89.994°.
+/// to ~89.994 deg.
 const TAN_COS_MIN: i64 = 429_497;
 
-/// tan of a Q31.32 radian angle. Returns None near ±π/2.
+/// tan of a Q31.32 radian angle. Returns None near +/-pi/2.
 pub fn tan(angle: i64) -> Option<i64> {
     let (s, c) = sin_cos(angle);
     if c.abs() < TAN_COS_MIN {
@@ -518,17 +518,17 @@ pub fn cosh(angle: i64) -> Option<i64> {
     Some((exp_pos + exp_neg) >> 1)
 }
 
-/// |x| beyond which tanh(x) rounds to ±1 in Q31.32 precision.
+/// |x| beyond which tanh(x) rounds to +/-1 in Q31.32 precision.
 ///
-/// tanh(x) = 1 - 2/(e^(2x) + 1).  For |x| ≥ 12 the correction
-/// term is < 2^-33 — below one Q31.32 ULP — so the result is
-/// indistinguishable from ±1.0.  Bypassing the exponential avoids
+/// tanh(x) = 1 - 2/(e^(2x) + 1).  For |x| >= 12 the correction
+/// term is < 2^-33 - below one Q31.32 ULP - so the result is
+/// indistinguishable from +/-1.0.  Bypassing the exponential avoids
 /// spurious overflow for large arguments.
 const TANH_SATURATION: i64 = 12 * SCALE;
 
 /// tanh of a Q31.32 value. Returns None if overflow/undefined.
 pub fn tanh(angle: i64) -> Option<i64> {
-    // Saturation fast-path: tanh(≥12) = 1, tanh(≤-12) = -1 within Q31.32 ULP.
+    // Saturation fast-path: tanh(>=12) = 1, tanh(<=-12) = -1 within Q31.32 ULP.
     if angle >= TANH_SATURATION {
         return Some(FIXED_ONE);
     }
@@ -596,15 +596,15 @@ pub fn atanh(x: i64) -> Option<i64> {
     Some(ln >> 1)
 }
 
-/// Reduce angle to [−π, π] in Q31.32 using modular arithmetic.
+/// Reduce angle to [-pi, pi] in Q31.32 using modular arithmetic.
 ///
 /// The while-loop approach (iteratively subtracting/adding TWO_PI)
-/// requires O(|angle| / TWO_PI) iterations — for a 1e9 radian input
-/// that is ~1.6e8 iterations, hanging a 12 MHz Cortex-M3 for seconds.
+/// requires O(|angle| / TWO_PI) iterations - for a 1e9 radian input
+/// that is ~1.6e8 iterations, hanging a 50 MHz Cortex-M3 for seconds.
 ///
 /// Instead we use the `%` operator which gives the remainder in
-/// (−TWO_PI, TWO_PI) in a single division.  At most one conditional
-/// add/subtract is then needed to bring the result into [−π, π].
+/// (-TWO_PI, TWO_PI) in a single division.  At most one conditional
+/// add/subtract is then needed to bring the result into [-pi, pi].
 pub fn reduce_angle_to_principal(angle: i64) -> i64 {
     let mut a = angle % FIXED_TWO_PI;
     if a > FIXED_PI {
@@ -617,15 +617,15 @@ pub fn reduce_angle_to_principal(angle: i64) -> i64 {
 
 /// Run raw CORDIC rotation mode in Q31.32 with i128 intermediates.
 ///
-/// IMPORTANT: input angle must be in (−π/2, π/2) for convergence.
+/// IMPORTANT: input angle must be in (-pi/2, pi/2) for convergence.
 /// Call `cordic_sin_cos` (which handles quadrant folding) instead of this
 /// directly unless you are certain the angle is already in range.
 ///
 /// Uses 22 CORDIC iterations (i = 0..21) plus a first-order Taylor correction
 /// on the residual angle `z`.  The linear approximation
-///   cos(θ) ≈ cos(θ₀) − sin(θ₀)·δ,   sin(θ) ≈ sin(θ₀) + cos(θ₀)·δ
-/// with δ = z and (x, y) = (K·cos(θ₀), K·sin(θ₀)) reduces the worst-case error
-/// from |δ| < 2⁻²¹ ≈ 4.77e-7 to O(δ²) < 2.3e-13 — well below 1e-6.
+///   cos(theta) ~= cos(theta0) - sin(theta0)*delta,   sin(theta) ~= sin(theta0) + cos(theta0)*delta
+/// with delta = z and (x, y) = (K*cos(theta0), K*sin(theta0)) reduces the worst-case error
+/// from |delta| < 2-^2^1 ~= 4.77e-7 to O(delta^2) < 2.3e-13 - well below 1e-6.
 fn cordic_raw(angle: i64) -> (i64, i64) {
     if angle == 0 {
         return (0, FIXED_ONE);
@@ -649,10 +649,10 @@ fn cordic_raw(angle: i64) -> (i64, i64) {
         }
     }
 
-    // First-order Taylor correction for residual angle δ = z.
-    // cos(θ₀ + δ) ≈ cos(θ₀) − δ·sin(θ₀)
-    // sin(θ₀ + δ) ≈ sin(θ₀) + δ·cos(θ₀)
-    // In Q31.32:  x_final ≈ x − y·δ,  y_final ≈ y + x·δ
+    // First-order Taylor correction for residual angle delta = z.
+    // cos(theta0 + delta) ~= cos(theta0) - delta*sin(theta0)
+    // sin(theta0 + delta) ~= sin(theta0) + delta*cos(theta0)
+    // In Q31.32:  x_final ~= x - y*delta,  y_final ~= y + x*delta
     let delta = z;
     let ty = (y * delta) >> FRACTIONAL_BITS;
     let tx = (x * delta) >> FRACTIONAL_BITS;
@@ -662,28 +662,28 @@ fn cordic_raw(angle: i64) -> (i64, i64) {
     (y_out as i64, x_out as i64)
 }
 
-/// Run CORDIC with full quadrant folding so any angle in [−π, π] is handled.
+/// Run CORDIC with full quadrant folding so any angle in [-pi, pi] is handled.
 ///
-/// CORDIC rotation mode only converges for angles in (−π/2, π/2).
-/// Angles in quadrant II (π/2, π) and III (−π, −π/2) are mapped into
+/// CORDIC rotation mode only converges for angles in (-pi/2, pi/2).
+/// Angles in quadrant II (pi/2, pi) and III (-pi, -pi/2) are mapped into
 /// quadrant I/IV via the identities:
-///   sin(a) =  sin(π − a)   for a ∈ (π/2, π)      [cos negated]
-///   sin(a) = −sin(−a)      for a ∈ (−π, 0)        [then fold if needed]
+///   sin(a) =  sin(pi - a)   for a in (pi/2, pi)      [cos negated]
+///   sin(a) = -sin(-a)      for a in (-pi, 0)        [then fold if needed]
 fn cordic_sin_cos(angle: i64) -> (i64, i64) {
     let mut a = angle;
     let mut negate_sin = false;
     let mut negate_cos = false;
 
-    // Fold quadrant II: (π/2, π) → (0, π/2), cos negated
+    // Fold quadrant II: (pi/2, pi) -> (0, pi/2), cos negated
     if a > FIXED_PI_OVER_2 {
         a = FIXED_PI - a;
         negate_cos = true;
     }
-    // Fold quadrant III: (−π, −π/2) → (−π/2, 0), sin negated
+    // Fold quadrant III: (-pi, -pi/2) -> (-pi/2, 0), sin negated
     else if a < -FIXED_PI_OVER_2 {
-        a = -a; // now a > π/2
+        a = -a; // now a > pi/2
         negate_sin = true;
-        // May still be in quadrant II — fold again
+        // May still be in quadrant II - fold again
         if a > FIXED_PI_OVER_2 {
             a = FIXED_PI - a;
             negate_cos = true;
@@ -697,12 +697,12 @@ fn cordic_sin_cos(angle: i64) -> (i64, i64) {
     (sin_out, cos_out)
 }
 
-// ─── Inverse trigonometry ─────────────────────────────────────────────────────
+// --- Inverse trigonometry -----------------------------------------------------
 
 /// atan(x) in Q31.32 radians via rational minimax (Ganssle-Homer form).
 ///
-/// For |x| ≤ 1 evaluates the rational polynomial directly; for |x| > 1 uses
-/// the identity  atan(x) = π/2 − atan(1/x).  Max error < 1.6e-10 rad.
+/// For |x| <= 1 evaluates the rational polynomial directly; for |x| > 1 uses
+/// the identity  atan(x) = pi/2 - atan(1/x).  Max error < 1.6e-10 rad.
 pub fn atan(x: i64) -> i64 {
     if x == 0 {
         return 0;
@@ -711,17 +711,17 @@ pub fn atan(x: i64) -> i64 {
     let negative = x < 0;
     let ax = if negative { x.wrapping_neg() } else { x };
 
-    // For |x| > 1, reduce via atan(x) = π/2 − atan(1/x).
+    // For |x| > 1, reduce via atan(x) = pi/2 - atan(1/x).
     let (r, inverted) = if ax > FIXED_ONE {
         (divide(FIXED_ONE, ax).unwrap_or(0), true)
     } else {
         (ax, false)
     };
 
-    // t = r²   (both in [0, 1] in Q31.32)
+    // t = r^2   (both in [0, 1] in Q31.32)
     let t = multiply(r, r).unwrap();
 
-    // Horner's method:  P(t) = (((p8·t + p6)·t + p4)·t + p2)·t + p0
+    // Horner's method:  P(t) = (((p8*t + p6)*t + p4)*t + p2)*t + p0
     let p = multiply(
         multiply(
             multiply(multiply(ATAN_P8, t).unwrap() + ATAN_P6, t).unwrap() + ATAN_P4,
@@ -734,7 +734,7 @@ pub fn atan(x: i64) -> i64 {
     .unwrap()
         + ATAN_P0;
 
-    // Q(t) = (((q8·t + q6)·t + q4)·t + q2)·t + 1
+    // Q(t) = (((q8*t + q6)*t + q4)*t + q2)*t + 1
     let q = multiply(
         multiply(
             multiply(multiply(ATAN_Q8, t).unwrap() + ATAN_Q6, t).unwrap() + ATAN_Q4,
@@ -747,7 +747,7 @@ pub fn atan(x: i64) -> i64 {
     .unwrap()
         + FIXED_ONE;
 
-    // atan(r) = r · P / Q
+    // atan(r) = r * P / Q
     let frac = divide(p, q).unwrap();
     let mut angle = multiply(r, frac).unwrap();
 
@@ -779,7 +779,7 @@ pub fn atan2(y: i64, x: i64) -> i64 {
     let ratio = divide(small, large).unwrap_or(0);
     let mut angle = atan(ratio);
     if y.abs() > x.abs() {
-        // |y| > |x|: atan2(y,x) = sign(y/x) * π/2 - atan(x/y)
+        // |y| > |x|: atan2(y,x) = sign(y/x) * pi/2 - atan(x/y)
         // sign(y/x) = sign(y) * sign(x) determines the base formula.
         if (y > 0) == (x > 0) {
             angle = FIXED_PI_OVER_2 - angle;
@@ -806,7 +806,7 @@ pub fn atan2(y: i64, x: i64) -> i64 {
 }
 
 /// asin(x) in Q31.32 radians. Returns None if |x| > 1.
-/// asin(x) = atan(x / √(1 − x²))
+/// asin(x) = atan(x / sqrt(1 - x^2))
 pub fn asin(x: i64) -> Option<i64> {
     if x.abs() > FIXED_ONE {
         return None;
@@ -826,32 +826,32 @@ pub fn asin(x: i64) -> Option<i64> {
 }
 
 /// acos(x) in Q31.32 radians. Returns None if |x| > 1.
-/// acos(x) = π/2 − asin(x)
+/// acos(x) = pi/2 - asin(x)
 pub fn acos(x: i64) -> Option<i64> {
     Some(FIXED_PI_OVER_2 - asin(x)?)
 }
 
-// ─── Exponential and logarithm ────────────────────────────────────────────────
+// --- Exponential and logarithm ------------------------------------------------
 
 /// Maximum safe k = floor(log2(i64::MAX / SCALE)) = 30.
 ///
-/// For k > 30 the result 2^k × e^r exceeds the maximum representable
-/// Q31.32 value (~2.147 × 10⁹).  Return `None` instead of truncating
+/// For k > 30 the result 2^k x e^r exceeds the maximum representable
+/// Q31.32 value (~2.147 x 10^9).  Return `None` instead of truncating
 /// the shift amount and producing a silently wrong result.
 const MAX_EXP_SHIFT: i64 = 30;
 
 /// Largest positive x such that exp(x) does not overflow Q31.32.
 ///
-/// k = trunc(x / ln2).  For k ≤ 30 we need x < 31 × ln2 ≈ 21.49.
-/// Any argument larger than this will be caught by the k ≤ MAX_EXP_SHIFT
+/// k = trunc(x / ln2).  For k <= 30 we need x < 31 x ln2 ~= 21.49.
+/// Any argument larger than this will be caught by the k <= MAX_EXP_SHIFT
 /// check, but failing early here avoids unnecessary recursion (and an
 /// expensive divide) in the negative-x path.
 const MAX_POS_EXP_ARG: i64 = (MAX_EXP_SHIFT + 1) * FIXED_LN2 - 1;
 
-// ─── Minimax polynomial coefficients ──────────────────────────────────────────
+// --- Minimax polynomial coefficients ------------------------------------------
 
-/// Degree-7 minimax polynomial for e^r on r ∈ [0, ln2) (truncation range).
-/// Chebyshev approximation; max error ~5.95×10⁻¹¹ (< 10⁻⁶).
+/// Degree-7 minimax polynomial for e^r on r in [0, ln2) (truncation range).
+/// Chebyshev approximation; max error ~5.95x10-^1^1 (< 10-6).
 const EXP_C0: i64 = 4294967296; //  1.0000000000
 const EXP_C1: i64 = 4294967340; //  1.0000000102
 const EXP_C2: i64 = 2147482330; //  0.4999996930
@@ -861,10 +861,10 @@ const EXP_C5: i64 = 36048604; //  0.0083932197
 const EXP_C6: i64 = 5538864; //  0.0012896172
 const EXP_C7: i64 = 1209186; //  0.0002815356
 
-/// Degree-10 minimax polynomial for ln(1+t) on t ∈ [√½−1, √2−1].
-/// Computed as t × p(t) where p(t) ≈ ln(1+t)/t (degree 9).
+/// Degree-10 minimax polynomial for ln(1+t) on t in [sqrt1/2-1, sqrt2-1].
+/// Computed as t x p(t) where p(t) ~= ln(1+t)/t (degree 9).
 /// Forces exact zero at t=0 (ln(1) = 0).
-/// Max error ~1.62×10⁻⁹ (< 10⁻⁶).
+/// Max error ~1.62x10-^9 (< 10-6).
 const LOG_C0: i64 = 0; //  0.0000000000
 const LOG_C1: i64 = 4294967293; //  0.9999999994
 const LOG_C2: i64 = -2147483154; // -0.4999998850
@@ -879,7 +879,7 @@ const LOG_C10: i64 = -320025997; // -0.0745118588
 
 /// e^x for Q31.32 x.
 ///
-/// Range reduction: x = k × ln2 + r, |r| ≤ ln2/2.
+/// Range reduction: x = k x ln2 + r, |r| <= ln2/2.
 /// e^r computed via degree-6 minimax polynomial in Horner form.
 /// Result scaled by 2^k via bit shift.
 ///
@@ -923,10 +923,10 @@ pub fn natural_exp(x: i64) -> Option<i64> {
     Some(poly << k)
 }
 
-/// ln(x) for Q31.32 x > 0. Returns None for x ≤ 0.
+/// ln(x) for Q31.32 x > 0. Returns None for x <= 0.
 ///
-/// Range reduction: x = 2^k × m, m ∈ [1/√2, √2) so that
-/// t = m−1 is bounded to |t| ≤ √2−1 ≈ 0.414, guaranteeing fast
+/// Range reduction: x = 2^k x m, m in [1/sqrt2, sqrt2) so that
+/// t = m-1 is bounded to |t| <= sqrt2-1 ~= 0.414, guaranteeing fast
 /// polynomial convergence.
 /// ln(m) via degree-10 minimax polynomial in Horner form.
 /// All arithmetic in i128.
@@ -971,17 +971,17 @@ pub fn natural_log(x: i64) -> Option<i64> {
     Some(k * FIXED_LN2 + poly)
 }
 
-/// log₁₀(x). Returns None for x ≤ 0.
+/// log10(x). Returns None for x <= 0.
 pub fn log10(x: i64) -> Option<i64> {
     divide(natural_log(x)?, FIXED_LN10)
 }
 
-/// log₂(x). Returns None for x ≤ 0.
+/// log2(x). Returns None for x <= 0.
 pub fn log2(x: i64) -> Option<i64> {
     divide(natural_log(x)?, FIXED_LN2)
 }
 
-// ─── Rounding ─────────────────────────────────────────────────────────────────
+// --- Rounding -----------------------------------------------------------------
 
 /// Absolute value.
 #[inline(always)]
@@ -989,17 +989,17 @@ pub fn abs(x: i64) -> i64 {
     x.abs()
 }
 
-/// Floor: round toward −∞.
+/// Floor: round toward -inf.
 ///
-/// Rust's arithmetic right shift on i64 already rounds toward −∞ for
-/// negative values. So (x >> 32) << 32 is correct for all signs — no
+/// Rust's arithmetic right shift on i64 already rounds toward -inf for
+/// negative values. So (x >> 32) << 32 is correct for all signs - no
 /// special case needed.
 #[inline(always)]
 pub fn floor(x: i64) -> i64 {
     (x >> FRACTIONAL_BITS) << FRACTIONAL_BITS
 }
 
-/// Ceiling: round toward +∞.
+/// Ceiling: round toward +inf.
 #[inline(always)]
 pub fn ceil(x: i64) -> i64 {
     if x & (SCALE - 1) == 0 {
@@ -1019,28 +1019,28 @@ pub fn round(x: i64) -> i64 {
     }
 }
 
-// ─── Angle unit conversion ────────────────────────────────────────────────────
+// --- Angle unit conversion ----------------------------------------------------
 
-/// deg(x): x is in degrees → result is x in radians.
-/// sin(deg(90)) evaluates sin(π/2) = 1.
+/// deg(x): x is in degrees -> result is x in radians.
+/// sin(deg(90)) evaluates sin(pi/2) = 1.
 #[inline(always)]
 pub fn degrees_to_radians(degrees: i64) -> Option<i64> {
     multiply(degrees, FIXED_PI_OVER_180)
 }
 
-/// rad(x): x is in radians → result is x in degrees.
+/// rad(x): x is in radians -> result is x in degrees.
 /// rad(pi) = 180.
 #[inline(always)]
 pub fn radians_to_degrees(radians: i64) -> Option<i64> {
     multiply(radians, FIXED_180_OVER_PI)
 }
 
-// ─── Formatting ───────────────────────────────────────────────────────────────
+// --- Formatting ---------------------------------------------------------------
 
 /// Format a Q31.32 value as a decimal string with up to 6 significant
 /// fractional digits, trailing zeros stripped.
 ///
-/// Writes into `buffer` (must be ≥ 24 bytes) and returns the filled slice.
+/// Writes into `buffer` (must be >= 24 bytes) and returns the filled slice.
 pub fn format_fixed_point(value: i64, buffer: &mut [u8]) -> &[u8] {
     let is_negative = value < 0;
     // Use i128 to safely handle i64::MIN.
@@ -1053,8 +1053,8 @@ pub fn format_fixed_point(value: i64, buffer: &mut [u8]) -> &[u8] {
     let integer_part = (abs_val >> FRACTIONAL_BITS) as u64;
 
     // Extract fractional part as 6 decimal digits.
-    // frac_raw ∈ [0, SCALE−1]; scale to 6 decimal places.
-    // Use i128 to avoid overflow: frac_raw × 1_000_000 can exceed u64.
+    // frac_raw in [0, SCALE-1]; scale to 6 decimal places.
+    // Use i128 to avoid overflow: frac_raw x 1_000_000 can exceed u64.
     let frac_raw = (abs_val & (SCALE as i128 - 1)) as u128;
     let frac_decimal = ((frac_raw * 1_000_000 + (SCALE as u128) / 2) / SCALE as u128) as u32;
 
@@ -1090,7 +1090,7 @@ pub fn format_fixed_point(value: i64, buffer: &mut [u8]) -> &[u8] {
         buffer[int_start..pos].reverse();
     }
 
-    // Write fractional part — up to 6 digits, trailing zeros stripped.
+    // Write fractional part - up to 6 digits, trailing zeros stripped.
     if frac_decimal > 0 {
         buffer[pos] = b'.';
         pos += 1;

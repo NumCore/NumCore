@@ -115,7 +115,7 @@ function feedAll(key, e) {
   updateMode();
 }
 
-// ─── Keyboard input (desktop) ──────────────────────────────────────────────
+// --- Keyboard input (desktop) ----------------------------------------------
 
 document.addEventListener('keydown', (e) => {
   if (!wasm) return;
@@ -127,7 +127,7 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// ─── Mobile input via hidden text field ─────────────────────────────────────
+// --- Mobile input via hidden text field -------------------------------------
 // Mobile browsers only fire keydown when a text input is focused. We use a
 // hidden <input> that gets focused on any page tap, then forward characters
 // via the 'input' event (which fires on each insertion).

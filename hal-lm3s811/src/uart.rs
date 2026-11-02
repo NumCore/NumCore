@@ -7,12 +7,12 @@
 //!
 //! The LM3S811 UART uses a fractional baud-rate divisor:
 //!
-//!   BRD = system_clock / (16 × baud_rate)
-//!       = 12_000_000  / (16 × 115_200)
-//!       ≈ 6.510
+//!   BRD = system_clock / (16 x baud_rate)
+//!       = 50_000_000  / (16 x 115_200)
+//!       = 27.126736
 //!
-//!   Integer part (IBRD)   = 6
-//!   Fractional part (FBRD) = round(0.510 × 64) = 33
+//!   Integer part (IBRD)    = 27
+//!   Fractional part (FBRD) = round(0.126736 x 64) = 8
 //!
 //! ## Pin assignment
 //!   PA0 = UART0 RX (receive)
@@ -20,15 +20,15 @@
 
 use crate::{clock, gpio, mmio};
 
-// ─── UART0 register map ───────────────────────────────────────────────────────
+// --- UART0 register map -------------------------------------------------------
 
 /// UART0 peripheral base address.
 const UART0_BASE: u32 = 0x4000_C000;
 
-/// Data Register — write to transmit, read to receive.
+/// Data Register - write to transmit, read to receive.
 const UART_DR_OFFSET: u32 = 0x000;
 
-/// Flag Register — contains TX/RX FIFO status bits.
+/// Flag Register - contains TX/RX FIFO status bits.
 const UART_FR_OFFSET: u32 = 0x018;
 
 /// Integer Baud-Rate Divisor register.
@@ -37,21 +37,21 @@ const UART_IBRD_OFFSET: u32 = 0x024;
 /// Fractional Baud-Rate Divisor register.
 const UART_FBRD_OFFSET: u32 = 0x028;
 
-/// Line Control register — word length, parity, stop bits, FIFO enable.
+/// Line Control register - word length, parity, stop bits, FIFO enable.
 const UART_LCRH_OFFSET: u32 = 0x02C;
 
-/// Control register — UART enable, TX enable, RX enable.
+/// Control register - UART enable, TX enable, RX enable.
 const UART_CTL_OFFSET: u32 = 0x030;
 
-// ─── Flag register bit masks ──────────────────────────────────────────────────
+// --- Flag register bit masks --------------------------------------------------
 
-/// TX FIFO Full flag. When set, writing to DR would be lost — must wait.
+/// TX FIFO Full flag. When set, writing to DR would be lost - must wait.
 const UART_FLAG_TX_FIFO_FULL: u32 = 1 << 5;
 
 /// RX FIFO Empty flag. When set, no data is available to read.
 const UART_FLAG_RX_FIFO_EMPTY: u32 = 1 << 4;
 
-// ─── Control and line-control bit masks ───────────────────────────────────────
+// --- Control and line-control bit masks ---------------------------------------
 
 /// UART Enable bit in CTL.
 const UART_CTL_UART_ENABLE: u32 = 1 << 0;
@@ -68,20 +68,20 @@ const UART_LCRH_WORD_LENGTH_8BIT: u32 = 0b11 << 5;
 /// FIFO Enable bit in LCRH.
 const UART_LCRH_FIFO_ENABLE: u32 = 1 << 4;
 
-// ─── Baud-rate divisors for 115200 @ 12 MHz ──────────────────────────────────
+// --- Baud-rate divisors for 115200 @ 50 MHz ----------------------------------
 
 /// Integer baud-rate divisor. Derived from SYSTEM_CLOCK_HZ above.
-const BAUD_RATE_INTEGER_DIVISOR: u32 = 6;
+const BAUD_RATE_INTEGER_DIVISOR: u32 = 27;
 
 /// Fractional baud-rate divisor.
-const BAUD_RATE_FRACTIONAL_DIVISOR: u32 = 33;
+const BAUD_RATE_FRACTIONAL_DIVISOR: u32 = 8;
 
-// ─── GPIO pin masks for UART0 on Port A ──────────────────────────────────────
+// --- GPIO pin masks for UART0 on Port A --------------------------------------
 
-/// PA0 (RX) and PA1 (TX) — both configured as alternate-function pins.
+/// PA0 (RX) and PA1 (TX) - both configured as alternate-function pins.
 const UART0_GPIO_PIN_MASK: u8 = 0b0000_0011;
 
-// ─── Public API ───────────────────────────────────────────────────────────────
+// --- Public API ---------------------------------------------------------------
 
 /// Initialise UART0 for 115 200-8-N-1 communication.
 ///
@@ -94,6 +94,9 @@ const UART0_GPIO_PIN_MASK: u8 = 0b0000_0011;
 ///   3. Set baud rate, word format, and FIFO mode
 ///   4. Enable the UART
 pub fn initialise_uart() {
+    // Step 0: Select the 50 MHz PLL clock before calculating any divisors.
+    clock::configure_system_clock();
+
     // Step 1: Enable peripheral clocks.
     clock::enable_rcgc1_peripherals(clock::CLOCK_GATE_UART0);
     clock::enable_rcgc2_peripherals(clock::CLOCK_GATE_GPIOA);
@@ -128,7 +131,7 @@ pub fn initialise_uart() {
 /// Transmit a single byte over UART0.
 ///
 /// Blocks until the TX FIFO has space. On a real system under heavy load this
-/// could stall for many microseconds — add interrupt-driven TX if that matters.
+/// could stall for many microseconds - add interrupt-driven TX if that matters.
 pub fn transmit_byte(byte: u8) {
     // Spin until the transmit FIFO has room for another byte.
     while mmio::read_register(UART0_BASE, UART_FR_OFFSET) & UART_FLAG_TX_FIFO_FULL != 0 {}
@@ -151,7 +154,7 @@ pub fn transmit_bytes(bytes: &[u8]) {
 pub fn receive_byte_blocking() -> u8 {
     // Spin until at least one byte is in the receive FIFO.
     while mmio::read_register(UART0_BASE, UART_FR_OFFSET) & UART_FLAG_RX_FIFO_EMPTY != 0 {}
-    // Read the byte from the data register. Bits 8-11 are error flags — mask them.
+    // Read the byte from the data register. Bits 8-11 are error flags - mask them.
     (mmio::read_register(UART0_BASE, UART_DR_OFFSET) & 0xFF) as u8
 }
 

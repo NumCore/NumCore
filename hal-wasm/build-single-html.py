@@ -25,13 +25,13 @@ html = html.replace('<script src="index.js"></script>', '')
 # Inject inline scripts
 inline_scripts = f'''
 <script>
-// — WASM binary (base64-encoded, 317 KB raw / 431 KB text)
+// - WASM binary (base64-encoded, 317 KB raw / 431 KB text)
 const WASM_BASE64 = `{wasm_b64}`;
 
-// — wasm-bindgen runtime (auto-generated)
+// - wasm-bindgen runtime (auto-generated)
 {wasm_js}
 
-// — Simulator entry point
+// - Simulator entry point
 {index_js}
 </script>
 '''

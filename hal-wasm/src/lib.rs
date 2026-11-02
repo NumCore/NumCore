@@ -71,7 +71,7 @@ fn with_state<F, R>(f: F) -> R
 where
     F: FnOnce(&mut CalcState) -> R,
 {
-    unsafe { f(&mut CALC_STATE) }
+    unsafe { f(&mut *(&raw mut CALC_STATE)) }
 }
 
 fn render_display(state: &CalcState) {

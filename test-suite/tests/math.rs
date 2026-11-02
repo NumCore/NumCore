@@ -1,4 +1,4 @@
-//! # NumCore Math Engine — Comprehensive Host-Side Test Suite
+//! # NumCore Math Engine - Full Host-Side Test Suite
 //!
 //! Every public function in `math/` is tested here, including:
 //!
@@ -7,7 +7,7 @@
 //!   - Domain-error checks (invalid inputs return `None`)
 //!   - Overflow / underflow checks
 //!   - Edge cases (zero, negative, min/max, boundary conditions)
-//!   - Integration tests through the full lex → parse → eval pipeline
+//!   - Integration tests through the full lex -> parse -> eval pipeline
 //!
 //! ## Conventions
 //!
@@ -15,11 +15,11 @@
 //!     All test expectations written in f64 for readability.
 //!
 //!   - `assert_approx_eq(a, b, tolerance)` checks that two Q31.32 values
-//!     differ by at most `tolerance` ULP (1 ULP ≈ 2.33×10⁻¹⁰).
+//!     differ by at most `tolerance` ULP (1 ULP ~= 2.33x10-^10).
 //!
 //!   - Tolerance values are documented per test section; most arithmetic
-//!     is exact (±0 ULP), CORDIC trig ≤ 1000 ULP, Taylor-series
-//!     functions ≤ 10 ULP, log/exp chains ≤ 20 ULP.
+//!     is exact (+/-0 ULP), CORDIC trig <= 1000 ULP, Taylor-series
+//!     functions <= 10 ULP, log/exp chains <= 20 ULP.
 
 use numcore_math::math::compiler;
 use numcore_math::math::complex::Complex;
@@ -34,7 +34,7 @@ use numcore_math::math::vm;
 use numcore_math::math::AngleMode;
 use numcore_math::math::MathMode;
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// --- Helpers -----------------------------------------------------------------
 
 /// Convert an f64 literal to Q31.32 fixed-point (nearest rounding).
 const SCALE: i64 = 1i64 << 32;
@@ -75,12 +75,12 @@ fn fmt(v: i64) -> String {
     core::str::from_utf8(slice).unwrap().to_string()
 }
 
-// ─── 1. Constants ─────────────────────────────────────────────────────────────
+// --- 1. Constants -------------------------------------------------------------
 
 #[test]
 fn test_constants_are_bit_exact() {
     // Verify every public constant matches its documented value.
-    // These are exact — any deviation is a regression.
+    // These are exact - any deviation is a regression.
     assert_eq!(fp::FRACTIONAL_BITS, 32);
     assert_eq!(fp::SCALE, 4_294_967_296);
 
@@ -99,7 +99,7 @@ fn test_constants_are_bit_exact() {
     assert_eq!(fp::FIXED_ONE, 4_294_967_296);
 }
 
-// ─── 2. Core Arithmetic ──────────────────────────────────────────────────────
+// --- 2. Core Arithmetic ------------------------------------------------------
 // All operations here are exact (integer arithmetic on scaled values).
 
 #[test]
@@ -118,7 +118,7 @@ fn test_to_integer_truncated() {
     assert_eq!(fp::to_integer_truncated(-SCALE), -1);
     assert_eq!(fp::to_integer_truncated(fp::FIXED_PI), 3);
     assert_eq!(fp::to_integer_truncated(-fp::FIXED_PI), -4);
-    // Arithmetic right shift rounds toward −∞: 1.5 → 1, -1.5 → -2
+    // Arithmetic right shift rounds toward -inf: 1.5 -> 1, -1.5 -> -2
     assert_eq!(fp::to_integer_truncated(SCALE + SCALE / 2), 1);
     assert_eq!(fp::to_integer_truncated(-(SCALE + SCALE / 2)), -2);
 }
@@ -129,33 +129,33 @@ fn test_to_integer_rounded() {
     assert_eq!(fp::to_integer_rounded(SCALE), 1);
     assert_eq!(fp::to_integer_rounded(-SCALE), -1);
     // Half rounds away from zero (positive) / toward zero (negative,
-    // because arithmetic right shift truncates toward −∞ after the add-half).
+    // because arithmetic right shift truncates toward -inf after the add-half).
     assert_eq!(fp::to_integer_rounded(SCALE + fp::FIXED_HALF), 2);
     assert_eq!(fp::to_integer_rounded(SCALE + fp::FIXED_HALF - 1), 1);
     assert_eq!(fp::to_integer_rounded(-(SCALE + fp::FIXED_HALF)), -1);
     assert_eq!(fp::to_integer_rounded(-(SCALE + fp::FIXED_HALF - 1)), -1);
 }
 
-// ─── 3. Multiply ─────────────────────────────────────────────────────────────
+// --- 3. Multiply -------------------------------------------------------------
 // Returns Option<i64>.  Exact for integer results; symmetric rounding
 // applied for fractional results.
 
 #[test]
 fn test_multiply_basic() {
-    // 2 × 3 = 6
+    // 2 x 3 = 6
     assert_eq!(
         fp::multiply(fp::from_integer(2), fp::from_integer(3)),
         Some(fp::from_integer(6))
     );
-    // 0 × anything = 0
+    // 0 x anything = 0
     assert_eq!(fp::multiply(0, fp::from_integer(5)), Some(0));
     assert_eq!(fp::multiply(fp::from_integer(5), 0), Some(0));
-    // 1 × anything = anything
+    // 1 x anything = anything
     assert_eq!(
         fp::multiply(SCALE, fp::from_integer(7)),
         Some(fp::from_integer(7))
     );
-    // -1 × anything = -anything
+    // -1 x anything = -anything
     assert_eq!(
         fp::multiply(-SCALE, fp::from_integer(7)),
         Some(fp::from_integer(-7))
@@ -180,12 +180,12 @@ fn test_multiply_negative() {
 
 #[test]
 fn test_multiply_fractional() {
-    // 0.5 × 0.5 = 0.25
+    // 0.5 x 0.5 = 0.25
     let half = fp::FIXED_HALF;
     let quarter = fp::FIXED_HALF / 2;
     assert_eq!(fp::multiply(half, half), Some(quarter));
 
-    // 1/3 × 3 = 1 (approximately — within 1 ULP)
+    // 1/3 x 3 = 1 (approximately - within 1 ULP)
     let one_third = q(1.0 / 3.0);
     assert_approx_eq(
         fp::multiply(one_third, fp::from_integer(3)).unwrap(),
@@ -196,19 +196,19 @@ fn test_multiply_fractional() {
 
 #[test]
 fn test_multiply_overflow() {
-    // i64::MAX × 2 should overflow.
+    // i64::MAX x 2 should overflow.
     assert_eq!(fp::multiply(i64::MAX, fp::from_integer(2)), None);
-    // i64::MIN × 2 should overflow.
+    // i64::MIN x 2 should overflow.
     assert_eq!(fp::multiply(i64::MIN, fp::from_integer(2)), None);
-    // SCALE × i64::MAX should saturate to i64::MAX.
+    // SCALE x i64::MAX should saturate to i64::MAX.
     assert_eq!(fp::multiply(SCALE, i64::MAX), Some(i64::MAX));
 }
 
 #[test]
 fn test_multiply_symmetric_rounding_negative() {
     // Verify symmetric rounding for negative products (the wrapping_neg path).
-    // -0.5 × 0.3 produces a negative fractional result; the rounding must
-    // be away-from-zero, not truncated-toward-∞.
+    // -0.5 x 0.3 produces a negative fractional result; the rounding must
+    // be away-from-zero, not truncated-toward-inf.
     let a = -fp::FIXED_HALF;
     let b = q(0.3);
     let result = fp::multiply(a, b).unwrap();
@@ -216,7 +216,7 @@ fn test_multiply_symmetric_rounding_negative() {
     assert_approx_eq(result, expected, 1);
 }
 
-// ─── 4. Divide ───────────────────────────────────────────────────────────────
+// --- 4. Divide ---------------------------------------------------------------
 // Returns Option<i64>.  Exact for integer division; fractional otherwise.
 
 #[test]
@@ -257,7 +257,7 @@ fn test_divide_negative() {
 fn test_divide_fractional() {
     // 1 / 2 = 0.5
     assert_eq!(fp::divide(SCALE, fp::from_integer(2)), Some(SCALE / 2));
-    // 1 / 3 ≈ 0.333333 — approximate
+    // 1 / 3 ~= 0.333333 - approximate
     let one_third = q(1.0 / 3.0);
     assert_approx_eq(
         fp::divide(SCALE, fp::from_integer(3)).unwrap(),
@@ -271,7 +271,7 @@ fn test_divide_zero_numerator() {
     assert_eq!(fp::divide(0, fp::from_integer(5)), Some(0));
 }
 
-// ─── 4b. Divide sign combos ───────────────────────────────────────────────────
+// --- 4b. Divide sign combos ---------------------------------------------------
 
 #[test]
 fn test_divide_sign_combinations() {
@@ -288,7 +288,7 @@ fn test_divide_sign_combinations() {
     assert_eq!(fp::divide(0, -fp::from_integer(5)), Some(0));
 }
 
-// ─── 5. Rounding & Abs ───────────────────────────────────────────────────────
+// --- 5. Rounding & Abs -------------------------------------------------------
 // All exact.
 
 #[test]
@@ -302,22 +302,22 @@ fn test_abs() {
 #[test]
 fn test_floor() {
     assert_eq!(fp::floor(SCALE), SCALE); // 1.0
-    assert_eq!(fp::floor(SCALE + 1), SCALE); // 1.000... → 1
-    assert_eq!(fp::floor(-SCALE + 1), -SCALE); // -0.999... → -1
+    assert_eq!(fp::floor(SCALE + 1), SCALE); // 1.000... -> 1
+    assert_eq!(fp::floor(-SCALE + 1), -SCALE); // -0.999... -> -1
     assert_eq!(fp::floor(-SCALE), -SCALE); // -1.0
-    assert_eq!(fp::floor(-SCALE - 1), -2 * SCALE); // -1.000... → -2
+    assert_eq!(fp::floor(-SCALE - 1), -2 * SCALE); // -1.000... -> -2
     assert_eq!(fp::floor(0), 0);
-    // π ≈ 3.14159 → 3
+    // pi ~= 3.14159 -> 3
     assert_eq!(fp::floor(fp::FIXED_PI), fp::from_integer(3));
-    // -π ≈ -3.14159 → -4
+    // -pi ~= -3.14159 -> -4
     assert_eq!(fp::floor(-fp::FIXED_PI), fp::from_integer(-4));
 }
 
 #[test]
 fn test_ceil() {
     assert_eq!(fp::ceil(SCALE), SCALE);
-    assert_eq!(fp::ceil(SCALE + 1), 2 * SCALE); // 1.000... → 2
-    assert_eq!(fp::ceil(-SCALE + 1), 0); // -0.999... → 0 (exact!)
+    assert_eq!(fp::ceil(SCALE + 1), 2 * SCALE); // 1.000... -> 2
+    assert_eq!(fp::ceil(-SCALE + 1), 0); // -0.999... -> 0 (exact!)
                                          // Actually ceil(-0.999...) = 0.0 = 0 in Q31.32
                                          // Wait, -SCALE + 1 = -(SCALE - 1). Ceil of -0.999... = 0.
                                          // But floor(-x) = -(floor(x) + 1) for x non-integer in the ceil implementation.
@@ -326,33 +326,33 @@ fn test_ceil() {
                                          // But wait, floor(-SCALE + 1) = -SCALE (truncates to -1), so ceil = -SCALE + SCALE = 0.
                                          // But -SCALE + 1 is NOT an integer so it goes to the else branch.
                                          // floor(-SCALE + 1) = (-SCALE + 1) >> 32 << 32 = (-4294967295) >> 32 << 32
-                                         // -4294967295 / 2^32 = -0.9999999998, arithmetic shift = -1 (trunc toward -∞)
+                                         // -4294967295 / 2^32 = -0.9999999998, arithmetic shift = -1 (trunc toward -inf)
                                          // -1 << 32 = -4294967296 = -SCALE
                                          // So ceil = -SCALE + SCALE = 0
     assert_eq!(fp::ceil(-SCALE + 1), 0);
     assert_eq!(fp::ceil(0), 0);
-    // π ≈ 3.14159 → 4
+    // pi ~= 3.14159 -> 4
     assert_eq!(fp::ceil(fp::FIXED_PI), fp::from_integer(4));
-    // -π ≈ -3.14159 → -3
+    // -pi ~= -3.14159 -> -3
     assert_eq!(fp::ceil(-fp::FIXED_PI), fp::from_integer(-3));
 }
 
 #[test]
 fn test_round() {
     assert_eq!(fp::round(0), 0);
-    assert_eq!(fp::round(SCALE), SCALE); // 1.0 → 1
-                                         // 1.4999... → 1
+    assert_eq!(fp::round(SCALE), SCALE); // 1.0 -> 1
+                                         // 1.4999... -> 1
     assert_eq!(fp::round(SCALE + fp::FIXED_HALF - 1), SCALE);
-    // 1.5 → 2 (half away from zero)
+    // 1.5 -> 2 (half away from zero)
     assert_eq!(fp::round(SCALE + fp::FIXED_HALF), 2 * SCALE);
-    // -1.5 → -2
+    // -1.5 -> -2
     assert_eq!(fp::round(-SCALE - fp::FIXED_HALF), -2 * SCALE);
-    // -1.4999... → -1
+    // -1.4999... -> -1
     assert_eq!(fp::round(-SCALE - fp::FIXED_HALF + 1), -SCALE);
 }
 
-// ─── 6. Square Root ──────────────────────────────────────────────────────────
-// Newton-Raphson with isqrt initial guess.  ≤ 1 ULP for all valid inputs.
+// --- 6. Square Root ----------------------------------------------------------
+// Newton-Raphson with isqrt initial guess.  <= 1 ULP for all valid inputs.
 
 #[test]
 fn test_sqrt_zero() {
@@ -380,10 +380,10 @@ fn test_sqrt_perfect_squares() {
 
 #[test]
 fn test_sqrt_non_perfect() {
-    // √2 ≈ 1.41421356
+    // sqrt2 ~= 1.41421356
     let result = fp::sqrt(fp::from_integer(2)).unwrap();
     assert_approx_eq(result, fp::FIXED_SQRT2, 1);
-    // √3 ≈ 1.73205081
+    // sqrt3 ~= 1.73205081
     let result = fp::sqrt(fp::from_integer(3)).unwrap();
     assert_approx_eq(result, q(1.732_050_807_568_877_2), 2);
 }
@@ -396,22 +396,22 @@ fn test_sqrt_negative() {
 
 #[test]
 fn test_sqrt_fractional() {
-    // √0.25 = 0.5
+    // sqrt0.25 = 0.5
     let result = fp::sqrt(fp::FIXED_HALF / 2).unwrap();
     assert_eq!(result, fp::FIXED_HALF);
-    // √0.5 ≈ 0.70710678
+    // sqrt0.5 ~= 0.70710678
     let result = fp::sqrt(fp::FIXED_HALF).unwrap();
     assert_approx_eq(result, fp::FIXED_INV_SQRT2, 1);
 }
 
 #[test]
 fn test_sqrt_large() {
-    // √(1e6) = 1000 — CLZ rsqrt + 3 NR + final refine gives ~1839 ULP error.
+    // sqrt(1e6) = 1000 - CLZ rsqrt + 3 NR + final refine gives ~1839 ULP error.
     let result = fp::sqrt(fp::from_integer(1_000_000i64)).unwrap();
     assert_approx_eq(result, fp::from_integer(1000), 2000);
 }
 
-// ─── 7. Power & Integer Power ────────────────────────────────────────────────
+// --- 7. Power & Integer Power ------------------------------------------------
 
 #[test]
 fn test_integer_power_basic() {
@@ -486,7 +486,7 @@ fn test_power_non_integer_exponent() {
     // 9^(1/2) = 3
     let result = fp::power(fp::from_integer(9), fp::FIXED_HALF).unwrap();
     assert_approx_eq(result, fp::from_integer(3), 5);
-    // 2^0.5 = √2
+    // 2^0.5 = sqrt2
     let result = fp::power(fp::from_integer(2), fp::FIXED_HALF).unwrap();
     assert_approx_eq(result, fp::FIXED_SQRT2, 5);
 }
@@ -503,7 +503,7 @@ fn test_power_negative_base() {
         fp::power(fp::from_integer(-2), fp::from_integer(2)),
         Some(fp::from_integer(4))
     );
-    // (-2)^0.5 — domain error (non-integer exponent, negative base)
+    // (-2)^0.5 - domain error (non-integer exponent, negative base)
     assert_eq!(fp::power(fp::from_integer(-2), fp::FIXED_HALF), None);
 }
 
@@ -511,7 +511,7 @@ fn test_power_negative_base() {
 fn test_power_base_zero() {
     // 0^5 = 0
     assert_eq!(fp::power(0, fp::from_integer(5)), Some(0));
-    // 0^(-1) = division by zero → None
+    // 0^(-1) = division by zero -> None
     assert_eq!(fp::power(0, fp::from_integer(-1)), None);
 }
 
@@ -524,16 +524,16 @@ fn test_power_zero_exponent() {
 
 #[test]
 fn test_power_overflow() {
-    // 2^31 × 2^32 would overflow
+    // 2^31 x 2^32 would overflow
     let huge = fp::from_integer(1_000_000_000);
     let result = fp::power(huge, fp::from_integer(2));
-    // With Q31.32, 1e9^2 = 1e18 which exceeds i64::MAX ≈ 9.22e18 in raw terms
+    // With Q31.32, 1e9^2 = 1e18 which exceeds i64::MAX ~= 9.22e18 in raw terms
     // Actually 1e9^2 in Q31.32 would be (1e9*SCALE)^2/SCALE = 1e18*SCALE which
     // definitely overflows i64.
     assert_eq!(result, None);
 }
 
-// ─── 8. Nth Root ─────────────────────────────────────────────────────────────
+// --- 8. Nth Root -------------------------------------------------------------
 
 #[ignore = "host overflow: nthroot(32,5) returns None on host (CORDIC overflow in ln)"]
 #[test]
@@ -632,26 +632,26 @@ fn test_nthroot_non_integer_root() {
 
 #[test]
 fn test_nthroot_large_n() {
-    // x^(1/100) ≈ 1 for small x (within Q31.32 precision)
-    // 2^(1/100) ≈ e^(ln(2)/100) ≈ e^0.00693 ≈ 1.00696
+    // x^(1/100) ~= 1 for small x (within Q31.32 precision)
+    // 2^(1/100) ~= e^(ln(2)/100) ~= e^0.00693 ~= 1.00696
     let result = fp::nthroot(fp::from_integer(2), fp::from_integer(100)).unwrap();
     assert_approx_eq(result, q(1.006_955_550_056_531_0), 10);
 }
 
-// ─── 9. Trigonometry ─────────────────────────────────────────────────────────
-// CORDIC-based, ≤ 1000 ULP.
+// --- 9. Trigonometry ---------------------------------------------------------
+// CORDIC-based, <= 1000 ULP.
 
 #[test]
 fn test_sin_standard_angles() {
     // sin(0) = 0
     assert_eq!(fp::sin(0), 0);
-    // sin(π/2) = 1  (CORDIC, ~3 ULP)
+    // sin(pi/2) = 1  (CORDIC, ~3 ULP)
     assert_approx_eq(fp::sin(fp::FIXED_PI_OVER_2), SCALE, 10);
-    // sin(π) = 0
+    // sin(pi) = 0
     assert_approx_eq(fp::sin(fp::FIXED_PI), 0, 10);
-    // sin(3π/2) = -1  (CORDIC, ~3 ULP)
+    // sin(3pi/2) = -1  (CORDIC, ~3 ULP)
     assert_approx_eq(fp::sin(fp::FIXED_PI_OVER_2 * 3), -SCALE, 10);
-    // sin(2π) = 0
+    // sin(2pi) = 0
     assert_approx_eq(fp::sin(fp::FIXED_TWO_PI), 0, 10);
 }
 
@@ -659,11 +659,11 @@ fn test_sin_standard_angles() {
 fn test_cos_standard_angles() {
     // cos(0) = 1
     assert_eq!(fp::cos(0), SCALE);
-    // cos(π/2) = 0  (CORDIC, ~305 ULP)
+    // cos(pi/2) = 0  (CORDIC, ~305 ULP)
     assert_approx_eq(fp::cos(fp::FIXED_PI_OVER_2), 0, 500);
-    // cos(π) = -1  (CORDIC, ~305 ULP)
+    // cos(pi) = -1  (CORDIC, ~305 ULP)
     assert_approx_eq(fp::cos(fp::FIXED_PI), -SCALE, 500);
-    // cos(2π) = 1  (CORDIC)
+    // cos(2pi) = 1  (CORDIC)
     assert_approx_eq(fp::cos(fp::FIXED_TWO_PI), SCALE, 500);
 }
 
@@ -671,30 +671,30 @@ fn test_cos_standard_angles() {
 fn test_tan_standard_angles() {
     // tan(0) = 0
     assert_eq!(fp::tan(0), Some(0));
-    // tan(π/4) = 1  (CORDIC, ~757 ULP)
+    // tan(pi/4) = 1  (CORDIC, ~757 ULP)
     let p4 = fp::FIXED_PI / 4;
     assert_approx_eq(fp::tan(p4).unwrap(), SCALE, 1000);
-    // tan(π/6) = 1/√3 ≈ 0.57735
+    // tan(pi/6) = 1/sqrt3 ~= 0.57735
     let p6 = fp::FIXED_PI / 6;
     assert_approx_eq(fp::tan(p6).unwrap(), q(0.577_350_269_189_625_8), 1000);
 }
 
 #[test]
 fn test_tan_near_pole() {
-    // tan near π/2 should return None (|cos| < TAN_COS_MIN)
+    // tan near pi/2 should return None (|cos| < TAN_COS_MIN)
     let near_pole = fp::FIXED_PI_OVER_2 - 1;
     assert_eq!(fp::tan(near_pole), None);
 }
 
 #[test]
 fn test_sin_cos_at_specific() {
-    // sin(30°) = 0.5, cos(30°) = √3/2
+    // sin(30 deg) = 0.5, cos(30 deg) = sqrt3/2
     let thirty_deg = q(30.0_f64.to_radians());
     let (s, c) = fp::sin_cos(thirty_deg);
     assert_approx_eq(s, fp::FIXED_HALF, 500);
     assert_approx_eq(c, fp::FIXED_SQRT3_OVER_2, 500);
 
-    // sin(45°) = cos(45°) = √2/2
+    // sin(45 deg) = cos(45 deg) = sqrt2/2
     let fortyfive_deg = q(45.0_f64.to_radians());
     let (s, c) = fp::sin_cos(fortyfive_deg);
     assert_approx_eq(s, fp::FIXED_INV_SQRT2, 500);
@@ -703,12 +703,12 @@ fn test_sin_cos_at_specific() {
 
 #[test]
 fn test_reduce_angle() {
-    // Angle already in range [−π, π] → unchanged.
+    // Angle already in range [-pi, pi] -> unchanged.
     assert_eq!(
         fp::reduce_angle_to_principal(fp::FIXED_PI_OVER_2),
         fp::FIXED_PI_OVER_2
     );
-    // Angle > 2π → reduced.
+    // Angle > 2pi -> reduced.
     let big = fp::FIXED_TWO_PI + fp::FIXED_PI_OVER_2;
     assert_eq!(fp::reduce_angle_to_principal(big), fp::FIXED_PI_OVER_2);
     // Negative angle.
@@ -736,9 +736,9 @@ fn test_cos_negative_angle() {
 
 #[test]
 fn test_tan_poles() {
-    // tan(π/2) = None (pole)
+    // tan(pi/2) = None (pole)
     assert!(fp::tan(fp::FIXED_PI_OVER_2).is_none());
-    // tan(-π/2) = None (pole)
+    // tan(-pi/2) = None (pole)
     assert!(fp::tan(-fp::FIXED_PI_OVER_2).is_none());
     // Close to pole (but cos still above safety threshold)
     let near_pole = fp::FIXED_PI_OVER_2 - 500_000;
@@ -752,14 +752,14 @@ fn test_tan_poles() {
     );
 }
 
-// ─── 10. Inverse Trig ─────────────────────────────────────────────────────────
+// --- 10. Inverse Trig ---------------------------------------------------------
 
 #[test]
 fn test_asin_standard() {
     assert_eq!(fp::asin(0), Some(0));
     assert_eq!(fp::asin(SCALE), Some(fp::FIXED_PI_OVER_2));
     assert_eq!(fp::asin(-SCALE), Some(-fp::FIXED_PI_OVER_2));
-    // asin(0.5) = π/6  (22-iter CORDIC atan, ~900 ULP)
+    // asin(0.5) = pi/6  (22-iter CORDIC atan, ~900 ULP)
     assert_approx_eq(
         fp::asin(fp::FIXED_HALF).unwrap(),
         q((30.0_f64).to_radians()),
@@ -789,13 +789,13 @@ fn test_acos_domain() {
 #[test]
 fn test_atan_standard() {
     assert_approx_eq(fp::atan(0), 0, 400);
-    // atan(1) = π/4  (22-iter CORDIC, ~900 ULP)
+    // atan(1) = pi/4  (22-iter CORDIC, ~900 ULP)
     assert_approx_eq(fp::atan(SCALE), fp::FIXED_PI / 4, 1000);
-    // atan(-1) = -π/4  (22-iter CORDIC, ~900 ULP)
+    // atan(-1) = -pi/4  (22-iter CORDIC, ~900 ULP)
     assert_approx_eq(fp::atan(-SCALE), -(fp::FIXED_PI / 4), 1000);
-    // atan(∞) = π/2
+    // atan(inf) = pi/2
     assert_approx_eq(fp::atan(i64::MAX / 2), fp::FIXED_PI_OVER_2, 400);
-    // atan(-∞) = -π/2
+    // atan(-inf) = -pi/2
     assert_approx_eq(fp::atan(i64::MIN / 2), -fp::FIXED_PI_OVER_2, 400);
 }
 
@@ -804,38 +804,38 @@ fn test_atan2_edge_cases() {
     // atan2(0, positive) = 0
     assert_eq!(fp::atan2(0, fp::FIXED_ONE), 0);
     assert_eq!(fp::atan2(0, fp::from_integer(10)), 0);
-    // atan2(0, negative) = π
+    // atan2(0, negative) = pi
     assert_eq!(fp::atan2(0, -fp::FIXED_ONE), fp::FIXED_PI);
-    // atan2(positive, 0) = π/2
+    // atan2(positive, 0) = pi/2
     assert_eq!(fp::atan2(fp::FIXED_ONE, 0), fp::FIXED_PI_OVER_2);
-    // atan2(negative, 0) = -π/2
+    // atan2(negative, 0) = -pi/2
     assert_eq!(fp::atan2(-fp::FIXED_ONE, 0), -fp::FIXED_PI_OVER_2);
     // atan2(0, 0) = 0
     assert_eq!(fp::atan2(0, 0), 0);
-    // atan2(positive, positive) in Q1 → positive < π/2
+    // atan2(positive, positive) in Q1 -> positive < pi/2
     let r = fp::atan2(fp::FIXED_ONE, fp::FIXED_ONE);
     assert!(r > 0 && r < fp::FIXED_PI_OVER_2);
-    // atan2(negative, negative) in Q3 → -π < result < -π/2
+    // atan2(negative, negative) in Q3 -> -pi < result < -pi/2
     let r = fp::atan2(-fp::FIXED_ONE, -fp::FIXED_ONE);
     assert!(r < -fp::FIXED_PI_OVER_2 && r > -fp::FIXED_PI);
 }
 
 #[test]
 fn test_asin_acos_exact_boundaries() {
-    // asin(±1) exact
+    // asin(+/-1) exact
     assert_eq!(fp::asin(fp::FIXED_ONE), Some(fp::FIXED_PI_OVER_2));
     assert_eq!(fp::asin(-fp::FIXED_ONE), Some(-fp::FIXED_PI_OVER_2));
-    // acos(±1) exact
+    // acos(+/-1) exact
     assert_eq!(fp::acos(fp::FIXED_ONE), Some(0));
     assert_approx_eq(fp::acos(-fp::FIXED_ONE).unwrap(), fp::FIXED_PI, 5);
 }
 
-// ─── 11. Hyperbolic ──────────────────────────────────────────────────────────
+// --- 11. Hyperbolic ----------------------------------------------------------
 
 #[test]
 fn test_sinh() {
     assert_eq!(fp::sinh(0), Some(0));
-    // sinh(1) = (e - 1/e) / 2 ≈ 1.17520119
+    // sinh(1) = (e - 1/e) / 2 ~= 1.17520119
     let result = fp::sinh(SCALE).unwrap();
     assert_approx_eq(result, q(1.175_201_193_643_801_4), 10);
     // sinh(-x) = -sinh(x)
@@ -846,7 +846,7 @@ fn test_sinh() {
 #[test]
 fn test_cosh() {
     assert_eq!(fp::cosh(0), Some(SCALE));
-    // cosh(1) = (e + 1/e) / 2 ≈ 1.54308063
+    // cosh(1) = (e + 1/e) / 2 ~= 1.54308063
     let result = fp::cosh(SCALE).unwrap();
     assert_approx_eq(result, q(1.543_080_634_815_243_7), 10);
     // cosh(-x) = cosh(x)
@@ -856,27 +856,27 @@ fn test_cosh() {
 #[test]
 fn test_tanh_basic() {
     assert_eq!(fp::tanh(0), Some(0));
-    // tanh(1) ≈ 0.76159416
+    // tanh(1) ~= 0.76159416
     let result = fp::tanh(SCALE).unwrap();
     assert_approx_eq(result, q(0.761_594_155_955_764_9), 10);
 }
 
 #[test]
 fn test_tanh_saturation() {
-    // tanh(≥12) = 1
+    // tanh(>=12) = 1
     assert_eq!(fp::tanh(fp::from_integer(12)), Some(SCALE));
     assert_eq!(fp::tanh(fp::from_integer(100)), Some(SCALE));
-    // tanh(≤-12) = -1
+    // tanh(<=-12) = -1
     assert_eq!(fp::tanh(fp::from_integer(-12)), Some(-SCALE));
     assert_eq!(fp::tanh(fp::from_integer(-100)), Some(-SCALE));
 }
 
-// ─── 12. Inverse Hyperbolic ──────────────────────────────────────────────────
+// --- 12. Inverse Hyperbolic --------------------------------------------------
 
 #[test]
 fn test_asinh() {
     assert_eq!(fp::asinh(0), Some(0));
-    // asinh(1) = ln(1 + √2) ≈ 0.88137359
+    // asinh(1) = ln(1 + sqrt2) ~= 0.88137359
     let result = fp::asinh(SCALE).unwrap();
     assert_approx_eq(result, q(0.881_373_587_019_543_0), 10);
 }
@@ -884,7 +884,7 @@ fn test_asinh() {
 #[test]
 fn test_acosh() {
     assert_eq!(fp::acosh(SCALE), Some(0));
-    // acosh(2) = ln(2 + √3) ≈ 1.31695790
+    // acosh(2) = ln(2 + sqrt3) ~= 1.31695790
     let result = fp::acosh(fp::from_integer(2)).unwrap();
     assert_approx_eq(result, q(1.316_957_896_924_816_6), 10);
     // acosh(x < 1) = domain error
@@ -895,16 +895,16 @@ fn test_acosh() {
 #[test]
 fn test_atanh() {
     assert_eq!(fp::atanh(0), Some(0));
-    // atanh(0.5) = 0.5 * ln((1+0.5)/(1-0.5)) = 0.5 * ln(3) ≈ 0.54930614
+    // atanh(0.5) = 0.5 * ln((1+0.5)/(1-0.5)) = 0.5 * ln(3) ~= 0.54930614
     let result = fp::atanh(fp::FIXED_HALF).unwrap();
     assert_approx_eq(result, q(0.549_306_144_334_054_9), 10);
-    // |x| ≥ 1 = domain error
+    // |x| >= 1 = domain error
     assert_eq!(fp::atanh(SCALE), None);
     assert_eq!(fp::atanh(-SCALE), None);
     assert_eq!(fp::atanh(SCALE + 1), None);
 }
 
-// ─── 13. Exponential & Logarithm ─────────────────────────────────────────────
+// --- 13. Exponential & Logarithm ---------------------------------------------
 
 #[test]
 fn test_natural_exp_basic() {
@@ -918,14 +918,14 @@ fn test_natural_exp_basic() {
 
 #[test]
 fn test_natural_exp_overflow() {
-    // exp(>~21.5) → None
+    // exp(>~21.5) -> None
     let big = fp::from_integer(22);
     assert_eq!(fp::natural_exp(big), None);
 }
 
 #[test]
 fn test_natural_exp_underflow() {
-    // exp(< -21.5) → Some(0) per bug 8 fix
+    // exp(< -21.5) -> Some(0) per bug 8 fix
     let very_neg = fp::from_integer(-30);
     assert_eq!(fp::natural_exp(very_neg), Some(0));
     let very_neg = fp::from_integer(-100);
@@ -1003,13 +1003,13 @@ fn test_log2_domain() {
 
 #[test]
 fn test_log_extra_values() {
-    // log10(e) ≈ 0.43429448
+    // log10(e) ~= 0.43429448
     assert_approx_eq(
         fp::log10(fp::FIXED_E).unwrap(),
         q(0.434_294_481_903_251_8),
         10,
     );
-    // log10(π) ≈ 0.49714987
+    // log10(pi) ~= 0.49714987
     assert_approx_eq(
         fp::log10(fp::FIXED_PI).unwrap(),
         q(0.497_149_872_694_133_85),
@@ -1018,13 +1018,13 @@ fn test_log_extra_values() {
     // log10(very small) = negative
     let r = fp::log10(q(0.0001)).unwrap();
     assert!(r < 0);
-    // log2(e) ≈ 1.44269504
+    // log2(e) ~= 1.44269504
     assert_approx_eq(
         fp::log2(fp::FIXED_E).unwrap(),
         q(1.442_695_040_888_963_4),
         10,
     );
-    // log2(π) ≈ 1.65149613
+    // log2(pi) ~= 1.65149613
     assert_approx_eq(
         fp::log2(fp::FIXED_PI).unwrap(),
         q(1.651_496_129_472_318),
@@ -1037,45 +1037,45 @@ fn test_log_extra_values() {
 
 #[test]
 fn test_natural_log_extra() {
-    // ln(π) ≈ 1.14472989
+    // ln(pi) ~= 1.14472989
     assert_approx_eq(
         fp::natural_log(fp::FIXED_PI).unwrap(),
         q(1.144_729_885_849_400_2),
         20,
     );
-    // ln(0.01) ≈ -4.60517019
+    // ln(0.01) ~= -4.60517019
     let r = fp::natural_log(q(0.01)).unwrap();
     assert_approx_eq(r, q(-4.605_170_185_988_091), 500);
-    // ln(1_000_000) ≈ 13.81551056
+    // ln(1_000_000) ~= 13.81551056
     let r = fp::natural_log(fp::from_integer(1_000_000)).unwrap();
     assert_approx_eq(r, q(13.815_510_557_964_274), 200);
 }
 
-// ─── 14. Angle Conversion ────────────────────────────────────────────────────
+// --- 14. Angle Conversion ----------------------------------------------------
 
 #[test]
 fn test_degrees_to_radians() {
-    // 0° = 0 rad
+    // 0 deg = 0 rad
     assert_eq!(fp::degrees_to_radians(0), Some(0));
-    // 180° = π rad
+    // 180 deg = pi rad
     assert_approx_eq(
         fp::degrees_to_radians(fp::from_integer(180)).unwrap(),
         fp::FIXED_PI,
         200,
     );
-    // 90° = π/2
+    // 90 deg = pi/2
     assert_approx_eq(
         fp::degrees_to_radians(fp::from_integer(90)).unwrap(),
         fp::FIXED_PI_OVER_2,
         200,
     );
-    // 360° = 2π
+    // 360 deg = 2pi
     assert_approx_eq(
         fp::degrees_to_radians(fp::from_integer(360)).unwrap(),
         fp::FIXED_TWO_PI,
         200,
     );
-    // -180° = -π
+    // -180 deg = -pi
     assert_approx_eq(
         fp::degrees_to_radians(fp::from_integer(-180)).unwrap(),
         -fp::FIXED_PI,
@@ -1085,15 +1085,15 @@ fn test_degrees_to_radians() {
 
 #[test]
 fn test_radians_to_degrees() {
-    // 0 rad = 0°
+    // 0 rad = 0 deg
     assert_eq!(fp::radians_to_degrees(0), Some(0));
-    // π rad = 180°
+    // pi rad = 180 deg
     assert_approx_eq(
         fp::radians_to_degrees(fp::FIXED_PI).unwrap(),
         fp::from_integer(180),
         100,
     );
-    // π/2 = 90°
+    // pi/2 = 90 deg
     assert_approx_eq(
         fp::radians_to_degrees(fp::FIXED_PI_OVER_2).unwrap(),
         fp::from_integer(90),
@@ -1110,7 +1110,7 @@ fn test_angle_conversion_roundtrip() {
     assert_approx_eq(x, back, 1500);
 }
 
-// ─── 15. Formatting ──────────────────────────────────────────────────────────
+// --- 15. Formatting ----------------------------------------------------------
 
 #[test]
 fn test_format_zero() {
@@ -1138,7 +1138,7 @@ fn test_format_fractional() {
 
 #[test]
 fn test_format_trailing_zeros_stripped() {
-    // 1.500000 → "1.5"
+    // 1.500000 -> "1.5"
     let one_and_half = SCALE + fp::FIXED_HALF;
     assert_eq!(fmt(one_and_half), "1.5");
 }
@@ -1159,7 +1159,7 @@ fn test_format_small_fraction() {
     assert_eq!(f, "0.000001");
 }
 
-// ─── 16. VariableStore ───────────────────────────────────────────────────────
+// --- 16. VariableStore -------------------------------------------------------
 
 #[test]
 fn test_variable_store_new() {
@@ -1214,7 +1214,7 @@ fn test_variable_store_invalid_register() {
 
 #[test]
 fn test_variable_store_copy() {
-    // VariableStore derives Copy — used by loop aggregate scoping.
+    // VariableStore derives Copy - used by loop aggregate scoping.
     let mut vs1 = VariableStore::new();
     vs1.write_register(b'B', Complex::from_real(fp::from_integer(99)));
     let vs2 = vs1;
@@ -1230,7 +1230,7 @@ fn test_variable_store_copy() {
     );
 }
 
-// ─── 17. Distributions ───────────────────────────────────────────────────────
+// --- 17. Distributions -------------------------------------------------------
 
 #[test]
 fn test_ln_factorial_small() {
@@ -1264,41 +1264,41 @@ fn test_ln_factorial_stirling() {
     // k > 20 uses Stirling's series. Error < 1 ULP.
     let k = fp::from_integer(21);
     let result = distributions::ln_factorial(k).unwrap();
-    // ln(21!) ≈ 45.3801388985
+    // ln(21!) ~= 45.3801388985
     assert_approx_eq(result, q(45.380_138_898_476_5), 500);
 
     let k = fp::from_integer(50);
     let result = distributions::ln_factorial(k).unwrap();
-    // ln(50!) ≈ 148.477766
+    // ln(50!) ~= 148.477766
     assert_approx_eq(result, q(148.477_766_951_773_3), 500);
 }
 
 #[test]
 fn test_ln_factorial_domain() {
-    // Negative → None
+    // Negative -> None
     assert_eq!(distributions::ln_factorial(-SCALE), None);
-    // Non-integer → None
+    // Non-integer -> None
     assert_eq!(distributions::ln_factorial(fp::FIXED_HALF), None);
 }
 
 #[test]
 fn test_ln_gamma_integer() {
-    // Γ(5) = 4! = 24 → ln(24) ≈ 3.1780538303
+    // Gamma(5) = 4! = 24 -> ln(24) ~= 3.1780538303
     let result = distributions::ln_gamma(fp::from_integer(5)).unwrap();
     assert_approx_eq(result, q(3.178_053_830_347_945_8), 5);
-    // Γ(1) = 0! = 1 → ln(1) = 0
+    // Gamma(1) = 0! = 1 -> ln(1) = 0
     assert_eq!(distributions::ln_gamma(SCALE), Some(0));
-    // Γ(2) = 1! = 1 → ln(1) = 0
+    // Gamma(2) = 1! = 1 -> ln(1) = 0
     assert_eq!(distributions::ln_gamma(fp::from_integer(2)), Some(0));
 }
 
 #[test]
 fn test_ln_gamma_half_integer() {
-    // Γ(1/2) = √π → ln(√π) = 0.5 * ln(π) ≈ 0.57236494
+    // Gamma(1/2) = sqrtpi -> ln(sqrtpi) = 0.5 * ln(pi) ~= 0.57236494
     let half = fp::FIXED_HALF;
     let result = distributions::ln_gamma(half).unwrap();
     assert_approx_eq(result, q(0.572_364_942_924_700_1), 10);
-    // Γ(3/2) = 0.5 * √π → ln(Γ(3/2)) ≈ -0.12078224
+    // Gamma(3/2) = 0.5 * sqrtpi -> ln(Gamma(3/2)) ~= -0.12078224
     let three_halves = half + SCALE;
     let result = distributions::ln_gamma(three_halves).unwrap();
     assert_approx_eq(result, q(-0.120_782_237_635_245_2), 10);
@@ -1306,10 +1306,10 @@ fn test_ln_gamma_half_integer() {
 
 #[test]
 fn test_ln_gamma_general() {
-    // Γ(0.7) — non-integer, non-half-integer.
+    // Gamma(0.7) - non-integer, non-half-integer.
     let x = q(0.7);
     let result = distributions::ln_gamma(x).unwrap();
-    // ln(Γ(0.7)) ≈ 0.260867 (Stirling series with recurrence)
+    // ln(Gamma(0.7)) ~= 0.260867 (Stirling series with recurrence)
     assert_approx_eq(result, q(0.260_867_246_531_666_5), 20);
 }
 
@@ -1362,7 +1362,7 @@ fn test_ln_gamma_edge_cases() {
 
 #[test]
 fn test_binomial_probability() {
-    // Binomial(10, 5, 0.5): P(X=5) = C(10,5) * 0.5^10 = 252/1024 ≈ 0.24609375
+    // Binomial(10, 5, 0.5): P(X=5) = C(10,5) * 0.5^10 = 252/1024 ~= 0.24609375
     let n = fp::from_integer(10);
     let k = fp::from_integer(5);
     let p = q(0.5);
@@ -1385,35 +1385,35 @@ fn test_binomial_probability_domain() {
     let n = fp::from_integer(10);
     let k = fp::from_integer(5);
     let p = q(0.5);
-    // k > n → None
+    // k > n -> None
     assert_eq!(
         distributions::binomial_probability(fp::from_integer(5), fp::from_integer(10), p),
         None
     );
-    // p ≤ 0 → None
+    // p <= 0 -> None
     assert_eq!(distributions::binomial_probability(n, k, 0), None);
-    // p ≥ 1 → None
+    // p >= 1 -> None
     assert_eq!(distributions::binomial_probability(n, k, SCALE), None);
-    // n < 0 → None
+    // n < 0 -> None
     assert_eq!(
         distributions::binomial_probability(fp::from_integer(-1), k, p),
         None
     );
-    // k < 0 → None
+    // k < 0 -> None
     assert_eq!(
         distributions::binomial_probability(n, fp::from_integer(-1), p),
         None
     );
-    // non-integer n → None
+    // non-integer n -> None
     assert_eq!(distributions::binomial_probability(q(5.5), k, p), None);
-    // non-integer k → None
+    // non-integer k -> None
     assert_eq!(distributions::binomial_probability(n, q(2.5), p), None);
 }
 
 #[ignore = "underflow: probability too small for Q31.32 resolution"]
 #[test]
 fn test_binomial_vanishingly_small() {
-    // P(X=10) for Binomial(100, 0.001) — probability ~1.6e-17 underflows Q31.32.
+    // P(X=10) for Binomial(100, 0.001) - probability ~1.6e-17 underflows Q31.32.
     let n = fp::from_integer(100);
     let k = fp::from_integer(10);
     let p = q(0.001);
@@ -1425,25 +1425,25 @@ fn test_binomial_vanishingly_small() {
 
 #[test]
 fn test_poisson_probability() {
-    // Poisson(λ=2, k=3): P(X=3) = e^(-2) * 2^3 / 3! ≈ 0.18044704
+    // Poisson(lambda=2, k=3): P(X=3) = e^(-2) * 2^3 / 3! ~= 0.18044704
     let lambda = fp::from_integer(2);
     let k = fp::from_integer(3);
     let result = distributions::poisson_probability(lambda, k).unwrap();
     assert_approx_eq(result, q(0.180_447_044_315_483_6), 20);
 
-    // Poisson(λ=5, k=0): P(X=0) = e^(-5) ≈ 0.00673795
+    // Poisson(lambda=5, k=0): P(X=0) = e^(-5) ~= 0.00673795
     let result = distributions::poisson_probability(fp::from_integer(5), 0).unwrap();
     assert_approx_eq(result, q(0.006_737_946_999_085_467), 20);
 }
 
 #[test]
 fn test_poisson_probability_domain() {
-    // λ ≤ 0 → None
+    // lambda <= 0 -> None
     assert_eq!(distributions::poisson_probability(0, SCALE), None);
     assert_eq!(distributions::poisson_probability(-SCALE, SCALE), None);
-    // k < 0 → None
+    // k < 0 -> None
     assert_eq!(distributions::poisson_probability(SCALE, -SCALE), None);
-    // non-integer k → None
+    // non-integer k -> None
     assert_eq!(
         distributions::poisson_probability(SCALE, fp::FIXED_HALF),
         None
@@ -1453,7 +1453,7 @@ fn test_poisson_probability_domain() {
 #[ignore = "underflow: probability too small for Q31.32 resolution"]
 #[test]
 fn test_poisson_vanishingly_small() {
-    // Poisson(λ=100, k=200) — probability ~3.8e-19 underflows Q31.32.
+    // Poisson(lambda=100, k=200) - probability ~3.8e-19 underflows Q31.32.
     let result = distributions::poisson_probability(fp::from_integer(100), fp::from_integer(200));
     let val = result.unwrap_or(0);
     assert!(val >= 0);
@@ -1461,29 +1461,29 @@ fn test_poisson_vanishingly_small() {
 
 #[test]
 fn test_chi_squared_cdf() {
-    // χ²(0, k=1): P = 0
+    // chi^2(0, k=1): P = 0
     assert_eq!(distributions::chi_squared_cdf(0, SCALE), Some(0));
-    // χ²(1, k=1): P ≈ 0.68268949
+    // chi^2(1, k=1): P ~= 0.68268949
     let result = distributions::chi_squared_cdf(SCALE, SCALE).unwrap();
     assert_approx_eq(result, q(0.682_689_492_137_086_1), 50);
 
-    // χ²(4, k=4): P ≈ 0.59399415
+    // chi^2(4, k=4): P ~= 0.59399415
     let result = distributions::chi_squared_cdf(fp::from_integer(4), fp::from_integer(4)).unwrap();
     assert_approx_eq(result, q(0.593_994_150_290_161_5), 50);
 }
 
 #[test]
 fn test_chi_squared_cdf_domain() {
-    // x < 0 → None
+    // x < 0 -> None
     assert_eq!(distributions::chi_squared_cdf(-SCALE, SCALE), None);
-    // k ≤ 0 → None
+    // k <= 0 -> None
     assert_eq!(distributions::chi_squared_cdf(SCALE, 0), None);
     assert_eq!(distributions::chi_squared_cdf(SCALE, -SCALE), None);
-    // non-integer k → None
+    // non-integer k -> None
     assert_eq!(distributions::chi_squared_cdf(SCALE, fp::FIXED_HALF), None);
 }
 
-// ─── 18. Full Pipeline: Lex → Parse → Eval ───────────────────────────────────
+// --- 18. Full Pipeline: Lex -> Parse -> Eval -----------------------------------
 // These tests exercise the entire pipeline end-to-end.
 
 /// Helper: evaluate an expression string using the full pipeline.
@@ -1621,11 +1621,11 @@ fn test_eval_log() {
 #[test]
 fn test_eval_trig() {
     let mut vars = VariableStore::new();
-    // sin(π/2) = 1  (CORDIC, ~3 ULP)
+    // sin(pi/2) = 1  (CORDIC, ~3 ULP)
     assert_approx_eq(eval_expr("sin(pi/2)", &mut vars).unwrap(), SCALE, 10);
     // cos(0) = 1
     assert_eq!(eval_expr("cos(0)", &mut vars), Some(SCALE));
-    // sin(π/6) = 0.5
+    // sin(pi/6) = 0.5
     assert_approx_eq(
         eval_expr("sin(pi/6)", &mut vars).unwrap(),
         fp::FIXED_HALF,
@@ -1676,7 +1676,7 @@ fn test_eval_sto_and_registers() {
 #[test]
 fn test_eval_ans() {
     let mut vars = VariableStore::new();
-    // Before any evaluation, Ans is undefined → None.
+    // Before any evaluation, Ans is undefined -> None.
     // (We can't directly test this since the first eval successfully
     //  stores ans, but we can verify the runtime writes ans.)
     assert_eq!(eval_expr("2+2", &mut vars), Some(fp::from_integer(4)));
@@ -1685,7 +1685,7 @@ fn test_eval_ans() {
 #[test]
 fn test_eval_implicit_mult_with_func() {
     let mut vars = VariableStore::new();
-    // 2sin(π/2) = 2 * 1 = 2  (CORDIC, ~6 ULP)
+    // 2sin(pi/2) = 2 * 1 = 2  (CORDIC, ~6 ULP)
     assert_approx_eq(
         eval_expr("2sin(pi/2)", &mut vars).unwrap(),
         fp::from_integer(2),
@@ -1711,7 +1711,7 @@ fn test_eval_nthroot() {
 #[test]
 fn test_eval_distributions() {
     let mut vars = VariableStore::new();
-    // lngamma(5) = ln(24) ≈ 3.17805
+    // lngamma(5) = ln(24) ~= 3.17805
     let result = eval_expr("lngamma(5)", &mut vars).unwrap();
     assert_approx_eq(result, q(3.178_053_830_347_945_8), 5);
     // binomp(10, 5, 0.5)
@@ -1734,11 +1734,11 @@ fn test_eval_invalid_expression() {
 #[test]
 fn test_eval_summation() {
     let mut vars = VariableStore::new();
-    // Σ_{k=1}^{5} k = 1+2+3+4+5 = 15
+    // sum_{k=1}^{5} k = 1+2+3+4+5 = 15
     let result = eval_expr("sum(k,k,1,5)", &mut vars).unwrap();
     assert_eq!(result, fp::from_integer(15));
-    // Σ_{k=0}^{10} k^2 = 0+1+4+9+...+100 = 385 (but harder to verify directly)
-    // Σ_{k=1}^{1} k = 1
+    // sum_{k=0}^{10} k^2 = 0+1+4+9+...+100 = 385 (but harder to verify directly)
+    // sum_{k=1}^{1} k = 1
     let result = eval_expr("sum(k,k,1,1)", &mut vars).unwrap();
     assert_eq!(result, fp::from_integer(1));
 }
@@ -1747,7 +1747,7 @@ fn test_eval_summation() {
 #[test]
 fn test_eval_summation_empty() {
     let mut vars = VariableStore::new();
-    // end < start → 0
+    // end < start -> 0
     let result = eval_expr("sum(k,k,5,1)", &mut vars).unwrap();
     assert_eq!(result, 0);
 }
@@ -1755,7 +1755,7 @@ fn test_eval_summation_empty() {
 #[test]
 fn test_eval_summation_too_large() {
     let mut vars = VariableStore::new();
-    // Range > 10_000 → None (guard against runaway sums)
+    // Range > 10_000 -> None (guard against runaway sums)
     let result = eval_expr("sum(k,k,0,10001)", &mut vars);
     assert_eq!(result, None);
 }
@@ -1763,10 +1763,10 @@ fn test_eval_summation_too_large() {
 #[test]
 fn test_eval_integration() {
     let mut vars = VariableStore::new();
-    // ∫_0^π sin(X) dX = 2  (snapped to integer by integration snap)
+    // integral_0^pi sin(X) dX = 2  (snapped to integer by integration snap)
     let result = eval_expr("int(sin(X),X,0,pi)", &mut vars).unwrap();
     assert_eq!(result, fp::from_integer(2));
-    // ∫_0^1 1 dX = 1
+    // integral_0^1 1 dX = 1
     let result = eval_expr("int(1,X,0,1)", &mut vars).unwrap();
     assert_approx_eq(result, SCALE, 5);
 }
@@ -1774,15 +1774,15 @@ fn test_eval_integration() {
 #[test]
 fn test_eval_integration_non_trivial() {
     let mut vars = VariableStore::new();
-    // ∫_0^2 X dX = 2
+    // integral_0^2 X dX = 2
     let result = eval_expr("int(X,X,0,2)", &mut vars).unwrap();
     assert_eq!(result, fp::from_integer(2));
-    // ∫_0^1 X^2 dX = 1/3 ≈ 0.3333
+    // integral_0^1 X^2 dX = 1/3 ~= 0.3333
     let result = eval_expr("int(X^2,X,0,1)", &mut vars).unwrap();
     assert_approx_eq(result, q(1.0 / 3.0), 500);
 }
 
-// ─── 19. Format Result (engine public API) ───────────────────────────────────
+// --- 19. Format Result (engine public API) -----------------------------------
 
 #[test]
 fn test_engine_format_result() {
@@ -1795,16 +1795,16 @@ fn test_engine_format_result() {
     assert_eq!(core::str::from_utf8(r).unwrap(), "3.141593");
 }
 
-// ─── 20. Edge Cases & Stress ─────────────────────────────────────────────────
+// --- 20. Edge Cases & Stress -------------------------------------------------
 
 #[test]
 fn test_format_large_numbers() {
-    // i64::MAX in Q31.32 ≈ 2_147_483_647.999999999
+    // i64::MAX in Q31.32 ~= 2_147_483_647.999999999
     let big = i64::MAX;
     let f = fmt(big);
     assert!(f.starts_with("2147483648"));
 
-    // i64::MIN in Q31.32 ≈ -2_147_483_648.0
+    // i64::MIN in Q31.32 ~= -2_147_483_648.0
     let tiny = i64::MIN;
     let f = fmt(tiny);
     assert!(f.starts_with("-2147483648") || f.starts_with("-2147483647"));
@@ -1812,7 +1812,7 @@ fn test_format_large_numbers() {
 
 #[test]
 fn test_exp_ln_roundtrip() {
-    // For a range of positive values, exp(ln(x)) ≈ x.
+    // For a range of positive values, exp(ln(x)) ~= x.
     for x_q in [q(0.1), q(0.5), q(1.0), q(2.0), q(10.0), q(100.0)] {
         let ln = fp::natural_log(x_q).unwrap();
         let exp = fp::natural_exp(ln).unwrap();
@@ -1822,7 +1822,7 @@ fn test_exp_ln_roundtrip() {
 
 #[test]
 fn test_ln_exp_roundtrip() {
-    // For a range of values, ln(exp(x)) ≈ x (for x where exp(x) is representable).
+    // For a range of values, ln(exp(x)) ~= x (for x where exp(x) is representable).
     for x_q in [q(-10.0), q(-5.0), q(-1.0), q(0.0), q(1.0), q(5.0), q(10.0)] {
         if x_q < 0 && fp::natural_exp(x_q) == Some(0) {
             continue; // Underflow to 0, skip ln(0)
@@ -1839,7 +1839,7 @@ fn test_ln_exp_roundtrip() {
 #[ignore = "host overflow: divide returns None on host (overflow protection)"]
 #[test]
 fn test_divide_by_very_small() {
-    // 1 / 1e-10 ≈ 1e10 (in Q31.32, this is a large number)
+    // 1 / 1e-10 ~= 1e10 (in Q31.32, this is a large number)
     let tiny = q(0.0000000001);
     let result = fp::divide(SCALE, tiny).unwrap();
     assert!(result > 0);
@@ -1850,7 +1850,7 @@ fn test_divide_by_very_small() {
 
 #[test]
 fn test_multiply_overflow_boundary() {
-    // At the boundary of overflow — multiply by small fractions should work.
+    // At the boundary of overflow - multiply by small fractions should work.
     let big = fp::from_integer(1_000_000_000);
     let small = q(1e-9);
     assert!(fp::multiply(big, small).is_some());
@@ -1974,15 +1974,15 @@ fn test_evaluator_overflow_saturation() {
     // We can trigger this with large numbers.
     let _huge_a = fp::from_integer(1_000_000_000);
     let _huge_b = fp::from_integer(1_000_000_000);
-    // 1e9 + 1e9 = 2e9 which fits in Q31.32 (max int part ≈ 2.147e9).
+    // 1e9 + 1e9 = 2e9 which fits in Q31.32 (max int part ~= 2.147e9).
     // Let's use numbers that actually overflow.
     // In Q31.32, the max integer is about 2.147e9. So 2e9 + 2e9 would overflow.
     // But we can't directly express 2e9 as a decimal literal in Q31.32
-    // because 2e9 * SCALE ≈ 8.59e18 which is near i64::MAX.
+    // because 2e9 * SCALE ~= 8.59e18 which is near i64::MAX.
     // Let's just test that saturating works.
     let _a = fp::from_integer(1_500_000_000);
     let _b = fp::from_integer(1_500_000_000);
-    // 1.5e9 + 1.5e9 = 3e9 — overflows Q31.32 integer range.
+    // 1.5e9 + 1.5e9 = 3e9 - overflows Q31.32 integer range.
     // With saturating_add, this should clamp to i64::MAX.
     let expr = format!("{}+{}", 1500000000, 1500000000);
     let result = eval_expr(&expr, &mut vs);
@@ -1997,7 +1997,7 @@ fn test_evaluator_overflow_saturation() {
     // reject this as overflow during number parsing!
     // Let's use smaller numbers.
     // 1000000000 + 1000000000 = 2000000000 which is within Q31.32's range
-    // (max integer part ≈ 2.147e9).
+    // (max integer part ~= 2.147e9).
     let result = eval_expr("1000000000+1000000000", &mut vs);
     assert_eq!(result, Some(fp::from_integer(2_000_000_000)));
 }
@@ -2005,11 +2005,11 @@ fn test_evaluator_overflow_saturation() {
 #[test]
 fn test_evaluator_invalid_function_args() {
     let mut vs = VariableStore::new();
-    // asin(2) > 1 → domain error
+    // asin(2) > 1 -> domain error
     assert_eq!(eval_expr("asin(2)", &mut vs), None);
-    // acos(-2) < -1 → domain error
+    // acos(-2) < -1 -> domain error
     assert_eq!(eval_expr("acos(-2)", &mut vs), None);
-    // sqrt(-4) → domain error
+    // sqrt(-4) -> domain error
     assert_eq!(eval_expr("sqrt(-4)", &mut vs), None);
 }
 
@@ -2038,11 +2038,11 @@ fn test_evaluator_decimal_literals() {
     assert_approx_eq(result, q(6.28), 1);
 }
 
-// ─── 21. Sine/Cosine consistency ─────────────────────────────────────────────
+// --- 21. Sine/Cosine consistency ---------------------------------------------
 
 #[test]
 fn test_sin_cos_identity() {
-    // sin²(x) + cos²(x) ≈ 1 for various x
+    // sin^2(x) + cos^2(x) ~= 1 for various x
     let p4 = fp::FIXED_PI / 4;
     for x in [
         0,
@@ -2060,7 +2060,7 @@ fn test_sin_cos_identity() {
     }
 }
 
-// ─── 22. Big expression stress test ──────────────────────────────────────────
+// --- 22. Big expression stress test ------------------------------------------
 
 #[test]
 fn test_large_expression() {
@@ -2074,7 +2074,7 @@ fn test_large_expression() {
     assert_approx_eq(result, fp::from_integer(76), 10);
 }
 
-// ─── 23. QEMU smoke-test parity ──────────────────────────────────────────────
+// --- 23. QEMU smoke-test parity ----------------------------------------------
 //
 // These tests replicate the exact inputs from test_inputs.txt so the
 // host-side suite covers everything the QEMU smoke tests do (and more).
@@ -2111,7 +2111,7 @@ fn test_scientific_arithmetic() {
         }
     }
 
-    // ── Basic literal parsing ──
+    // -- Basic literal parsing --
     let r = eval_sci("1E0", &mut vars).expect("1E0");
     assert_eq!(r.0, fp::SCALE, "1E0 mantissa");
     assert_eq!(r.1, 0, "1E0 exponent");
@@ -2136,7 +2136,7 @@ fn test_scientific_arithmetic() {
     assert_eq!(r.0, fp::SCALE, "1E+99 mantissa");
     assert_eq!(r.1, 99, "1E+99 exponent");
 
-    // ── Hard exponent limit: |99| ──
+    // -- Hard exponent limit: |99| --
     let mut lex = lexer::LexResult {
         tokens: [lexer::Token::Number(0); lexer::MAX_TOKEN_COUNT],
         token_count: 0,
@@ -2174,7 +2174,7 @@ fn test_scientific_arithmetic() {
         r2
     );
 
-    // ── Fractional mantissa ──
+    // -- Fractional mantissa --
     let r = eval_sci("1.5E0", &mut vars).expect("1.5E0");
     assert!(
         r.0 >= fp::SCALE + fp::SCALE / 2 - 1 && r.0 <= fp::SCALE + fp::SCALE / 2 + 1,
@@ -2191,7 +2191,7 @@ fn test_scientific_arithmetic() {
     );
     assert_eq!(r.1, 3, "2.5E3 exponent");
 
-    // ── Multiplication ──
+    // -- Multiplication --
     let r = eval_sci("1E10*2", &mut vars).expect("1E10*2");
     assert_eq!(r.0, 2 * fp::SCALE, "1E10*2 mantissa");
     assert_eq!(r.1, 10, "1E10*2 exponent");
@@ -2208,7 +2208,7 @@ fn test_scientific_arithmetic() {
     );
     assert_eq!(r.1, 11, "2E10*5 exponent"); // 2E10*5 = 10E10 = 1E11
 
-    // ── Division ──
+    // -- Division --
     let r = eval_sci("1E10/2", &mut vars).expect("1E10/2");
     assert!(
         r.0 >= 4 * fp::SCALE && r.0 <= 6 * fp::SCALE,
@@ -2229,7 +2229,7 @@ fn test_scientific_arithmetic() {
     );
     assert_eq!(r.1, 9, "1E10/4 exponent"); // 1E10/4 = 0.25E10 = 2.5E9
 
-    // ── Scalar * Scientific ── (left scalar, right sci)
+    // -- Scalar * Scientific -- (left scalar, right sci)
     let r = eval_sci("3*1E10", &mut vars).expect("3*1E10");
     assert_eq!(r.0, 3 * fp::SCALE, "3*1E10 mantissa");
     assert_eq!(r.1, 10, "3*1E10 exponent");
@@ -2238,7 +2238,7 @@ fn test_scientific_arithmetic() {
     assert_eq!(r.0, 5 * fp::SCALE, "2*2.5E4 mantissa (5)");
     assert_eq!(r.1, 4, "2*2.5E4 exponent"); // 2*2.5E4 = 5E4
 
-    // ── Addition/Subtraction ──
+    // -- Addition/Subtraction --
     let r = eval_sci("1E10+2E10", &mut vars).expect("1E10+2E10");
     assert_eq!(r.0, 3 * fp::SCALE, "1E10+2E10 mantissa");
     assert_eq!(r.1, 10, "1E10+2E10 exponent");
@@ -2256,7 +2256,7 @@ fn test_scientific_arithmetic() {
     assert_eq!(r.0, 3 * fp::SCALE, "5E10-2E10 mantissa");
     assert_eq!(r.1, 10, "5E10-2E10 exponent");
 
-    // 5E10-5E10 = 0 → scalar, not Scientific
+    // 5E10-5E10 = 0 -> scalar, not Scientific
     let mut lex = lexer::LexResult {
         tokens: [lexer::Token::Number(0); lexer::MAX_TOKEN_COUNT],
         token_count: 0,
@@ -2272,22 +2272,22 @@ fn test_scientific_arithmetic() {
         _ => panic!("5E10-5E10 should be Matrix(Scalar(0))"),
     }
 
-    // ── Power ──
+    // -- Power --
     let r = eval_sci("1E2^3", &mut vars).expect("1E2^3");
     assert_eq!(r.0, fp::SCALE, "1E2^3 mantissa");
     assert_eq!(r.1, 6, "1E2^3 exponent"); // (10^2)^3 = 10^6
 
-    // ── Negative exponent ──
+    // -- Negative exponent --
     let r = eval_sci("1E-3", &mut vars).expect("1E-3");
     assert_eq!(r.0, fp::SCALE, "1E-3 mantissa");
     assert_eq!(r.1, -3, "1E-3 exponent");
 
-    // ── Smallest value ──
+    // -- Smallest value --
     let r = eval_sci("1E-99", &mut vars).expect("1E-99");
     assert_eq!(r.0, fp::SCALE, "1E-99 mantissa");
     assert_eq!(r.1, -99, "1E-99 exponent");
 
-    // ── Zero mantissa ──
+    // -- Zero mantissa --
     let mut lex = lexer::LexResult {
         tokens: [lexer::Token::Number(0); lexer::MAX_TOKEN_COUNT],
         token_count: 0,
@@ -2303,7 +2303,7 @@ fn test_scientific_arithmetic() {
         _ => panic!("0E10 should be Matrix(Scalar(0))"),
     }
 
-    // ── ConstructSci overflow ──
+    // -- ConstructSci overflow --
     let mut lex = lexer::LexResult {
         tokens: [lexer::Token::Number(0); lexer::MAX_TOKEN_COUNT],
         token_count: 0,
@@ -2319,7 +2319,7 @@ fn test_scientific_arithmetic() {
         r1
     );
 
-    // ── Scientific overflow via arithmetic ──
+    // -- Scientific overflow via arithmetic --
     let mut bc = compiler::Bytecode::new();
     lexer::tokenise_expression(b"9E99*10", &mut lex, MathMode::Scientific).unwrap();
     compiler::compile(&lex, &mut bc).unwrap();
@@ -2331,7 +2331,7 @@ fn test_scientific_arithmetic() {
         r2
     );
 
-    // ── Rejection in non-Scientific modes ──
+    // -- Rejection in non-Scientific modes --
     // "1E10" in Standard mode: lexer cannot parse "E10" as a valid identifier
     let mut lex = lexer::LexResult {
         tokens: [lexer::Token::Number(0); lexer::MAX_TOKEN_COUNT],
@@ -2342,7 +2342,7 @@ fn test_scientific_arithmetic() {
         "Standard mode should reject '1E10' (E10 is not a valid identifier)"
     );
 
-    // ── Round-trip through format ──
+    // -- Round-trip through format --
     let m = Matrix::scientific(fp::SCALE, 10).unwrap();
     let mut buf = [0u8; 48];
     let s = engine::format_result(&m, MathMode::Scientific, &mut buf);
@@ -2437,7 +2437,7 @@ fn test_qemu_smoke_parity() {
     assert_eq!(eval_expr("a", &mut vars), None);
 }
 
-// ─── 24. Hyperbolic parity with QEMU tests ───────────────────────────────────
+// --- 24. Hyperbolic parity with QEMU tests -----------------------------------
 
 #[test]
 fn test_hyperbolic_values() {
@@ -2450,7 +2450,7 @@ fn test_hyperbolic_values() {
     assert_eq!(eval_expr("tanh(0)", &mut vars), Some(0));
 }
 
-// ─── 25. Inverse trig parity ─────────────────────────────────────────────────
+// --- 25. Inverse trig parity -------------------------------------------------
 
 #[test]
 fn test_inverse_trig_standard() {
@@ -2465,7 +2465,7 @@ fn test_inverse_trig_standard() {
     assert_eq!(eval_expr("asin(2)", &mut vars), None);
 }
 
-// ─── 26. Rounding functions ──────────────────────────────────────────────────
+// --- 26. Rounding functions --------------------------------------------------
 
 #[test]
 fn test_rounding_functions() {
@@ -2523,22 +2523,22 @@ fn test_floor_ceil_round_boundaries() {
     );
 }
 
-// ─── 27. Angle conversion functions ──────────────────────────────────────────
+// --- 27. Angle conversion functions ------------------------------------------
 
 #[test]
 fn test_angle_conversion() {
     let mut vars = VariableStore::new();
-    // deg(180) = π
+    // deg(180) = pi
     let r = eval_expr("deg(180)", &mut vars).unwrap();
     assert_approx_eq(r, fp::FIXED_PI, 100);
-    // rad(π) = 180
+    // rad(pi) = 180
     let r = eval_expr("rad(pi)", &mut vars).unwrap();
     assert_approx_eq(r, fp::from_integer(180), 100);
     // sin(deg(90)) = 1  (CORDIC, ~3 ULP)
     assert_approx_eq(eval_expr("sin(deg(90))", &mut vars).unwrap(), SCALE, 10);
 }
 
-// ─── 28. log2 test ───────────────────────────────────────────────────────────
+// --- 28. log2 test -----------------------------------------------------------
 
 #[test]
 fn test_log2_function() {
@@ -2548,7 +2548,7 @@ fn test_log2_function() {
     assert_eq!(eval_expr("log2(8)", &mut vars), Some(fp::from_integer(3)));
 }
 
-// ─── 29. Inverse hyperbolic parity ──────────────────────────────────────────
+// --- 29. Inverse hyperbolic parity ------------------------------------------
 
 #[test]
 fn test_inverse_hyperbolic() {
@@ -2561,20 +2561,20 @@ fn test_inverse_hyperbolic() {
     assert_eq!(eval_expr("atanh(2)", &mut vars), None);
 }
 
-// ─── 30. Integration parity ─────────────────────────────────────────────────
+// --- 30. Integration parity -------------------------------------------------
 
 #[test]
 fn test_integration_simple() {
     let mut vars = VariableStore::new();
-    // ∫_0^π sin(X) dX = 2
+    // integral_0^pi sin(X) dX = 2
     let result = eval_expr("int(sin(X),X,0,pi)", &mut vars).unwrap();
     assert_eq!(result, fp::from_integer(2));
-    // ∫_0^1 2X dX = 1
+    // integral_0^1 2X dX = 1
     let result = eval_expr("int(2*X,X,0,1)", &mut vars).unwrap();
     assert_approx_eq(result, SCALE, 10);
 }
 
-// ─── 31. Full expression exact match ─────────────────────────────────────────
+// --- 31. Full expression exact match -----------------------------------------
 
 #[test]
 fn test_complex_expression() {
@@ -2584,7 +2584,7 @@ fn test_complex_expression() {
     assert_approx_eq(result, fp::from_integer(15), 10);
 }
 
-// ─── 32. ∫_0^10 sinh(X) dX ≈ cosh(10) - 1 ≈ 11012.23292 ───────────────────
+// --- 32. integral_0^10 sinh(X) dX ~= cosh(10) - 1 ~= 11012.23292 -------------------
 
 #[test]
 fn test_integration_sinh() {
@@ -2594,17 +2594,17 @@ fn test_integration_sinh() {
     // The Simpson integration
     let result = eval_expr("int(sinh(X),X,0,10)", &mut vars).unwrap();
     let diff = (result - analytical).abs();
-    // The error floor is set by natural_exp precision (≈1.7e-6 for this integral)
+    // The error floor is set by natural_exp precision (~=1.7e-6 for this integral)
     // propagating through thousands of evaluations.  Tighter than 2e-6 is not
     // achievable without improving natural_exp itself.
     assert!(
         diff < 10_000i64,
-        "∫sinh error {:.2e} (>2e-6)",
+        "integralsinh error {:.2e} (>2e-6)",
         diff as f64 / 4294967296.0
     );
 }
 
-// ─── 33. Multiply saturation in evaluator ────────────────────────────────────
+// --- 33. Multiply saturation in evaluator ------------------------------------
 
 #[test]
 fn test_evaluator_saturating_add() {
@@ -2616,7 +2616,7 @@ fn test_evaluator_saturating_add() {
     );
 }
 
-// ─── 33. pow edge cases ──────────────────────────────────────────────────────
+// --- 33. pow edge cases ------------------------------------------------------
 
 #[test]
 fn test_power_realistic() {
@@ -2630,7 +2630,7 @@ fn test_power_realistic() {
     );
 }
 
-// ─── 34. Complex number tests (Advanced mode) ────────────────────────────────
+// --- 34. Complex number tests (Advanced mode) --------------------------------
 
 #[test]
 fn test_complex_imaginary_unit() {
@@ -2809,7 +2809,7 @@ fn test_complex_power_zero_exponent() {
 fn test_complex_power_negative_exponent() {
     let mut vars = VariableStore::new();
     // (2+3i)^(-1) = 1/(2+3i) = (2-3i)/(4+9) = (2-3i)/13
-    // In Q31.32: re = 2/13 ≈ 0.15385, im = -3/13 ≈ -0.23077
+    // In Q31.32: re = 2/13 ~= 0.15385, im = -3/13 ~= -0.23077
     let r = eval_complex("(2+3i)^(-1)", &mut vars);
     assert!(r.is_some());
     let c = r.unwrap();
@@ -2848,7 +2848,7 @@ fn test_complex_power_cubic() {
     );
 }
 
-// ── Complex transcendental function tests ───────────────────────────────────
+// -- Complex transcendental function tests -----------------------------------
 
 fn complex_approx_close(a: Complex, b: Complex, tol: i64) -> bool {
     let dr = (a.re - b.re).abs();
@@ -2861,7 +2861,7 @@ fn test_complex_ln() {
     // ln(1) = 0
     let r = Complex::ln(Complex::from_real(fp::FIXED_ONE)).unwrap();
     assert!(complex_approx_close(r, Complex::new(0, 0), 100));
-    // ln(i) = i*pi/2 ≈ i*1.570796
+    // ln(i) = i*pi/2 ~= i*1.570796
     let r = Complex::ln(Complex::new(0, fp::FIXED_ONE)).unwrap();
     let half_pi = fp::divide(fp::FIXED_PI, fp::from_integer(2)).unwrap();
     assert!(complex_approx_close(r, Complex::new(0, half_pi), 100));
@@ -2898,7 +2898,7 @@ fn test_complex_cos() {
     // cos(0) = 1
     let r = Complex::cos(Complex::zero()).unwrap();
     assert_eq!(r, Complex::from_real(fp::FIXED_ONE));
-    // cos(pi/2) ≈ 0  (CORDIC, ~305 ULP)
+    // cos(pi/2) ~= 0  (CORDIC, ~305 ULP)
     let half_pi = fp::divide(fp::FIXED_PI, fp::from_integer(2)).unwrap();
     let r = Complex::cos(Complex::from_real(half_pi)).unwrap();
     assert!(complex_approx_close(r, Complex::zero(), 500));
@@ -2929,7 +2929,7 @@ fn test_complex_tan() {
     // tan(0) = 0
     let r = Complex::tan(Complex::zero()).unwrap();
     assert_eq!(r, Complex::zero());
-    // tan(pi/4) ≈ 1  (CORDIC, ~757 ULP)
+    // tan(pi/4) ~= 1  (CORDIC, ~757 ULP)
     let quarter_pi = fp::divide(fp::FIXED_PI, fp::from_integer(4)).unwrap();
     let r = Complex::tan(Complex::from_real(quarter_pi)).unwrap();
     assert!(complex_approx_close(
@@ -3072,7 +3072,7 @@ fn test_complex_asinh_via_eval() {
     assert_eq!(r, Some(direct));
 }
 
-// ── Complex edge cases ──────────────────────────────────────────────────────
+// -- Complex edge cases ------------------------------------------------------
 
 #[test]
 fn test_complex_conj() {
@@ -3110,23 +3110,23 @@ fn test_complex_arg() {
 
 #[test]
 fn test_complex_from_polar() {
-    // r=0 → 0+0i
+    // r=0 -> 0+0i
     let z = Complex::from_polar(0, fp::FIXED_PI_OVER_2).unwrap();
     assert_eq!(z, Complex::zero());
-    // r=1, θ=0 → 1+0i
+    // r=1, theta=0 -> 1+0i
     let z = Complex::from_polar(fp::FIXED_ONE, 0).unwrap();
     assert_eq!(z, Complex::from_real(fp::FIXED_ONE));
-    // r=1, θ=π/2 → 0+1i  (CORDIC)
+    // r=1, theta=pi/2 -> 0+1i  (CORDIC)
     let z = Complex::from_polar(fp::FIXED_ONE, fp::FIXED_PI_OVER_2).unwrap();
     assert!(complex_approx_close(z, Complex::new(0, fp::FIXED_ONE), 500));
-    // r=1, θ=π → -1+0i  (CORDIC)
+    // r=1, theta=pi -> -1+0i  (CORDIC)
     let z = Complex::from_polar(fp::FIXED_ONE, fp::FIXED_PI).unwrap();
     assert!(complex_approx_close(
         z,
         Complex::from_real(-fp::FIXED_ONE),
         500
     ));
-    // r=1, θ=-π/2 → 0-1i  (CORDIC)
+    // r=1, theta=-pi/2 -> 0-1i  (CORDIC)
     let z = Complex::from_polar(fp::FIXED_ONE, -fp::FIXED_PI_OVER_2).unwrap();
     assert!(complex_approx_close(
         z,
@@ -3268,26 +3268,26 @@ fn test_complex_sqrt_edges() {
 
 #[test]
 fn test_complex_exp_overflow() {
-    // very large positive real → overflow
+    // very large positive real -> overflow
     assert!(Complex::exp(Complex::from_real(fp::from_integer(50))).is_none());
-    // very negative real → underflow to 0
+    // very negative real -> underflow to 0
     let r = Complex::exp(Complex::from_real(-fp::from_integer(50))).unwrap();
     assert_eq!(r, Complex::zero());
 }
 
 #[test]
 fn test_complex_ln_negative_real() {
-    // ln(-1) = 0 + iπ
+    // ln(-1) = 0 + ipi
     let r = Complex::ln(Complex::from_real(-fp::FIXED_ONE)).unwrap();
     assert!(complex_approx_close(r, Complex::new(0, fp::FIXED_PI), 100));
-    // ln(0+0i) = None (norm=0 → ln(0) domain error)
+    // ln(0+0i) = None (norm=0 -> ln(0) domain error)
     assert!(Complex::ln(Complex::zero()).is_none());
 }
 
 #[test]
 fn test_complex_sin_cos_standard_angles() {
     let half_pi = fp::divide(fp::FIXED_PI, fp::from_integer(2)).unwrap();
-    // sin(π/2) = 1
+    // sin(pi/2) = 1
     let r = Complex::sin(Complex::from_real(half_pi)).unwrap();
     assert!(complex_approx_close(
         r,
@@ -3301,7 +3301,7 @@ fn test_complex_sin_cos_standard_angles() {
 
 #[test]
 fn test_complex_tan_pole() {
-    // tan of large pure imaginary → should converge to i
+    // tan of large pure imaginary -> should converge to i
     let r = Complex::tan(Complex::new(0, fp::from_integer(10))).unwrap();
     assert!(complex_approx_close(
         r,
@@ -3315,21 +3315,21 @@ fn test_complex_asin_acos_edges() {
     // asin(0) = 0
     let r = Complex::asin(Complex::zero()).unwrap();
     assert!(complex_approx_close(r, Complex::zero(), 100));
-    // asin(1) ≈ π/2
+    // asin(1) ~= pi/2
     let r = Complex::asin(Complex::from_real(fp::FIXED_ONE)).unwrap();
     assert!(complex_approx_close(
         r,
         Complex::from_real(fp::FIXED_PI_OVER_2),
         200
     ));
-    // acos(0) ≈ π/2
+    // acos(0) ~= pi/2
     let r = Complex::acos(Complex::zero()).unwrap();
     assert!(complex_approx_close(
         r,
         Complex::from_real(fp::FIXED_PI_OVER_2),
         200
     ));
-    // acos(1) ≈ 0
+    // acos(1) ~= 0
     let r = Complex::acos(Complex::from_real(fp::FIXED_ONE)).unwrap();
     assert!(complex_approx_close(r, Complex::zero(), 200));
 }
@@ -3339,11 +3339,11 @@ fn test_complex_atan_edges() {
     // atan(0) = 0
     let r = Complex::atan(Complex::zero()).unwrap();
     assert_eq!(r, Complex::zero());
-    // atan(1) ≈ π/4
+    // atan(1) ~= pi/4
     let r = Complex::atan(Complex::from_real(fp::FIXED_ONE)).unwrap();
     let pi_4 = fp::divide(fp::FIXED_PI, fp::from_integer(4)).unwrap();
     assert!(complex_approx_close(r, Complex::from_real(pi_4), 200));
-    // atan(i) — i + i = 2i, i - i = 0 → division by zero → None
+    // atan(i) - i + i = 2i, i - i = 0 -> division by zero -> None
     let r = Complex::atan(Complex::new(0, fp::FIXED_ONE));
     assert!(r.is_none());
 }
@@ -3356,7 +3356,7 @@ fn test_complex_asinh_acosh_atanh_edges() {
     // acosh(1) = 0
     let r = Complex::acosh(Complex::from_real(fp::FIXED_ONE)).unwrap();
     assert!(complex_approx_close(r, Complex::zero(), 100));
-    // acosh(0) = i*π/2 (valid in complex plane)
+    // acosh(0) = i*pi/2 (valid in complex plane)
     let r = Complex::acosh(Complex::zero()).unwrap();
     assert!(complex_approx_close(
         r,
@@ -3413,7 +3413,7 @@ fn test_complex_neg_via_eval() {
 #[test]
 fn test_complex_power_complex_exponent() {
     let mut vars = VariableStore::new();
-    // (2+3i)^(1+i) = exp((1+i) * ln(2+3i)) ≈ -0.863607 + 1.036889i
+    // (2+3i)^(1+i) = exp((1+i) * ln(2+3i)) ~= -0.863607 + 1.036889i
     let r = eval_complex("(2+3i)^(1+i)", &mut vars);
     let expected = Complex::new(-3709163387, 4453406049);
     assert!(complex_approx_close(r.unwrap(), expected, 3000));
@@ -3471,7 +3471,7 @@ fn test_complex_sto_with_complex() {
     assert_eq!(r, Some(expected));
 }
 
-// ── Format result edge cases ─────────────────────────────────────────────────
+// -- Format result edge cases -------------------------------------------------
 
 #[test]
 fn test_format_result_advanced_zero() {
@@ -3547,7 +3547,7 @@ fn test_format_result_standard_strips_imaginary() {
     assert_eq!(core::str::from_utf8(s).unwrap(), "3");
 }
 
-// ── Lexer edge cases ─────────────────────────────────────────────────────────
+// -- Lexer edge cases ---------------------------------------------------------
 
 #[test]
 fn test_lex_decimal_only_number() {
@@ -3629,7 +3629,7 @@ fn test_lex_log2_priority_over_log() {
     assert_eq!(lex.tokens[0], lexer::Token::FuncLog2);
 }
 
-// ── Evaluator edge cases ─────────────────────────────────────────────────────
+// -- Evaluator edge cases -----------------------------------------------------
 
 #[test]
 fn test_eval_zero_to_zero() {
@@ -3643,7 +3643,7 @@ fn test_eval_modulo_negative() {
     let mut vars = VariableStore::new();
     // -5 % 3 = -2 (Rust semantics: remainder has sign of dividend)
     assert_eq!(eval_expr("-5%3", &mut vars), Some(fp::from_integer(-2)));
-    // 5 % -3 = 2 (dividend positive → remainder positive)
+    // 5 % -3 = 2 (dividend positive -> remainder positive)
     assert_eq!(eval_expr("5%-3", &mut vars), Some(fp::from_integer(2)));
 }
 
@@ -3685,7 +3685,7 @@ fn test_eval_log10_of_10() {
 #[test]
 fn test_eval_sin_negative_via_eval() {
     let mut vars = VariableStore::new();
-    // sin(-π/2) = -1  (CORDIC, ~3 ULP)
+    // sin(-pi/2) = -1  (CORDIC, ~3 ULP)
     assert_approx_eq(
         eval_expr("sin(-pi/2)", &mut vars).unwrap(),
         -fp::FIXED_ONE,
@@ -3696,7 +3696,7 @@ fn test_eval_sin_negative_via_eval() {
 #[test]
 fn test_eval_cos_negative_via_eval() {
     let mut vars = VariableStore::new();
-    // cos(-π) = -1
+    // cos(-pi) = -1
     assert_approx_eq(
         eval_expr("cos(-pi)", &mut vars).unwrap(),
         -fp::FIXED_ONE,
@@ -3714,47 +3714,47 @@ fn test_eval_deg_zero_rad_zero() {
 #[test]
 fn test_eval_deg_negative() {
     let mut vars = VariableStore::new();
-    // deg(-180) = -π
+    // deg(-180) = -pi
     let r = eval_expr("deg(-180)", &mut vars).unwrap();
     assert_approx_eq(r, -fp::FIXED_PI, 100);
 }
 
-// ── Distribution edge cases ──────────────────────────────────────────────────
+// -- Distribution edge cases --------------------------------------------------
 
 #[test]
 fn test_ln_gamma_two_point_five() {
-    // ln(Γ(2.5)) = 0.5*ln(π/4) ≈ 0.28468287
+    // ln(Gamma(2.5)) = 0.5*ln(pi/4) ~= 0.28468287
     let r = distributions::ln_gamma(q(2.5)).unwrap();
     assert_approx_eq(r, q(0.284_682_870_472_709_6), 100);
 }
 
 #[test]
 fn test_binomial_probability_edge_params() {
-    // P(X=0) for X~Binom(10, 0.001) ≈ 0.99004
+    // P(X=0) for X~Binom(10, 0.001) ~= 0.99004
     let r = distributions::binomial_probability(fp::from_integer(10), 0, q(0.001)).unwrap();
     assert_approx_eq(r, q(0.990_044_880_209_648_8), 100);
 }
 
 #[test]
 fn test_poisson_probability_k_zero() {
-    // P(X=0) for X~Poisson(1) = e^(-1) ≈ 0.36787944
+    // P(X=0) for X~Poisson(1) = e^(-1) ~= 0.36787944
     let r = distributions::poisson_probability(fp::FIXED_ONE, 0).unwrap();
     assert_approx_eq(r, q(0.367_879_441_171_442_33), 1000);
 }
 
 #[test]
 fn test_chi_squared_cdf_edge_cases() {
-    // χ²(0, k) = 0 for any k
+    // chi^2(0, k) = 0 for any k
     assert_eq!(
         distributions::chi_squared_cdf(0, fp::from_integer(2)),
         Some(0)
     );
-    // χ²(x, 2) = 1 - exp(-x/2) for k=2
+    // chi^2(x, 2) = 1 - exp(-x/2) for k=2
     let r = distributions::chi_squared_cdf(fp::from_integer(4), fp::from_integer(2)).unwrap();
     assert_approx_eq(r, q(0.864_664_716_763_387_3), 1000); // 1 - e^(-2)
 }
 
-// ─── 35. Degrees mode (pipeline) ──────────────────────────────────────────────
+// --- 35. Degrees mode (pipeline) ----------------------------------------------
 
 #[test]
 fn test_degrees_mode_sin_30() {
@@ -3791,7 +3791,7 @@ fn test_degrees_mode_radians_fallback() {
     let mut vars = VariableStore::new();
     let r = eval_complex_with_mode("sin(i)", &mut vars, AngleMode::Degrees);
     let c = r.unwrap();
-    // sin(i) = i·sinh(1) ≈ i·1.1752 — real part should be 0
+    // sin(i) = i*sinh(1) ~= i*1.1752 - real part should be 0
     assert_eq!(c.re, 0);
     assert!(fp::abs(c.im - q(1.1752011936438014)) < 100000);
 }
@@ -3828,13 +3828,13 @@ fn test_euler_identity_via_power() {
     assert!(r.unwrap().im.abs() < 1000);
 }
 
-// ─── Adaptive Simpson edge cases ──────────────────────────────────────────
+// --- Adaptive Simpson edge cases ------------------------------------------
 
 #[test]
 fn test_motivating_sqrt_integral() {
     let mut vars = VariableStore::new();
     let result = eval_expr("int(sqrt(X),X,0,1.4)", &mut vars).unwrap();
-    // Exact: 2/3 * 1.4^1.5 ≈ 1.1043348928
+    // Exact: 2/3 * 1.4^1.5 ~= 1.1043348928
     let exact = q(1.1043348928);
     let error = if result > exact {
         result - exact
@@ -3854,7 +3854,7 @@ fn test_motivating_sqrt_integral() {
     );
 }
 
-// ─── Overflow display tests ───────────────────────────────────────────────────
+// --- Overflow display tests ---------------------------------------------------
 
 fn check_result(expr: &str, expected_kind: &str) {
     let mut vars = VariableStore::new();
@@ -3935,11 +3935,11 @@ fn test_overflow_format() {
     let formatted = core::str::from_utf8(s).unwrap();
     assert_eq!(formatted, "-1E-5", "got: {}", formatted);
 
-    // Exponent |100| > 99 → None (cannot format)
+    // Exponent |100| > 99 -> None (cannot format)
     let mantissa: i64 = (1.5 * 4294967296.0) as i64;
     assert!(engine::format_overflow(mantissa, 100, false, &mut buf).is_none());
 
-    // Exponent |-100| > 99 → None
+    // Exponent |-100| > 99 -> None
     assert!(engine::format_overflow(mantissa, -100, false, &mut buf).is_none());
 
     // Zero exponent
@@ -3947,11 +3947,11 @@ fn test_overflow_format() {
     let formatted = core::str::from_utf8(s).unwrap();
     assert_eq!(formatted, "1E0", "got: {}", formatted);
 
-    // Exponent i32::MAX > 99 → None
+    // Exponent i32::MAX > 99 -> None
     let mantissa_precise: i64 = (1.000001 * 4294967296.0) as i64;
     assert!(engine::format_overflow(mantissa_precise, i32::MAX, false, &mut buf).is_none());
 
-    // Exponent i32::MIN < -99 → None
+    // Exponent i32::MIN < -99 -> None
     assert!(engine::format_overflow(mantissa_precise, i32::MIN, false, &mut buf).is_none());
 }
 
@@ -3981,7 +3981,7 @@ fn eval_overflow(expr: &str) -> Option<(i64, i32, bool)> {
 
 #[test]
 fn test_overflow_binary_operations() {
-    // sinh(30) ≈ 5.343e12
+    // sinh(30) ~= 5.343e12
     let sinh30 = eval_overflow("sinh(30)").expect("sinh(30) should overflow");
     let mant_f64 = |m: i64| m as f64 / 4294967296.0;
     let m_sinh = mant_f64(sinh30.0);
@@ -3993,7 +3993,7 @@ fn test_overflow_binary_operations() {
     assert_eq!(sinh30.1, 12, "sinh(30) exponent should be 12");
     assert!(!sinh30.2, "sinh(30) should be positive");
 
-    // sinh(30)/2 ≈ 2.672e12 — mantissa should HALVE
+    // sinh(30)/2 ~= 2.672e12 - mantissa should HALVE
     let sinh30_div2 = eval_overflow("sinh(30)/2").expect("sinh(30)/2 should overflow");
     let m_div2 = mant_f64(sinh30_div2.0);
     assert!(
@@ -4010,7 +4010,7 @@ fn test_overflow_binary_operations() {
     assert_eq!(sinh30_div2.1, 12, "sinh(30)/2 exponent should be 12");
     assert!(!sinh30_div2.2, "sinh(30)/2 should be positive");
 
-    // sinh(30)*2 ≈ 1.069e13 — exponent should increase
+    // sinh(30)*2 ~= 1.069e13 - exponent should increase
     let sinh30_mul2 = eval_overflow("sinh(30)*2").expect("sinh(30)*2 should overflow");
     let m_mul2 = mant_f64(sinh30_mul2.0);
     assert!(
@@ -4025,12 +4025,12 @@ fn test_overflow_binary_operations() {
     );
     assert!(!sinh30_mul2.2, "sinh(30)*2 should be positive");
 
-    // -sinh(30) ≈ -5.343e12 — should be negative
+    // -sinh(30) ~= -5.343e12 - should be negative
     let neg_sinh30 = eval_overflow("-sinh(30)").expect("-sinh(30) should overflow");
     assert_eq!(neg_sinh30.1, 12, "-sinh(30) exponent should be 12");
     assert!(neg_sinh30.2, "-sinh(30) should be negative");
 
-    // sinh(30)*3 — different factor
+    // sinh(30)*3 - different factor
     let sinh30_mul3 = eval_overflow("sinh(30)*3").expect("sinh(30)*3 should overflow");
     let m_mul3 = mant_f64(sinh30_mul3.0);
     assert!(
@@ -4044,7 +4044,7 @@ fn test_overflow_binary_operations() {
         sinh30_mul3.1
     );
 
-    // sinh(30)/10 — reduces exponent
+    // sinh(30)/10 - reduces exponent
     let sinh30_div10 = eval_overflow("sinh(30)/10").expect("sinh(30)/10 should overflow");
     let m_div10 = mant_f64(sinh30_div10.0);
     assert!(
@@ -4072,7 +4072,7 @@ fn test_overflow_binary_operations() {
         exp100_mul100.1
     );
 
-    // Power: sinh(30)^2 ≈ 2.85e25 — exponent should be ~25
+    // Power: sinh(30)^2 ~= 2.85e25 - exponent should be ~25
     let sinh30_pow2 = eval_overflow("sinh(30)^2").expect("sinh(30)^2 should overflow");
     assert_eq!(
         sinh30_pow2.1, 25,
@@ -4086,7 +4086,7 @@ fn test_overflow_binary_operations() {
         m_pow2
     );
 
-    // Power: sinh(30)^3 ≈ 1.52e38 — exponent should be ~38
+    // Power: sinh(30)^3 ~= 1.52e38 - exponent should be ~38
     let sinh30_pow3 = eval_overflow("sinh(30)^3").expect("sinh(30)^3 should overflow");
     assert_eq!(
         sinh30_pow3.1, 38,
@@ -4094,19 +4094,19 @@ fn test_overflow_binary_operations() {
         sinh30_pow3.1
     );
 
-    // constant / overflow → NOT overflow (result is ~0)
+    // constant / overflow -> NOT overflow (result is ~0)
     assert!(
         eval_overflow("5/sinh(30)").is_none(),
         "5/sinh(30) should NOT overflow"
     );
 
-    // constant ^ overflow → NOT overflow (uncomputable)
+    // constant ^ overflow -> NOT overflow (uncomputable)
     assert!(
         eval_overflow("2^sinh(30)").is_none(),
         "2^sinh(30) should NOT overflow"
     );
 
-    // Multiply in apply_binary_operator: 2^20 * 2^20 = 2^40 ≈ 1.1e12
+    // Multiply in apply_binary_operator: 2^20 * 2^20 = 2^40 ~= 1.1e12
     let mul_large = eval_overflow("1048576*1048576").expect("1048576^2 should overflow");
     assert_eq!(
         mul_large.1, 12,
@@ -4139,7 +4139,7 @@ fn trace_sinh100() {
     );
 }
 
-// ─── 21. Matrix Operations ─────────────────────────────────────────────────────
+// --- 21. Matrix Operations -----------------------------------------------------
 
 fn eval_matrix(expr: &str, vars: &mut VariableStore) -> Option<Matrix> {
     let mut lex_scratch = lexer::LexResult {
@@ -4462,7 +4462,7 @@ fn test_scalar_mat_mul_order() {
     let stored = eval_matrix("sto([(3,2,3)(4,5,6)(7,8,9)],MatA)", &mut vars);
     assert!(stored.is_some(), "sto should succeed");
 
-    // Step 2: (Scalar * Mat) — user reports this produces scalar instead of matrix
+    // Step 2: (Scalar * Mat) - user reports this produces scalar instead of matrix
     let r = eval_matrix("(1/det(MatA))*MatA", &mut vars);
     assert!(r.is_some(), "Scalar*Mat should succeed");
     let r = r.unwrap();
@@ -4476,7 +4476,7 @@ fn test_scalar_mat_mul_order() {
     assert_eq!(r.rows, 3);
     assert_eq!(r.cols, 3);
 
-    // Step 3: (Mat * Scalar) — this should work (and does)
+    // Step 3: (Mat * Scalar) - this should work (and does)
     let r2 = eval_matrix("MatA*(1/det(MatA))", &mut vars);
     assert!(r2.is_some());
     let r2 = r2.unwrap();
@@ -4717,4 +4717,52 @@ fn test_matrix_literal_unary_minus() {
     assert_eq!(m.rows, 2);
     assert_eq!(m.cols, 4);
     assert_eq!(m.data[4], -4 * 4294967296);
+}
+
+#[test]
+fn test_unary_minus_precedence() {
+    let mut vars = VariableStore::new();
+    assert_eq!(eval_expr("-2^2", &mut vars), Some(-4 * SCALE));
+    assert_eq!(eval_expr("(-2)^2", &mut vars), Some(4 * SCALE));
+    assert_eq!(eval_expr("2^-3", &mut vars), Some(SCALE / 8));
+}
+
+#[test]
+fn test_scientific_negative_mantissa() {
+    let mut vars = VariableStore::new();
+    let mut lex = lexer::LexResult {
+        tokens: [lexer::Token::Number(0); lexer::MAX_TOKEN_COUNT],
+        token_count: 0,
+    };
+    let mut bc = compiler::Bytecode::new();
+    lexer::tokenise_expression(b"(-1.5E3)*2", &mut lex, MathMode::Scientific).unwrap();
+    compiler::compile(&lex, &mut bc).unwrap();
+    match vm::execute(&bc, &mut vars, AngleMode::Radians, MathMode::Scientific) {
+        engine::EvalResult::Matrix(m) => {
+            let value = m.to_complex().expect("scalar result");
+            assert_eq!(value.re, -3000 * SCALE);
+            assert_eq!(value.im, 0);
+        }
+        other => panic!("expected matrix result, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_determinant_4x4_singular() {
+    let one = SCALE;
+    let zero_row = Matrix::mat_from_slice(
+        &[one, 0, 0, 0, 0, one, 0, 0, 0, 0, one, 0, 0, 0, 0, 0],
+        4,
+        4,
+    )
+    .unwrap();
+    assert_eq!(zero_row.determinant(), Some(0));
+
+    let zero_col = Matrix::mat_from_slice(
+        &[one, 0, 0, 0, 0, one, 0, 0, 0, 0, one, 0, 0, 0, 0, 0],
+        4,
+        4,
+    )
+    .unwrap();
+    assert_eq!(zero_col.determinant(), Some(0));
 }
