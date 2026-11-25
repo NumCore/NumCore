@@ -134,6 +134,7 @@ fn handle_event(state: &mut CalcState, event: CalcEvent) {
     use CalcEvent::*;
     match event {
         DigitOrOperator(byte) => {
+            state.leave_history();
             if state.append_character_to_input(byte) {
                 WasmUart::transmit_byte(byte);
                 state.clear_last_result();
@@ -145,6 +146,7 @@ fn handle_event(state: &mut CalcState, event: CalcEvent) {
             handle_submit(state);
         }
         Backspace => {
+            state.leave_history();
             if state.cursor_position() > 0 && !state.current_input().is_empty() {
                 state.remove_last_input_character();
                 WasmUart::transmit_bytes(b"\x08 \x08");
@@ -179,18 +181,24 @@ fn handle_event(state: &mut CalcState, event: CalcEvent) {
             if state.has_matrix_result() && state.current_input().is_empty() {
                 state.scroll_matrix_up();
                 render_display(state);
-            } else if state.current_input().len() > 0 {
-                state.move_cursor_left();
-                render_display(state);
+            } else {
+                let old_len = state.current_input().len();
+                if state.history_previous() {
+                    redraw_input_line(state, old_len);
+                    render_display(state);
+                }
             }
         }
         CursorDown => {
             if state.has_matrix_result() && state.current_input().is_empty() {
                 state.scroll_matrix_down();
                 render_display(state);
-            } else if state.current_input().len() > 0 {
-                state.move_cursor_right();
-                render_display(state);
+            } else {
+                let old_len = state.current_input().len();
+                if state.history_next() {
+                    redraw_input_line(state, old_len);
+                    render_display(state);
+                }
             }
         }
         ToggleMode => {
@@ -230,19 +238,35 @@ fn handle_event(state: &mut CalcState, event: CalcEvent) {
     }
 }
 
+fn redraw_input_line(state: &CalcState, old_len: usize) {
+    let input = state.current_input();
+    WasmUart::transmit_bytes(b"\r> ");
+    WasmUart::transmit_bytes(input);
+    let clear = old_len.max(input.len());
+    for _ in input.len()..clear {
+        WasmUart::transmit_byte(b' ');
+    }
+    for _ in input.len()..clear {
+        WasmUart::transmit_byte(b'\x08');
+    }
+}
+
 fn handle_submit(state: &mut CalcState) {
     let input = state.current_input().to_vec();
-    let expr_len = input.len();
-    state.expr_scratch[..expr_len].copy_from_slice(&input);
-    let expr_slice = &state.expr_scratch[..expr_len];
 
-    if expr_slice.iter().all(|&b| b == b' ') {
+    if input.iter().all(|&b| b == b' ') {
         state.clear_input();
         state.clear_last_result();
         WasmUart::transmit_bytes(b"> ");
         render_display(state);
         return;
     }
+
+    state.record_submission();
+
+    let expr_len = input.len();
+    state.expr_scratch[..expr_len].copy_from_slice(&input);
+    let expr_slice = &state.expr_scratch[..expr_len];
 
     let result = {
         let variables = &mut state.variables as *mut _;

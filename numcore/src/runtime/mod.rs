@@ -167,9 +167,12 @@ fn handle_event<U: Uart, D: Display>(event: CalcEvent, state: &mut CalcState) {
             if state.has_matrix_result() && state.current_input().is_empty() {
                 state.scroll_matrix_up();
                 render_oled::<D>(state);
-            } else if state.current_input().len() > 0 {
-                state.move_cursor_left();
-                render_oled::<D>(state);
+            } else {
+                let old_len = state.current_input().len();
+                if state.history_previous() {
+                    redraw_input_line::<U>(state, old_len);
+                    render_oled::<D>(state);
+                }
             }
         }
 
@@ -177,9 +180,12 @@ fn handle_event<U: Uart, D: Display>(event: CalcEvent, state: &mut CalcState) {
             if state.has_matrix_result() && state.current_input().is_empty() {
                 state.scroll_matrix_down();
                 render_oled::<D>(state);
-            } else if state.current_input().len() > 0 {
-                state.move_cursor_right();
-                render_oled::<D>(state);
+            } else {
+                let old_len = state.current_input().len();
+                if state.history_next() {
+                    redraw_input_line::<U>(state, old_len);
+                    render_oled::<D>(state);
+                }
             }
         }
 
@@ -221,6 +227,7 @@ fn handle_event<U: Uart, D: Display>(event: CalcEvent, state: &mut CalcState) {
 }
 
 fn handle_input_character<U: Uart, D: Display>(byte: u8, state: &mut CalcState) {
+    state.leave_history();
     if state.append_character_to_input(byte) {
         U::transmit_byte(byte);
         state.clear_last_result();
@@ -229,10 +236,24 @@ fn handle_input_character<U: Uart, D: Display>(byte: u8, state: &mut CalcState) 
 }
 
 fn handle_backspace<U: Uart, D: Display>(state: &mut CalcState) {
+    state.leave_history();
     if state.cursor_position() > 0 && state.current_input().len() > 0 {
         state.remove_last_input_character();
         U::transmit_bytes(b"\x08 \x08");
         render_oled::<D>(state);
+    }
+}
+
+fn redraw_input_line<U: Uart>(state: &CalcState, old_len: usize) {
+    let input = state.current_input();
+    U::transmit_bytes(b"\r> ");
+    U::transmit_bytes(input);
+    let clear = old_len.max(input.len());
+    for _ in input.len()..clear {
+        U::transmit_byte(b' ');
+    }
+    for _ in input.len()..clear {
+        U::transmit_byte(b'\x08');
     }
 }
 
@@ -259,11 +280,7 @@ fn handle_cursor_right<U: Uart, D: Display>(state: &mut CalcState) {
 fn handle_expression_submission<U: Uart, D: Display>(state: &mut CalcState) {
     U::transmit_bytes(b"\r\n");
 
-    let expr_len = state.input_length;
-    state.expr_scratch[..expr_len].copy_from_slice(&state.input_buffer[..expr_len]);
-    let expr_slice = &state.expr_scratch[..expr_len];
-
-    if !expr_slice.iter().any(|&b| b != b' ') {
+    if !state.current_input().iter().any(|&b| b != b' ') {
         state.clear_input();
         state.clear_last_result();
         U::transmit_bytes(b"> ");
@@ -273,12 +290,12 @@ fn handle_expression_submission<U: Uart, D: Display>(state: &mut CalcState) {
 
     // Check for debug commands (mode switching without Esc for QEMU).
     #[cfg(debug_assertions)]
-    if expr_slice.len() >= 5 && &expr_slice[..5] == b"!mode" {
+    if state.current_input().len() >= 5 && &state.current_input()[..5] == b"!mode" {
         let mut start = 5;
-        while start < expr_slice.len() && expr_slice[start] == b' ' {
+        while start < state.current_input().len() && state.current_input()[start] == b' ' {
             start += 1;
         }
-        let mode_name = &expr_slice[start..];
+        let mode_name = &state.current_input()[start..];
         use state::CalculatorMode as CM;
         let new_mode = if mode_name.eq_ignore_ascii_case(b"standard") {
             CM::Standard
@@ -308,6 +325,12 @@ fn handle_expression_submission<U: Uart, D: Display>(state: &mut CalcState) {
         render_oled::<D>(state);
         return;
     }
+
+    state.record_submission();
+
+    let expr_len = state.input_length;
+    state.expr_scratch[..expr_len].copy_from_slice(&state.input_buffer[..expr_len]);
+    let expr_slice = &state.expr_scratch[..expr_len];
 
     // Stack guard: refuse evaluation if the stack pointer has reached the
     // reserved stack floor.  The floor is supplied by the linker script so

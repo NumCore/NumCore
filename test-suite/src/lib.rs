@@ -105,6 +105,9 @@ pub mod compiler;
 #[path = "../../numcore/src/math/vm.rs"]
 pub mod vm;
 
+#[path = "../../numcore/src/runtime/state.rs"]
+pub mod runtime_state;
+
 // --- Re-export under math:: for API compatibility ---------------------------
 
 pub mod math {

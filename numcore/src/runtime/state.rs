@@ -61,6 +61,9 @@ const INPUT_BUFFER_CAPACITY: usize = 64;
 /// Maximum length of a formatted result string.
 const RESULT_BUFFER_CAPACITY: usize = 48;
 
+/// Number of submitted expressions kept for recall.
+const HISTORY_CAPACITY: usize = 8;
+
 // --- CalcState ----------------------------------------------------------------
 
 #[repr(C)]
@@ -106,6 +109,18 @@ pub struct CalcState {
 
     /// Scratch buffer for expression submission (avoids stack allocation).
     pub expr_scratch: [u8; INPUT_BUFFER_CAPACITY],
+
+    /// Submitted expressions, newest first.
+    history: [[u8; INPUT_BUFFER_CAPACITY]; HISTORY_CAPACITY],
+
+    /// Length of each history entry.
+    history_lengths: [usize; HISTORY_CAPACITY],
+
+    /// Number of valid history entries.
+    history_count: usize,
+
+    /// Current recall position, where 0 is the newest entry.
+    history_cursor: Option<usize>,
 }
 
 impl CalcState {
@@ -129,6 +144,10 @@ impl CalcState {
             },
             parse_scratch: Bytecode::new(),
             expr_scratch: [0u8; INPUT_BUFFER_CAPACITY],
+            history: [[0u8; INPUT_BUFFER_CAPACITY]; HISTORY_CAPACITY],
+            history_lengths: [0; HISTORY_CAPACITY],
+            history_count: 0,
+            history_cursor: None,
         }
     }
 
@@ -176,6 +195,83 @@ impl CalcState {
         }
         self.input_length = 0;
         self.cursor_position = 0;
+        self.history_cursor = None;
+    }
+
+    // -- History --------------------------------------------------------------
+
+    /// Store the current expression in the history ring.
+    pub fn record_submission(&mut self) {
+        let len = self.input_length;
+        if len == 0 || self.input_buffer[..len].iter().all(|&byte| byte == b' ') {
+            self.history_cursor = None;
+            return;
+        }
+        if self.history_count > 0
+            && self.history_lengths[0] == len
+            && self.history[0][..len] == self.input_buffer[..len]
+        {
+            self.history_cursor = None;
+            return;
+        }
+
+        let last = self.history_count.min(HISTORY_CAPACITY - 1);
+        for index in (0..last).rev() {
+            self.history[index + 1] = self.history[index];
+            self.history_lengths[index + 1] = self.history_lengths[index];
+        }
+        self.history[0][..len].copy_from_slice(&self.input_buffer[..len]);
+        self.history_lengths[0] = len;
+        if self.history_count < HISTORY_CAPACITY {
+            self.history_count += 1;
+        }
+        self.history_cursor = None;
+    }
+
+    /// Recall the previous expression. Returns false when history is empty.
+    pub fn history_previous(&mut self) -> bool {
+        if self.history_count == 0 {
+            return false;
+        }
+        let next = match self.history_cursor {
+            Some(index) => (index + 1).min(self.history_count - 1),
+            None => 0,
+        };
+        self.load_history(next);
+        true
+    }
+
+    /// Recall the next expression. Returns false when no recall is active.
+    pub fn history_next(&mut self) -> bool {
+        let Some(index) = self.history_cursor else {
+            return false;
+        };
+        if index == 0 {
+            self.clear_input();
+            self.clear_last_result();
+            return true;
+        }
+        self.load_history(index - 1);
+        true
+    }
+
+    /// Leave history browsing while keeping the current input text.
+    pub fn leave_history(&mut self) {
+        self.history_cursor = None;
+    }
+
+    /// Number of expressions currently stored.
+    pub fn history_len(&self) -> usize {
+        self.history_count
+    }
+
+    fn load_history(&mut self, index: usize) {
+        let len = self.history_lengths[index];
+        self.input_buffer[..len].copy_from_slice(&self.history[index][..len]);
+        self.input_length = len;
+        self.cursor_position = len;
+        self.history_cursor = Some(index);
+        self.clear_last_result();
     }
 
     // -- Cursor operations -----------------------------------------------------
