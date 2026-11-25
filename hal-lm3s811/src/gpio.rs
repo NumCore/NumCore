@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Faris Alfarhan
+// SPDX-License-Identifier: GPL-3.0-only
+
 //! # GPIO Driver
 //!
 //! General-Purpose I/O configuration for the LM3S811.

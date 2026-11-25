@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Faris Alfarhan
+// SPDX-License-Identifier: GPL-3.0-only
+
 //! # 5x7 Bitmap Font (UI Layer)
 //!
 //! A compact ASCII bitmap font for the 96x16 OSRAM Pictiva OLED display.

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Faris Alfarhan
+# SPDX-License-Identifier: GPL-3.0-only
+
 # Target-specific linker settings for the firmware binary.
 [target.thumbv7m-none-eabi]
 linker = "rust-lld"

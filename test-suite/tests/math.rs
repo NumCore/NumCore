@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Faris Alfarhan
+// SPDX-License-Identifier: GPL-3.0-only
+
 //! # NumCore Math Engine - Full Host-Side Test Suite
 //!
 //! Every public function in `math/` is tested here, including:

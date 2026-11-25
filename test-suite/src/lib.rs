@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Faris Alfarhan
+// SPDX-License-Identifier: GPL-3.0-only
+
 //! # NumCore Math - Host-side Test Harness
 //!
 //! This library enables host-side unit testing of the `math/` module

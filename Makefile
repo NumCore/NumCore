@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Faris Alfarhan
+# SPDX-License-Identifier: GPL-3.0-only
+
 TARGET    = thumbv7m-none-eabi
 MCUS      = lm3s811
 WASM_TARGET = wasm32-unknown-unknown

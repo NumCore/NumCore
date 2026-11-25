@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Faris Alfarhan
+// SPDX-License-Identifier: GPL-3.0-only
+
 pub trait Uart {
     fn init();
     fn transmit_bytes(bytes: &[u8]);

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Faris Alfarhan
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Build a single self-contained offline HTML file for the NumCore simulator."""
 import base64, os, sys
 

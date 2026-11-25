@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Faris Alfarhan
+// SPDX-License-Identifier: GPL-3.0-only
+
 //! # Event Translator (Layer 5 - Runtime)
 //!
 //! Translates raw input bytes (from the HAL's UART receive function) into

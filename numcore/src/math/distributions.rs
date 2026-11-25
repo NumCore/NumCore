@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Faris Alfarhan
+// SPDX-License-Identifier: GPL-3.0-only
+
 //! # Statistical Distributions and Special Functions (Math Engine - Layer 6)
 //!
 //! ## Functions provided

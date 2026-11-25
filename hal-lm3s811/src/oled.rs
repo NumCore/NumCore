@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Faris Alfarhan
+// SPDX-License-Identifier: GPL-3.0-only
+
 #![allow(dead_code)]
 //! # OLED Display Driver - SSD0303 / OSRAM Pictiva 96x16 (Layer 4 - HAL)
 //!

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Faris Alfarhan
+# SPDX-License-Identifier: GPL-3.0-only
+
 [workspace]
 resolver = "2"
 members = ["numcore", "numcore-lm3s811", "hal-lm3s811", "test-suite", "hal-wasm"]

@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Faris Alfarhan
+// SPDX-License-Identifier: GPL-3.0-only
+
 use crate::hal::Display;
 use crate::math::fixed_point;
 use crate::math::matrix::{Matrix, MatrixKind};

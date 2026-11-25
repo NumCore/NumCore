@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Faris Alfarhan
+// SPDX-License-Identifier: GPL-3.0-only
+
 let wasm = null;
 const canvas = document.getElementById('display');
 const ctx = canvas.getContext('2d');

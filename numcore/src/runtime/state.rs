@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Faris Alfarhan
+// SPDX-License-Identifier: GPL-3.0-only
+
 use crate::math::compiler::Bytecode;
 use crate::math::complex::Complex;
 use crate::math::lexer::{LexResult, Token, MAX_TOKEN_COUNT};

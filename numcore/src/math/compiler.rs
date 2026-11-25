@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Faris Alfarhan
+// SPDX-License-Identifier: GPL-3.0-only
+
 use super::lexer::{LexResult, Token};
 use super::matrix::Matrix;
 use super::opcodes::Op;

@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Faris Alfarhan
+// SPDX-License-Identifier: GPL-3.0-only
+
 #![allow(dead_code)]
 //! # I2C0 Driver (Layer 4 - HAL)
 //!

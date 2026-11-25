@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Faris Alfarhan
+// SPDX-License-Identifier: GPL-3.0-only
+
 use super::compiler::Bytecode;
 use super::complex::Complex as Cplx;
 use super::fixed_point as fp;

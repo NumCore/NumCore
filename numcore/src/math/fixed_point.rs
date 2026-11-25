@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Faris Alfarhan
+// SPDX-License-Identifier: GPL-3.0-only
+
 //! # Fixed-Point Arithmetic - Q31.32
 //!
 //! Every value in the math engine is a Q31.32 fixed-point number:

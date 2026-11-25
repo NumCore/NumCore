@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Faris Alfarhan
+// SPDX-License-Identifier: GPL-3.0-only
+
 //! # System Clock (SysCtl)
 //!
 //! The LM3S811 System Control block manages run-mode clock gating for all

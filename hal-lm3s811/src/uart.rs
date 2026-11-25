@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Faris Alfarhan
+// SPDX-License-Identifier: GPL-3.0-only
+
 //! # UART0 Driver
 //!
 //! Drives the LM3S811's first UART peripheral (UART0) at 115 200-8-N-1.

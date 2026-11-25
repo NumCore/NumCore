@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Faris Alfarhan
+// SPDX-License-Identifier: GPL-3.0-only
+
 //! # HAL - LM3S811 (Stellaris)
 //!
 //! Hardware Abstraction Layer for the LM3S811 ARM Cortex-M3 MCU.
