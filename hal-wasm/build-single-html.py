@@ -25,14 +25,25 @@ with open(os.path.join(PKG, 'hal_wasm_bg.wasm'), 'rb') as f:
 html = html.replace('<script src="pkg/hal_wasm.js"></script>', '')
 html = html.replace('<script src="index.js"></script>', '')
 
-# Inject inline scripts
+# Inject inline scripts. The bootstrap initializes the embedded WASM before
+# the simulator entry point runs, so no string rewriting is required.
 inline_scripts = f'''
 <script>
-// - WASM binary (base64-encoded, 317 KB raw / 431 KB text)
+// - WASM binary (base64-encoded)
 const WASM_BASE64 = `{wasm_b64}`;
 
 // - wasm-bindgen runtime (auto-generated)
 {wasm_js}
+
+// - Synchronous init from the embedded binary
+try {{
+  const wasmBinary = Uint8Array.from(atob(WASM_BASE64), c => c.charCodeAt(0));
+  wasm_bindgen.initSync({{ module: wasmBinary }});
+  globalThis.WASM_MODULE_READY = true;
+}} catch (error) {{
+  console.error(error);
+  document.getElementById('status').textContent = 'WASM failed to start: ' + error;
+}}
 
 // - Simulator entry point
 {index_js}
@@ -44,18 +55,6 @@ if '</body>' in html:
     html = html.replace('</body>', inline_scripts + '\n</body>')
 else:
     html += inline_scripts
-
-# Override JS init to use initSync
-html = html.replace(
-    "wasm_bindgen('./pkg/hal_wasm_bg.wasm').then(() => {",
-    '''// Synchronous init from embedded base64
-const wasmBinary = Uint8Array.from(atob(WASM_BASE64), c => c.charCodeAt(0));
-wasm_bindgen.initSync(wasmBinary);
-(function() {'''
-)
-
-# Close the IIFE
-html = html.replace('}).catch(console.error);', '})();')
 
 out_path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(PUB, 'index-standalone.html')
 os.makedirs(os.path.dirname(out_path) or '.', exist_ok=True)

@@ -45,6 +45,10 @@ function processSerialOutput(text) {
 function renderFrame() {
   if (!wasm) return;
   const buf = wasm.get_framebuffer();
+  if (buf.length !== W * 2) {
+    console.error('unexpected framebuffer length', buf.length);
+    return;
+  }
   const cw = canvas.width;
   const imageData = ctx.createImageData(cw, canvas.height);
   const data = imageData.data;
@@ -100,12 +104,14 @@ function feedAll(key, e) {
     wasm.feed_input_byte(0x08);
   } else if (key === 'Escape') {
     wasm.feed_toggle_mode();
+  } else if (key === 'Ctrl+D') {
+    wasm.feed_toggle_angle();
   } else if (key.startsWith('Arrow')) {
     const dirs = { ArrowUp: 0, ArrowDown: 1, ArrowLeft: 2, ArrowRight: 3 };
     wasm.feed_cursor_key(dirs[key]);
   } else if (e.ctrlKey && (key === 'd' || key === 'D')) {
     wasm.feed_toggle_angle();
-  } else if (key.length === 1) {
+  } else if (!e.ctrlKey && key.length === 1) {
     const code = key.charCodeAt(0);
     if (code >= 0x20 && code <= 0x7e) {
       wasm.feed_input_byte(code);
@@ -199,7 +205,7 @@ mobileInput.addEventListener('blur', () => {
 document.querySelectorAll('.controls button').forEach(btn => {
   btn.addEventListener('click', () => {
     const keyMap = {
-      esc: 'Escape', backspace: 'Backspace', enter: 'Enter',
+      esc: 'Escape', 'ctrl-d': 'Ctrl+D', backspace: 'Backspace', enter: 'Enter',
       up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight'
     };
     const mapped = keyMap[btn.dataset.key];
@@ -207,11 +213,20 @@ document.querySelectorAll('.controls button').forEach(btn => {
   });
 });
 
-wasm_bindgen('./pkg/hal_wasm_bg.wasm').then(() => {
+function startSimulator() {
   wasm = wasm_bindgen;
   wasm.init();
   renderFrame();
   updateSerial();
   updateMode();
   setInterval(renderFrame, 100);
-}).catch(console.error);
+}
+
+if (globalThis.WASM_MODULE_READY === true) {
+  startSimulator();
+} else {
+  wasm_bindgen('./pkg/hal_wasm_bg.wasm').then(startSimulator).catch((error) => {
+    console.error(error);
+    document.getElementById('status').textContent = 'WASM failed to load: ' + error;
+  });
+}
