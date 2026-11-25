@@ -41,6 +41,6 @@ The VM value stack was a local `[Option<Matrix>; 16]` array in `execute()`. It u
 
 ## Tests
 
-- 313 host-side unit tests pass.
+- 313 host-side unit tests passed at the time of this fix. The current suite has 340 tests.
 - 6 tests are ignored for host-only overflow or underflow differences.
 - QEMU checks cover `int`, `sum`, negative scientific notation, unary-minus precedence and singular 4x4 determinants.
